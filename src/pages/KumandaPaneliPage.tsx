@@ -22,6 +22,8 @@ interface BatchCamKumanda {
   cam_kodu: string
   musteri: string
   uretim_durumu: string
+  genislik_mm: number
+  yukseklik_mm: number
 }
 
 /* ========== Bileşen ========== */
@@ -36,6 +38,7 @@ export default function KumandaPaneliPage() {
   // Batch & müşteri listesi
   const [batchNo, setBatchNo] = useState<string | null>(null)
   const [batchCamlari, setBatchCamlari] = useState<BatchCamKumanda[]>([])
+  const [aktifMusteri, setAktifMusteri] = useState<string | null>(null)
 
   // Saat
   useEffect(() => {
@@ -49,7 +52,7 @@ export default function KumandaPaneliPage() {
       .from('uretim_emri_detaylari')
       .select(`
         siparis_detaylari (
-          cam_kodu, uretim_durumu,
+          cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm,
           siparisler ( cari ( ad ) )
         )
       `)
@@ -59,6 +62,8 @@ export default function KumandaPaneliPage() {
       cam_kodu: d.siparis_detaylari.cam_kodu,
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
+      genislik_mm: d.siparis_detaylari.genislik_mm,
+      yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
     }))
     setBatchNo(batchNoStr)
     setBatchCamlari(camlar)
@@ -81,20 +86,22 @@ export default function KumandaPaneliPage() {
     loadActiveBatch()
   }, [batchYukle])
 
-  // Realtime kanal
-  // Müşteri listesi: kalan cam sayısına göre sıralı
+  // Müşteri listesi: PozGiriş ile aynı format
   const musteriListesi = useMemo(() => {
-    const map = new Map<string, { toplam: number; kalan: number }>()
+    const map = new Map<string, { toplam: number; tamamlandi: number }>()
     for (const c of batchCamlari) {
-      const e = map.get(c.musteri) ?? { toplam: 0, kalan: 0 }
+      const e = map.get(c.musteri) ?? { toplam: 0, tamamlandi: 0 }
       e.toplam++
-      if (c.uretim_durumu !== 'yikandi') e.kalan++
+      if (c.uretim_durumu === 'yikandi') e.tamamlandi++
       map.set(c.musteri, e)
     }
-    return Array.from(map.entries())
-      .map(([musteri, d]) => ({ musteri, ...d }))
-      .sort((a, b) => b.kalan - a.kalan)
+    return Array.from(map.entries()).map(([musteri, d]) => ({ musteri, ...d }))
   }, [batchCamlari])
+
+  const aktifMusteriCamlari = useMemo(
+    () => aktifMusteri ? batchCamlari.filter(c => c.musteri === aktifMusteri) : [],
+    [aktifMusteri, batchCamlari]
+  )
 
   useEffect(() => {
     const channel = supabase
@@ -111,12 +118,13 @@ export default function KumandaPaneliPage() {
         setKartlar(prev => [yeniKart, ...prev].slice(0, 10))
         setFlash(true)
         setTimeout(() => setFlash(false), 600)
-        // Sol panelde kalan cam sayısını güncelle
+        // Sol panelde sayıları güncelle + aktif müşteriyi seç
         setBatchCamlari(prev => prev.map(c =>
           c.cam_kodu === payload.cam_kodu
             ? { ...c, uretim_durumu: 'yikandi' }
             : c
         ))
+        if (payload.musteri) setAktifMusteri(payload.musteri)
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
@@ -149,15 +157,13 @@ export default function KumandaPaneliPage() {
         </span>
       </div>
 
-      {/* Ana alan: sol liste + sağ kartlar */}
+      {/* Ana alan: sol müşteri + orta kartlar + sağ cam listesi */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* ===== SOL: Müşteri Listesi ===== */}
-        <div className="w-56 shrink-0 border-r border-gray-800 flex flex-col overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-gray-800 shrink-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-              {batchNo ? 'Kalan Camlar' : 'Müşteriler'}
-            </p>
+        <div className="w-72 shrink-0 border-r-2 border-gray-700 bg-gray-900/40 flex flex-col overflow-hidden">
+          <div className="px-5 py-3 border-b-2 border-gray-700 shrink-0">
+            <p className="text-xs font-black uppercase tracking-widest text-gray-400">Müşteriler</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             {musteriListesi.length === 0 ? (
@@ -168,32 +174,47 @@ export default function KumandaPaneliPage() {
               </div>
             ) : (
               musteriListesi.map(m => {
-                const tamam = m.kalan === 0
+                const pct = m.toplam > 0 ? Math.round((m.tamamlandi / m.toplam) * 100) : 0
+                const tamam = m.tamamlandi === m.toplam
+                const aktif = aktifMusteri === m.musteri
                 return (
-                  <div
+                  <button
                     key={m.musteri}
-                    className={`px-4 py-3 border-b border-gray-800/50 flex items-center justify-between gap-2 transition-opacity ${
-                      tamam ? 'opacity-40' : ''
+                    onClick={() => setAktifMusteri(m.musteri)}
+                    className={`w-full text-left px-5 py-4 border-b border-gray-800 transition-colors ${
+                      aktif
+                        ? 'bg-blue-900/30 border-l-4 border-l-blue-400'
+                        : 'hover:bg-gray-800/60'
                     }`}
                   >
-                    <span className={`text-sm font-semibold truncate ${
-                      tamam ? 'text-emerald-400' : 'text-gray-200'
-                    }`}>
-                      {m.musteri || '—'}
-                    </span>
-                    <span className={`text-sm font-bold tabular-nums shrink-0 ${
-                      tamam ? 'text-emerald-400' : 'text-amber-400'
-                    }`}>
-                      {tamam ? '✓' : m.kalan}
-                    </span>
-                  </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-base font-bold truncate max-w-[150px] ${
+                        tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
+                      }`}>
+                        {m.musteri || '—'}
+                      </span>
+                      <span className={`text-sm font-bold tabular-nums shrink-0 ml-2 ${
+                        tamam ? 'text-emerald-300' : aktif ? 'text-blue-300' : 'text-gray-400'
+                      }`}>
+                        {m.tamamlandi}/{m.toplam}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${
+                          tamam ? 'bg-emerald-400' : aktif ? 'bg-blue-400' : 'bg-gray-500'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </button>
                 )
               })
             )}
           </div>
         </div>
 
-        {/* ===== SAĞ: Cam Kartları ===== */}
+        {/* ===== ORTA: Cam Kartları ===== */}
         <div className="flex-1 flex flex-col px-6 py-4 overflow-y-auto gap-3">
           {kartlar.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -264,6 +285,62 @@ export default function KumandaPaneliPage() {
             })
           )}
         </div>
+
+        {/* ===== SAĞ: Aktif Müşteri Cam Listesi ===== */}
+        <div className="w-80 shrink-0 border-l-2 border-gray-700 bg-gray-900/40 flex flex-col overflow-hidden">
+          <div className="px-5 py-3 border-b-2 border-gray-700 shrink-0">
+            {aktifMusteri ? (
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-0.5">Seçili Müşteri</p>
+                <p className="text-base font-bold text-white truncate">{aktifMusteri}</p>
+              </div>
+            ) : (
+              <p className="text-xs font-black uppercase tracking-widest text-gray-500">Müşteri seçilmedi</p>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {aktifMusteriCamlari.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center px-5 py-8">
+                <p className="text-gray-500 text-sm leading-relaxed">
+                  {aktifMusteri
+                    ? 'Bu müşteriye ait cam bulunamadı.'
+                    : 'Sol listeden müşteri seçin.'}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-800">
+                {aktifMusteriCamlari.map(c => {
+                  const girildi = c.uretim_durumu === 'yikandi'
+                  return (
+                    <div
+                      key={c.cam_kodu}
+                      className={`px-5 py-3.5 flex items-center gap-3 ${
+                        girildi ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${
+                        girildi
+                          ? 'bg-emerald-900/60 text-emerald-300'
+                          : 'bg-gray-700 text-gray-300'
+                      }`}>
+                        {girildi ? 'Girildi' : 'Bekliyor'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className={`font-mono text-base font-bold leading-tight ${
+                          girildi ? 'text-gray-500' : 'text-white'
+                        }`}>{c.cam_kodu}</p>
+                        <p className={`text-sm mt-0.5 ${
+                          girildi ? 'text-gray-600' : 'text-gray-400'
+                        }`}>{c.genislik_mm} × {c.yukseklik_mm} mm</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
 
       {/* Alt bar */}

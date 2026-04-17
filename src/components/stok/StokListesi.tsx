@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import type { Stok, StokKategori } from '@/types/stok'
+import Pagination from '@/components/ui/Pagination'
 
 interface Props {
   stoklar: Stok[]
@@ -13,6 +14,9 @@ interface Props {
 export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, onSil }: Props) {
   const [arama, setArama] = useState('')
 
+  const [sayfa, setSayfa] = useState(1)
+  const SAYFA_BOYUTU = 20
+
   const filtrelenmis = stoklar
     .filter((s) => s.kategori === kategori)
     .filter(
@@ -22,6 +26,10 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
         (s.marka ?? '').toLowerCase().includes(arama.toLowerCase()) ||
         (s.tedarikci_ad ?? '').toLowerCase().includes(arama.toLowerCase())
     )
+
+  const sayfali = filtrelenmis.slice((sayfa - 1) * SAYFA_BOYUTU, sayfa * SAYFA_BOYUTU)
+
+  useEffect(() => { setSayfa(1) }, [arama, kategori])
 
   if (yukleniyor) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
@@ -58,7 +66,7 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
               </tr>
             </thead>
             <tbody>
-              {filtrelenmis.map((stok) => (
+              {sayfali.map((stok) => (
                 <tr
                   key={stok.id}
                   className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
@@ -103,9 +111,12 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
               ))}
             </tbody>
           </table>
-          <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
-            {filtrelenmis.length} kayıt
-          </div>
+          <Pagination
+            toplamKayit={filtrelenmis.length}
+            sayfaBoyutu={SAYFA_BOYUTU}
+            mevcutSayfa={sayfa}
+            onSayfaDegistir={setSayfa}
+          />
         </div>
       )}
     </div>

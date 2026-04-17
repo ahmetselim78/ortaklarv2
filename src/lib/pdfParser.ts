@@ -1,12 +1,11 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import { supabase } from './supabase'
 
 // Worker ayarı (text extraction fallback için)
 GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString()
-
-const MISTRAL_API_KEY = import.meta.env.VITE_MISTRAL_API_KEY as string
 
 /* ===== Tipler ===== */
 
@@ -18,6 +17,9 @@ export interface PDFParseResult {
 }
 
 export interface PDFSiparisHeader {
+  /** PDF'in en üstündeki şirket — bizim doğrudan müşterimiz (örn. NOVEL PVC) */
+  tedarikciUnvan: string
+  /** Tedarikçinin kendi müşterisi — nihai kullanıcı (örn. AKYOL LOUNGE) */
   cariKodu: string
   cariUnvan: string
   siparisNo: string
@@ -74,44 +76,61 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-/** Mistral OCR API — PDF'i base64 olarak gönderir, markdown metin döner */
+/** Mistral OCR — Önce Supabase Edge Function dener, başarısız olursa doğrudan API'ye gider */
 async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback): Promise<string> {
-  if (!MISTRAL_API_KEY || MISTRAL_API_KEY === 'your_mistral_api_key_here') {
-    throw new Error('Mistral API anahtarı ayarlanmamış. .env.local dosyasına VITE_MISTRAL_API_KEY ekleyin.')
-  }
-
   onProgress?.('Mistral OCR isteği gönderiliyor...')
 
   const base64 = arrayBufferToBase64(buffer)
-  const dataUrl = `data:application/pdf;base64,${base64}`
+
+  // 1) Supabase Edge Function dene
+  const { data, error } = await supabase.functions.invoke('mistral-ocr', {
+    body: { document_base64: base64 },
+  })
+
+  if (!error && data?.pages) {
+    onProgress?.('Sonuçlar işleniyor...')
+    const pages = data.pages as { index: number; markdown: string }[]
+    const fullText = pages.map((p: { markdown: string }) => p.markdown).join('\n')
+    console.log('[Mistral OCR] Edge Function başarılı, toplam karakter:', fullText.length)
+    return fullText
+  }
+
+  // 2) Fallback: VITE_MISTRAL_API_KEY varsa doğrudan Mistral API'ye git
+  const apiKey = import.meta.env.VITE_MISTRAL_API_KEY as string | undefined
+  if (!apiKey) {
+    throw new Error(
+      `Mistral OCR hatası: ${error?.message ?? 'Bilinmeyen hata'}. Edge Function deploy edilmemiş ve VITE_MISTRAL_API_KEY tanımlı değil.`
+    )
+  }
+
+  console.warn('[Mistral OCR] Edge Function başarısız, doğrudan API kullanılıyor')
+  onProgress?.('Mistral OCR (doğrudan API)...')
 
   const res = await fetch('https://api.mistral.ai/v1/ocr', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${MISTRAL_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: 'mistral-ocr-latest',
       document: {
         type: 'document_url',
-        document_url: dataUrl,
+        document_url: `data:application/pdf;base64,${base64}`,
       },
     }),
   })
 
   if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`Mistral OCR hatası (${res.status}): ${errText}`)
+    const errBody = await res.json().catch(() => ({}))
+    throw new Error(`Mistral OCR API hatası (${res.status}): ${JSON.stringify(errBody)}`)
   }
 
+  const result = await res.json()
   onProgress?.('Sonuçlar işleniyor...')
-  const data = await res.json()
-  const pages = data.pages as { index: number; markdown: string }[]
-
-  const fullText = pages.map(p => p.markdown).join('\n')
-  console.log('[Mistral OCR] Toplam karakter:', fullText.length)
-  console.log('[Mistral OCR] İlk 500 karakter:', fullText.substring(0, 500))
+  const pages = result.pages as { index: number; markdown: string }[]
+  const fullText = pages.map((p: { markdown: string }) => p.markdown).join('\n')
+  console.log('[Mistral OCR] Doğrudan API başarılı, toplam karakter:', fullText.length)
   return fullText
 }
 
@@ -151,6 +170,18 @@ async function tryTextExtraction(buffer: ArrayBuffer): Promise<string[]> {
 }
 
 /* ===== Format Algılama ===== */
+
+/** dd.mm.yyyy formatındaki tarihi doğrular */
+function isValidDate(s: string | null): boolean {
+  if (!s) return false
+  const parts = s.split('.')
+  if (parts.length !== 3) return false
+  const [d, m, y] = parts.map(Number)
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return false
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false
+  const date = new Date(y, m - 1, d)
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d
+}
 
 function isPimapenFormat(text: string): boolean {
   const checks = [
@@ -201,12 +232,28 @@ function parsePimapenHeader(text: string): PDFSiparisHeader {
   let cariUnvan = cariUnvanMatch?.[1]?.trim() ?? ''
   cariUnvan = cariUnvan.replace(/\s{2,}.*/, '').replace(/Cam\s*S.*/i, '').replace(/Sipari.*/i, '').trim()
 
+  // Tedarikçi ünvanı: PDF'in en üstündeki şirket adı — bizim doğrudan müşterimiz
+  // "NOVEL PVC ALÜMİNYUM SANAYİ TİCARET LTD. ŞTİ." gibi, TEL/Cari/Sipariş satırlarından önce gelir
+  const lines = text.split(/\n/).slice(0, 10)
+  const tedarikciLine = lines.find(
+    (line) =>
+      /(?:LTD\.?\s*ŞTİ\.?|A\.Ş\.?|LİMİTED|ANONİM)/i.test(line) &&
+      !/^\s*(?:Cari|Tel|Sipari|Cam\s*S|Müşteri|Sip\s*\/)/i.test(line.trim()),
+  )
+  const tedarikciUnvan = (tedarikciLine ?? '')
+    // Logo marka etiketini sil ("PIMAPEN", "Ercom Smart" vb.)
+    .replace(/\s*(?:pimapen|ercom\s*smart)[^\n]*/gi, '')
+    // Satırın geri kalanını (sayfa no vb.) sil
+    .replace(/\s{2,}.*/, '')
+    .trim()
+
   return {
+    tedarikciUnvan,
     cariKodu: cariKoduMatch?.[1] ?? '',
     cariUnvan,
     siparisNo: siparisNoMatch?.[1] ?? '',
-    sipTarihi: tarihMatch?.[1] ?? null,
-    sevkTarihi: tarihMatch?.[2] ?? null,
+    sipTarihi: isValidDate(tarihMatch?.[1] ?? null) ? tarihMatch![1] : null,
+    sevkTarihi: isValidDate(tarihMatch?.[2] ?? null) ? tarihMatch![2] : null,
     toplamAdet: adetMatch ? parseInt(adetMatch[1], 10) : null,
   }
 }

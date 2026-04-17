@@ -1,19 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { generateStokKod } from '@/lib/idGenerator'
 import type { Stok, YeniStok } from '@/types/stok'
-
-async function generateStokKod(): Promise<string> {
-  const { data } = await supabase
-    .from('stok')
-    .select('kod')
-    .like('kod', 'S-%')
-    .order('kod', { ascending: false })
-    .limit(1)
-
-  if (!data || data.length === 0) return 'S-0001'
-  const last = parseInt((data[0].kod as string).replace('S-', ''), 10)
-  return `S-${String(last + 1).padStart(4, '0')}`
-}
 
 export function useStok() {
   const [stoklar, setStoklar] = useState<Stok[]>([])

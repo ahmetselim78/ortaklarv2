@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, ClipboardList, FileUp } from 'lucide-react'
+import Pagination from '@/components/ui/Pagination'
 import { useSiparis } from '@/hooks/useSiparis'
 import { useCari } from '@/hooks/useCari'
 import { useStok } from '@/hooks/useStok'
@@ -21,7 +22,7 @@ const DURUM_FILTRELER: { deger: 'hepsi' | SiparisDurum; etiket: string }[] = [
 ]
 
 export default function SiparisPage() {
-  const { siparisler, yukleniyor, hata, ekle, sil, yenile } = useSiparis()
+  const { siparisler, yukleniyor, hata, ekle, guncelle, sil, yenile } = useSiparis()
   const { cariler } = useCari()
   const { stoklar } = useStok()
 
@@ -31,10 +32,16 @@ export default function SiparisPage() {
   const [silinecek, setSilinecek] = useState<Siparis | null>(null)
   const [siliniyor, setSiliniyor] = useState(false)
   const [durumFiltre, setDurumFiltre] = useState<'hepsi' | SiparisDurum>('hepsi')
+  const [sayfa, setSayfa] = useState(1)
+  const SAYFA_BOYUTU = 20
 
   const filtrelenmis = durumFiltre === 'hepsi'
     ? siparisler
     : siparisler.filter((s) => s.durum === durumFiltre)
+
+  const sayfali = filtrelenmis.slice((sayfa - 1) * SAYFA_BOYUTU, sayfa * SAYFA_BOYUTU)
+
+  useEffect(() => { setSayfa(1) }, [durumFiltre])
 
   const handleSilOnayla = async () => {
     if (!silinecek) return
@@ -102,12 +109,20 @@ export default function SiparisPage() {
           <p className="text-sm mt-1">Sağ üstteki "Yeni Sipariş" butonuyla ekleyin.</p>
         </div>
       ) : (
-        <SiparisListesi
-          siparisler={filtrelenmis}
-          yukleniyor={yukleniyor}
-          onGoruntule={setGorunenSiparis}
-          onSil={setSilinecek}
-        />
+        <>
+          <SiparisListesi
+            siparisler={sayfali}
+            yukleniyor={yukleniyor}
+            onGoruntule={setGorunenSiparis}
+            onSil={setSilinecek}
+          />
+          <Pagination
+            toplamKayit={filtrelenmis.length}
+            sayfaBoyutu={SAYFA_BOYUTU}
+            mevcutSayfa={sayfa}
+            onSayfaDegistir={setSayfa}
+          />
+        </>
       )}
 
       {/* Yeni Sipariş Formu */}
@@ -124,6 +139,7 @@ export default function SiparisPage() {
       {gorunenSiparis && (
         <SiparisDetayModal
           siparis={gorunenSiparis}
+          onGuncelle={guncelle}
           onKapat={() => { setGorunenSiparis(null); yenile() }}
         />
       )}

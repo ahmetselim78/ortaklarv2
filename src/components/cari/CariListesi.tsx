@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Pencil, Trash2, Phone, Mail } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import { cn } from '@/lib/utils'
+import Pagination from '@/components/ui/Pagination'
 
 interface Props {
   cariler: Cari[]
@@ -16,6 +17,9 @@ export default function CariListesi({ cariler, yukleniyor, onDuzenle, onSil }: P
   const [arama, setArama] = useState('')
   const [filtre, setFiltre] = useState<'hepsi' | 'musteri' | 'tedarikci'>('hepsi')
 
+  const [sayfa, setSayfa] = useState(1)
+  const SAYFA_BOYUTU = 20
+
   const filtrelenmis = cariler.filter((c) => {
     const aramaEslesi =
       c.ad.toLowerCase().includes(arama.toLowerCase()) ||
@@ -23,6 +27,10 @@ export default function CariListesi({ cariler, yukleniyor, onDuzenle, onSil }: P
     const filtreEslesi = filtre === 'hepsi' || c.tipi === filtre
     return aramaEslesi && filtreEslesi
   })
+
+  const sayfali = filtrelenmis.slice((sayfa - 1) * SAYFA_BOYUTU, sayfa * SAYFA_BOYUTU)
+
+  useEffect(() => { setSayfa(1) }, [arama, filtre])
 
   if (yukleniyor) {
     return (
@@ -77,7 +85,7 @@ export default function CariListesi({ cariler, yukleniyor, onDuzenle, onSil }: P
               </tr>
             </thead>
             <tbody>
-              {filtrelenmis.map((cari) => (
+              {sayfali.map((cari) => (
                 <tr
                   key={cari.id}
                   className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
@@ -132,9 +140,12 @@ export default function CariListesi({ cariler, yukleniyor, onDuzenle, onSil }: P
               ))}
             </tbody>
           </table>
-          <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
-            {filtrelenmis.length} kayıt
-          </div>
+          <Pagination
+            toplamKayit={filtrelenmis.length}
+            sayfaBoyutu={SAYFA_BOYUTU}
+            mevcutSayfa={sayfa}
+            onSayfaDegistir={setSayfa}
+          />
         </div>
       )}
     </div>

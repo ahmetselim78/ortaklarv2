@@ -1,40 +1,42 @@
 import { supabase } from './supabase'
 
 /**
- * Belirtilen adet kadar sıralı GLS-XXXX kodu üretir.
- * Tek sorguda tüm kodları üretir — eş zamanlı çakışmaları önler.
- * Örnek: adet=3 → ['GLS-1001', 'GLS-1002', 'GLS-1003']
+ * Atomic sayaç kullanarak belirtilen adet kadar sıralı GLS-XXXX kodu üretir.
+ * PostgreSQL UPSERT ile race condition önlenir.
  */
 export async function generateCamKodulari(adet: number): Promise<string[]> {
-  const { data } = await supabase
-    .from('siparis_detaylari')
-    .select('cam_kodu')
-    .like('cam_kodu', 'GLS-%')
-    .order('cam_kodu', { ascending: false })
-    .limit(1)
-
-  const baslangic = (!data || data.length === 0)
-    ? 1001
-    : parseInt((data[0].cam_kodu as string).replace('GLS-', ''), 10) + 1
-
-  return Array.from({ length: adet }, (_, i) => `GLS-${baslangic + i}`)
+  const { data, error } = await supabase.rpc('sonraki_sayac', { p_anahtar: 'cam_kodu', p_adet: adet })
+  if (error) throw new Error(`Cam kodu üretim hatası: ${error.message}`)
+  const sonDeger = data as number
+  return Array.from({ length: adet }, (_, i) => `GLS-${sonDeger - adet + 1 + i}`)
 }
 
-/**
- * Yeni bir sipariş numarası üretir: SIP-YYYY-NNNN
- * Örnek: SIP-2026-0001
- */
+/** Yeni sipariş numarası: SIP-YYYY-NNNN */
 export async function generateSiparisNo(): Promise<string> {
   const yil = new Date().getFullYear()
-  const { data } = await supabase
-    .from('siparisler')
-    .select('siparis_no')
-    .like('siparis_no', `SIP-${yil}-%`)
-    .order('siparis_no', { ascending: false })
-    .limit(1)
+  const { data, error } = await supabase.rpc('sonraki_sayac', { p_anahtar: `siparis_no_${yil}`, p_adet: 1 })
+  if (error) throw new Error(`Sipariş no üretim hatası: ${error.message}`)
+  return `SIP-${yil}-${String(data as number).padStart(4, '0')}`
+}
 
-  if (!data || data.length === 0) return `SIP-${yil}-0001`
+/** Yeni cari kodu: C-XXXX */
+export async function generateCariKod(): Promise<string> {
+  const { data, error } = await supabase.rpc('sonraki_sayac', { p_anahtar: 'cari_kod', p_adet: 1 })
+  if (error) throw new Error(`Cari kod üretim hatası: ${error.message}`)
+  return `C-${String(data as number).padStart(4, '0')}`
+}
 
-  const last = parseInt((data[0].siparis_no as string).split('-')[2], 10)
-  return `SIP-${yil}-${String(last + 1).padStart(4, '0')}`
+/** Yeni stok kodu: S-XXXX */
+export async function generateStokKod(): Promise<string> {
+  const { data, error } = await supabase.rpc('sonraki_sayac', { p_anahtar: 'stok_kod', p_adet: 1 })
+  if (error) throw new Error(`Stok kod üretim hatası: ${error.message}`)
+  return `S-${String(data as number).padStart(4, '0')}`
+}
+
+/** Yeni batch numarası: BATCH-YYYY-NNNN */
+export async function generateBatchNo(): Promise<string> {
+  const yil = new Date().getFullYear()
+  const { data, error } = await supabase.rpc('sonraki_sayac', { p_anahtar: `batch_no_${yil}`, p_adet: 1 })
+  if (error) throw new Error(`Batch no üretim hatası: ${error.message}`)
+  return `BATCH-${yil}-${String(data as number).padStart(4, '0')}`
 }

@@ -9,6 +9,7 @@ import UretimIstasyonlariPage from '@/pages/UretimIstasyonlariPage'
 import PozGirisPage from '@/pages/PozGirisPage'
 import KumandaPaneliPage from '@/pages/KumandaPaneliPage'
 import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
+import NotFoundPage from '@/pages/NotFoundPage'
 
 export default function App() {
   return (
@@ -28,6 +29,9 @@ export default function App() {
           <Route path="/uretim" element={<UretimPage />} />
           <Route path="/istasyonlar" element={<UretimIstasyonlariPage />} />
         </Route>
+
+        {/* 404 */}
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
   )

@@ -10,6 +10,7 @@ import {
 import { exportDetaylariCSV, exportTarihiGuncelle } from '@/services/exportService'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 interface Props {
   emir: UretimEmri
@@ -40,6 +41,9 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)
+  const [onayDialogAcik, setOnayDialogAcik] = useState(false)
+  const [exportDialogAcik, setExportDialogAcik] = useState(false)
+  const [onayYapiliyor, setOnayYapiliyor] = useState(false)
 
   // Sipariş detaylarından cam ekleme paneli
   const [camPaneliAcik, setCamPaneliAcik] = useState(false)
@@ -127,7 +131,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
           <div className="flex items-center gap-3">
             {/* Durum badge — sadece hazirlaniyor iken tıklanabilir (onaylandi'ya geçer) */}
             <button
-              onClick={() => emir.durum === 'hazirlaniyor' && onDurumDegisti(emir.id, 'onaylandi')}
+              onClick={() => emir.durum === 'hazirlaniyor' && setOnayDialogAcik(true)}
               disabled={emir.durum !== 'hazirlaniyor'}
               className={cn(
                 'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
@@ -142,7 +146,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
 
             {/* Export Butonu */}
             <button
-              onClick={handleExport}
+              onClick={() => setExportDialogAcik(true)}
               disabled={exportYapiliyor || detaylar.length === 0}
               className="flex items-center gap-2 px-4 py-1.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors"
             >
@@ -283,6 +287,41 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
             </div>
           )}
         </div>
+
+        {/* Onay diyalogu */}
+        <ConfirmDialog
+          acik={onayDialogAcik}
+          baslik="Batch Onaylama"
+          mesaj={`"${emir.batch_no}" batch'ini onaylamak istediğinize emin misiniz? Onaylanan batch'e yeni cam eklenemez.`}
+          onayButon="Onayla"
+          onayRenk="blue"
+          yukleniyor={onayYapiliyor}
+          onOnayla={async () => {
+            setOnayYapiliyor(true)
+            try {
+              await onDurumDegisti(emir.id, 'onaylandi')
+              setOnayDialogAcik(false)
+            } finally {
+              setOnayYapiliyor(false)
+            }
+          }}
+          onKapat={() => setOnayDialogAcik(false)}
+        />
+
+        {/* Export diyalogu */}
+        <ConfirmDialog
+          acik={exportDialogAcik}
+          baslik="CSV Export"
+          mesaj={`"${emir.batch_no}" batch'ini CSV olarak dışa aktarmak istediğinize emin misiniz?`}
+          onayButon="Export Et"
+          onayRenk="green"
+          yukleniyor={exportYapiliyor}
+          onOnayla={async () => {
+            await handleExport()
+            setExportDialogAcik(false)
+          }}
+          onKapat={() => setExportDialogAcik(false)}
+        />
       </div>
     </div>
   )

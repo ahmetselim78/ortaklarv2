@@ -36,8 +36,7 @@ export interface CamFormSatiri {
   genislik_mm: number | string
   yukseklik_mm: number | string
   adet: number | string
-  ara_bosluk_mm: number | string
-  cita_stok_id: string
-  kenar_islemi: string
-  notlar: string
+  ara_bosluk_mm?: number | string
+  kenar_islemi?: string
+  notlar?: string
 }

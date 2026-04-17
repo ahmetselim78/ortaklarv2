@@ -1,19 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { generateBatchNo } from '@/lib/idGenerator'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
 
-async function generateBatchNo(): Promise<string> {
-  const yil = new Date().getFullYear()
-  const { data } = await supabase
-    .from('uretim_emirleri')
-    .select('batch_no')
-    .like('batch_no', `BATCH-${yil}-%`)
-    .order('batch_no', { ascending: false })
-    .limit(1)
-
-  if (!data || data.length === 0) return `BATCH-${yil}-0001`
-  const last = parseInt((data[0].batch_no as string).split('-')[2], 10)
-  return `BATCH-${yil}-${String(last + 1).padStart(4, '0')}`
+/* ===== Durum geçiş matrisi ===== */
+const GECERLI_GECISLER: Record<UretimEmriDurum, UretimEmriDurum[]> = {
+  hazirlaniyor: ['onaylandi'],
+  onaylandi: ['export_edildi', 'hazirlaniyor'],
+  export_edildi: ['yikamada', 'hazirlaniyor'],
+  yikamada: ['tamamlandi', 'eksik_var'],
+  tamamlandi: [],
+  eksik_var: ['yikamada', 'export_edildi'],
 }
 
 export function useUretim() {
@@ -47,12 +44,12 @@ export function useUretim() {
 
     const uretimEmriId = data.id as string
 
-    // Seçilen siparişlerin cam parçalarını getir — zaten yıkananları atla
+    // Seçilen siparişlerin cam parçalarını getir — sadece bekliyor/kesildi olanları al
     const { data: detaylar, error: detayHata } = await supabase
       .from('siparis_detaylari')
       .select('id')
       .in('siparis_id', siparisIds)
-      .neq('uretim_durumu', 'yikandi')
+      .in('uretim_durumu', ['bekliyor', 'kesildi'])
       .order('created_at')
 
     if (detayHata) throw new Error(detayHata.message)
@@ -81,14 +78,77 @@ export function useUretim() {
   }
 
   const durumGuncelle = async (id: string, durum: UretimEmriDurum) => {
+    // Durum geçiş kontrolü
+    const mevcut = emirler.find(e => e.id === id)
+    if (mevcut) {
+      const gecerli = GECERLI_GECISLER[mevcut.durum]
+      if (!gecerli.includes(durum)) {
+        throw new Error(`Geçersiz durum geçişi: ${mevcut.durum} → ${durum}`)
+      }
+    }
     const { error } = await supabase.from('uretim_emirleri').update({ durum }).eq('id', id)
     if (error) throw new Error(error.message)
     await getir()
   }
 
   const sil = async (id: string) => {
+    // 1. Batch'teki sipariş ID'lerini bul
+    const { data: batchDetaylar } = await supabase
+      .from('uretim_emri_detaylari')
+      .select('siparis_detay_id')
+      .eq('uretim_emri_id', id)
+
+    const detayIds = (batchDetaylar ?? []).map(d => d.siparis_detay_id)
+
+    // Sipariş ID'lerini bul
+    let siparisIds: string[] = []
+    if (detayIds.length > 0) {
+      const { data: sipDetaylar } = await supabase
+        .from('siparis_detaylari')
+        .select('siparis_id')
+        .in('id', detayIds)
+      siparisIds = [...new Set((sipDetaylar ?? []).map(d => d.siparis_id))]
+    }
+
+    // 2. Batch'i sil (CASCADE ile detaylar da silinir)
     const { error } = await supabase.from('uretim_emirleri').delete().eq('id', id)
     if (error) throw new Error(error.message)
+
+    // 3. Artık başka batch'te olmayan siparişleri 'beklemede'ye döndür
+    if (siparisIds.length > 0) {
+      // Tüm siparis_detaylari al
+      const { data: tumDetaylar } = await supabase
+        .from('siparis_detaylari')
+        .select('id, siparis_id')
+        .in('siparis_id', siparisIds)
+
+      const tumDetayIds = (tumDetaylar ?? []).map(d => d.id)
+
+      // Hâlâ başka batch'te olan detayları bul
+      const { data: halaBatchte } = tumDetayIds.length > 0
+        ? await supabase
+            .from('uretim_emri_detaylari')
+            .select('siparis_detay_id')
+            .in('siparis_detay_id', tumDetayIds)
+        : { data: [] }
+
+      const halaBatchDetayIds = new Set((halaBatchte ?? []).map(d => d.siparis_detay_id))
+
+      // Hiçbir camı batch'te olmayan siparişleri resetle
+      const resetSiparisIds = siparisIds.filter(sipId => {
+        const sipDetaylar = (tumDetaylar ?? []).filter(d => d.siparis_id === sipId)
+        return !sipDetaylar.some(d => halaBatchDetayIds.has(d.id))
+      })
+
+      if (resetSiparisIds.length > 0) {
+        await supabase
+          .from('siparisler')
+          .update({ durum: 'beklemede' })
+          .in('id', resetSiparisIds)
+          .eq('durum', 'batchte')
+      }
+    }
+
     await getir()
   }
 

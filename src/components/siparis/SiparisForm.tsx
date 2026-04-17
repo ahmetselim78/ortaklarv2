@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { useForm, useFieldArray } from 'react-hook-form'
+import { useForm, useFieldArray, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { X, Plus, Trash2 } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { cn } from '@/lib/utils'
+
+const KENAR_ISLEMLERI = ['Rodaj', 'Bizote', 'Düz Kesim'] as const
+const NOT_ETIKETLERI = ['Menfez'] as const
 
 const camSchema = z.object({
   stok_id: z.string().min(1, 'Cam cinsi seçiniz'),
@@ -30,11 +33,11 @@ type FormVeri = z.infer<typeof schema>
 interface Props {
   cariler: Cari[]
   stoklar: Stok[]
-  onKaydet: (veri: FormVeri) => Promise<void>
+  onKaydet: (veri: FormVeri) => Promise<unknown>
   onKapat: () => void
 }
 
-const BOŞ_CAM = { stok_id: '', genislik_mm: '' as unknown as number, yukseklik_mm: '' as unknown as number, adet: 1, ara_bosluk_mm: '' as unknown as number, cita_stok_id: '', kenar_islemi: '', notlar: '' }
+const BOŞ_CAM = { stok_id: '', genislik_mm: '' as unknown as number, yukseklik_mm: '' as unknown as number, adet: 1, ara_bosluk_mm: '' as unknown as number, kenar_islemi: '', notlar: '' }
 
 export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Props) {
   const [kaydediliyor, setKaydediliyor] = useState(false)
@@ -44,6 +47,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<FormVeri>({
     resolver: zodResolver(schema),
@@ -54,6 +58,20 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'camlar' })
+  const watchedCamlar = useWatch({ control, name: 'camlar' })
+
+  const toggleTag = (index: number, field: 'kenar_islemi' | 'notlar', tag: string) => {
+    const current = (watchedCamlar?.[index]?.[field] ?? '') as string
+    const tags = current ? current.split(',').map(t => t.trim()).filter(Boolean) : []
+    const has = tags.includes(tag)
+    const next = has ? tags.filter(t => t !== tag) : [...tags, tag]
+    setValue(`camlar.${index}.${field}`, next.join(', '))
+  }
+
+  const hasTag = (index: number, field: 'kenar_islemi' | 'notlar', tag: string): boolean => {
+    const current = (watchedCamlar?.[index]?.[field] ?? '') as string
+    return current.split(',').map(t => t.trim()).includes(tag)
+  }
 
   const onSubmit = async (veri: FormVeri) => {
     setKaydediliyor(true)
@@ -163,8 +181,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                       <th className="px-3 py-2">Yük. (mm) *</th>
                       <th className="px-3 py-2">Adet</th>
                       <th className="px-3 py-2">Çıta (mm)</th>
-                      <th className="px-3 py-2">Kenar İşlemi</th>
-                      <th className="px-3 py-2">Not</th>
+                      <th className="px-3 py-2">Özellikler</th>
                       <th className="px-2 py-2"></th>
                     </tr>
                   </thead>
@@ -231,29 +248,54 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                           </select>
                         </td>
                         <td className="px-2 py-2">
-                          <input
-                            {...register(`camlar.${index}.kenar_islemi`)}
-                            className="w-24 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            placeholder="Rodaj..."
-                          />
+                          <div className="flex flex-wrap gap-1">
+                            {/* Not etiketleri */}
+                            {NOT_ETIKETLERI.map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleTag(index, 'notlar', tag)}
+                                className={cn(
+                                  'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
+                                  hasTag(index, 'notlar', tag)
+                                    ? 'bg-amber-100 text-amber-700 border-amber-300'
+                                    : 'bg-white text-gray-400 border-gray-200 hover:border-amber-300 hover:text-amber-600'
+                                )}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                            {/* Kenar işlemi etiketleri */}
+                            {KENAR_ISLEMLERI.map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleTag(index, 'kenar_islemi', tag)}
+                                className={cn(
+                                  'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
+                                  hasTag(index, 'kenar_islemi', tag)
+                                    ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                    : 'bg-white text-gray-400 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                                )}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                            {/* Hidden inputs for form registration */}
+                            <input type="hidden" {...register(`camlar.${index}.kenar_islemi`)} />
+                            <input type="hidden" {...register(`camlar.${index}.notlar`)} />
+                          </div>
                         </td>
                         <td className="px-2 py-2">
-                          <input
-                            {...register(`camlar.${index}.notlar`)}
-                            className="w-24 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            placeholder="Not..."
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          {fields.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => remove(index)}
-                              className="p-1 text-gray-300 hover:text-red-500 transition-colors"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => remove(index)}
+                            disabled={fields.length <= 1}
+                            className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                            title="Cam kaldır"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </td>
                       </tr>
                     ))}

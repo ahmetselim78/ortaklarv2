@@ -3,6 +3,16 @@ import { supabase } from '@/lib/supabase'
 import { generateCamKodulari, generateSiparisNo } from '@/lib/idGenerator'
 import type { Siparis, SiparisDetay, CamFormSatiri, SiparisDurum } from '@/types/siparis'
 
+/* ===== Durum geçiş matrisi ===== */
+const GECERLI_GECISLER: Record<SiparisDurum, SiparisDurum[]> = {
+  beklemede: ['batchte', 'iptal'],
+  batchte: ['yikamada', 'beklemede', 'eksik_var'],
+  yikamada: ['tamamlandi', 'eksik_var'],
+  tamamlandi: [],
+  eksik_var: ['batchte', 'beklemede', 'tamamlandi'],
+  iptal: ['beklemede'],
+}
+
 interface YeniSiparisForm {
   cari_id: string
   tarih: string
@@ -62,7 +72,6 @@ export function useSiparis() {
       yukseklik_mm: Number(cam.yukseklik_mm),
       adet: Number(cam.adet),
       ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
-      cita_stok_id: cam.cita_stok_id || null,
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,
     }))
@@ -78,7 +87,21 @@ export function useSiparis() {
   }
 
   const durumGuncelle = async (id: string, durum: SiparisDurum) => {
+    // Durum geçiş kontrolü
+    const mevcut = siparisler.find(s => s.id === id)
+    if (mevcut) {
+      const gecerli = GECERLI_GECISLER[mevcut.durum]
+      if (!gecerli.includes(durum)) {
+        throw new Error(`Geçersiz durum geçişi: ${mevcut.durum} → ${durum}`)
+      }
+    }
     const { error } = await supabase.from('siparisler').update({ durum }).eq('id', id)
+    if (error) throw new Error(error.message)
+    await getir()
+  }
+
+  const guncelle = async (id: string, form: { tarih?: string; teslim_tarihi?: string | null; notlar?: string | null }) => {
+    const { error } = await supabase.from('siparisler').update(form).eq('id', id)
     if (error) throw new Error(error.message)
     await getir()
   }
@@ -90,7 +113,7 @@ export function useSiparis() {
     await getir()
   }
 
-  return { siparisler, yukleniyor, hata, ekle, durumGuncelle, sil, yenile: getir }
+  return { siparisler, yukleniyor, hata, ekle, guncelle, durumGuncelle, sil, yenile: getir }
 }
 
 export async function getSiparisDetaylari(siparisId: string): Promise<SiparisDetay[]> {

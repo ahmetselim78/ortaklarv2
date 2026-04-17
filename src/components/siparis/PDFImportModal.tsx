@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react'
-import { parsePDF, cariEslestir, stokEslestir, citaEslestir, extractAraBosluk } from '@/lib/pdfParser'
-import type { PDFParseResult, PDFCamSatir } from '@/lib/pdfParser'
+import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
+import type { PDFParseResult } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
 import type { CamFormSatiri } from '@/types/siparis'
 import { cn } from '@/lib/utils'
@@ -81,7 +81,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
 
       // Otomatik eşleştirme
       if (result.header) {
-        const cariMatch = cariEslestir(result.header.cariKodu, result.header.cariUnvan, cariler)
+        // Eşleştirme, PDF'in en üstündeki şirket (bizim müşterimiz) ile yapılır.
+        // cariUnvan (AKYOL LOUNGE) tedarikçinin kendi müşterisidir; bizi ilgilendirmez.
+        const cariMatch = cariEslestir('', result.header.tedarikciUnvan, cariler)
         if (cariMatch) {
           setSecilenCariId(cariMatch.id)
           setCariSkor(cariMatch.skor)
@@ -156,7 +158,6 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         yukseklik_mm: s.yukseklik_mm,
         adet: s.adet,
         ara_bosluk_mm: s.ara_bosluk_mm ?? '',
-        cita_stok_id: (s.ara_bosluk_mm && citaSecimler[s.ara_bosluk_mm]) || '',
         kenar_islemi: '',
         notlar: s.pozNo ? `Poz: ${s.pozNo}` : '',
       }))
@@ -165,7 +166,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         cari_id: secilenCariId,
         tarih,
         teslim_tarihi: teslimTarihi,
-        notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Cari: ${header.cariUnvan}`,
+        notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Tedarikçi: ${header.tedarikciUnvan}${header.cariUnvan ? ` / Nihai Müşteri: ${header.cariUnvan}` : ''}`,
         camlar,
       })
 
@@ -285,13 +286,17 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                   <span className="text-sm font-semibold text-gray-700">PDF Bilgileri</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-gray-400 text-xs">Cari Kodu</span>
-                    <div className="font-mono font-medium text-gray-800">{parseResult.header?.cariKodu || '—'}</div>
+                  <div className="col-span-2">
+                    <span className="text-gray-400 text-xs">Bizim Müşterimiz (PDF Sahibi)</span>
+                    <div className="font-semibold text-blue-700">{parseResult.header?.tedarikciUnvan || '\u2014'}</div>
                   </div>
                   <div>
-                    <span className="text-gray-400 text-xs">Cari Ünvanı</span>
-                    <div className="font-medium text-gray-800">{parseResult.header?.cariUnvan || '—'}</div>
+                    <span className="text-gray-400 text-xs">Nihai Kullanıcı (Müşterinin Müşterisi)</span>
+                    <div className="font-medium text-gray-800">{parseResult.header?.cariUnvan || '\u2014'}</div>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-xs">İç Cari Kodu</span>
+                    <div className="font-mono text-gray-500">{parseResult.header?.cariKodu || '\u2014'}</div>
                   </div>
                   <div>
                     <span className="text-gray-400 text-xs">Sipariş No</span>
@@ -299,7 +304,10 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                   </div>
                   <div>
                     <span className="text-gray-400 text-xs">Cam Parçası</span>
-                    <div className="font-bold text-blue-700">{parseResult.satirlar.length} adet</div>
+                    <div className="font-bold text-blue-700">
+                      {parseResult.satirlar.reduce((s, r) => s + r.adet, 0)} adet
+                      <span className="text-xs font-normal text-gray-400 ml-1">({parseResult.satirlar.length} satır)</span>
+                    </div>
                   </div>
                   <div>
                     <span className="text-gray-400 text-xs">Sipariş Tarihi</span>
@@ -322,13 +330,38 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                     </span>
                   )}
                   {cariSkor > 0 && cariSkor < 0.8 && (
-                    <span className="ml-2 text-xs text-yellow-600 font-normal">— eşleşme düşük, kontrol edin</span>
+                    <span className="ml-2 text-xs text-yellow-600 font-normal inline-flex items-center gap-1">
+                      <AlertTriangle size={12} /> Eşleşme düşük — lütfen kontrol edin
+                    </span>
+                  )}
+                  {cariSkor === 0 && !secilenCariId && (
+                    <span className="ml-2 text-xs text-red-500 font-normal inline-flex items-center gap-1">
+                      <AlertTriangle size={12} /> Eşleşme bulunamadı — manuel seçin
+                    </span>
                   )}
                 </label>
+                {parseResult.header?.tedarikciUnvan && (
+                  <div className="text-xs text-gray-400 mb-1.5">
+                    PDF'deki şirket:{' '}
+                    <span className="font-semibold text-blue-600">{parseResult.header.tedarikciUnvan}</span>
+                    {parseResult.header.cariUnvan && (
+                      <span className="text-gray-400"> &mdash; nihai kullanıcı: {parseResult.header.cariUnvan}</span>
+                    )}
+                  </div>
+                )}
                 <select
                   value={secilenCariId}
-                  onChange={(e) => setSecilenCariId(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => { setSecilenCariId(e.target.value); setCariSkor(0) }}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
+                    cariSkor >= 0.8
+                      ? 'border-green-400 bg-green-50 focus:ring-green-400'
+                      : cariSkor > 0
+                      ? 'border-yellow-400 bg-yellow-50 focus:ring-yellow-400'
+                      : secilenCariId
+                      ? 'border-gray-200 focus:ring-blue-500'
+                      : 'border-red-300 bg-red-50 focus:ring-red-400'
+                  )}
                 >
                   <option value="">— Cari Seçin —</option>
                   {cariler.map((c) => (
@@ -355,8 +388,15 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 </div>
                 <select
                   value={secilenStokId}
-                  onChange={(e) => setSecilenStokId(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => { setSecilenStokId(e.target.value); setStokSkor(0) }}
+                  className={cn(
+                    'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
+                    stokSkor >= 0.8
+                      ? 'border-green-400 bg-green-50 focus:ring-green-400'
+                      : stokSkor > 0
+                      ? 'border-yellow-400 bg-yellow-50 focus:ring-yellow-400'
+                      : 'border-gray-200 focus:ring-blue-500'
+                  )}
                 >
                   <option value="">— Cam Stok Seçin (opsiyonel) —</option>
                   {stoklar.filter((s) => s.kategori === 'cam').map((s) => (
@@ -412,7 +452,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-700">
-                  İçe aktarılacak {parseResult.satirlar.length} cam parçası
+                  İçe aktarılacak {parseResult.satirlar.reduce((s, r) => s + r.adet, 0)} adet cam ({parseResult.satirlar.length} satır)
                 </h3>
                 <span className="text-xs text-gray-400">
                   Cari: {cariler.find(c => c.id === secilenCariId)?.ad ?? '—'} ·
@@ -495,7 +535,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 disabled={iceAktariliyor}
                 className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
-                {iceAktariliyor ? 'İçe Aktarılıyor...' : `${parseResult?.satirlar.length} Cam Parçasını İçe Aktar`}
+                {iceAktariliyor ? 'İçe Aktarılıyor...' : `${parseResult?.satirlar.reduce((s, r) => s + r.adet, 0)} Adet (${parseResult?.satirlar.length} Satır) İçe Aktar`}
               </button>
             )}
           </div>

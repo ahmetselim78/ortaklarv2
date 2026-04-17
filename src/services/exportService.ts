@@ -48,9 +48,11 @@ export function exportDetaylariCSV(detaylar: UretimEmriDetay[], batchNo: string)
 
 /** Export sonrası batch'in durumunu ve export tarihini günceller */
 export async function exportTarihiGuncelle(uretimEmriId: string) {
-  await supabase
+  const { error } = await supabase
     .from('uretim_emirleri')
     .update({ export_tarihi: new Date().toISOString(), durum: 'export_edildi' })
     .eq('id', uretimEmriId)
+
+  if (error) throw new Error(`Export tarihi güncellenemedi: ${error.message}`)
 }
 

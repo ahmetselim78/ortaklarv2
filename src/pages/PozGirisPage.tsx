@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { beep } from '@/lib/audio'
 import {
   Wifi, WifiOff, ArrowLeft, Package, CheckCircle2,
   AlertTriangle, XCircle, Loader2,
@@ -15,6 +16,7 @@ interface BatchSatir {
   durum: UretimEmriDurum
   toplam_cam: number
   taranan_cam: number
+  musteriler: string[]  // "NOVEL — AKYOL LOUNGE" formatında benzersiz müşteri listesi
 }
 
 interface BatchCam {
@@ -29,6 +31,7 @@ interface BatchCam {
   uretim_durumu: string
   stok_ad: string
   musteri: string
+  nihai_musteri: string  // siparisler.notlar'dan çıkarılan nihai kullanıcı
   siparis_no: string
 }
 
@@ -42,28 +45,24 @@ interface GecmisSatir {
 
 type TaramaDurum = 'bos' | 'yukleniyor' | 'basarili' | 'hata' | 'tekrar' | 'yanlis_batch' | 'tamamlandi'
 
-/* ========== Ses ========== */
+/* ========== Yardımcılar ========== */
 
-function beep(type: 'success' | 'error' | 'complete') {
-  try {
-    const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    if (type === 'success') {
-      osc.type = 'sine'; osc.frequency.value = 880
-    } else if (type === 'complete') {
-      osc.type = 'sine'; osc.frequency.value = 1200
-    } else {
-      osc.type = 'sawtooth'; osc.frequency.value = 220
-    }
-    const dur = type === 'complete' ? 0.4 : type === 'success' ? 0.15 : 0.4
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur)
-    osc.start()
-    osc.stop(ctx.currentTime + dur)
-  } catch { /* */ }
+/** Sipariş notlarından nihai müşteri adını çıkarır ("Nihai Müşteri: ..." kalıbı) */
+function extractNihaiMusteri(notlar: string): string {
+  const m = notlar.match(/Nihai\s+M[\u00fc\u00dc][\u015f\u015e]teri:\s*(.+?)(?:\s*\/|$)/i)
+  return m?.[1]?.trim() ?? ''
+}
+
+/** Cari adı + nihai müşteri → görüntü etiketi: "NOVEL — AKYOL LOUNGE" */
+function musteriEtiket(musteri: string, nihai: string): string {
+  return nihai ? `${musteri} \u2014 ${nihai}` : musteri
+}
+
+/** "musteri||nihaiMusteri" bileşik anahtarını görüntü etiketine çevirir */
+function musteriKeyToLabel(key: string): string {
+  const sep = key.indexOf('||')
+  if (sep === -1) return key
+  return musteriEtiket(key.slice(0, sep), key.slice(sep + 2))
 }
 
 /* ========== Durum renkleri ========== */
@@ -134,26 +133,40 @@ export default function PozGirisPage() {
       return
     }
 
-    const sonuc: BatchSatir[] = []
-    for (const e of emirler) {
-      const { data: detaylar } = await supabase
-        .from('uretim_emri_detaylari')
-        .select('siparis_detay_id, siparis_detaylari ( uretim_durumu )')
-        .eq('uretim_emri_id', e.id)
+    // Tek sorguda tüm batch'lerin detaylarını getir (N+1 yerine)
+    const emirIds = emirler.map(e => e.id)
+    const { data: tumDetaylar } = await supabase
+      .from('uretim_emri_detaylari')
+      .select(`
+        uretim_emri_id, siparis_detay_id,
+        siparis_detaylari ( uretim_durumu, siparisler ( notlar, cari ( ad ) ) )
+      `)
+      .in('uretim_emri_id', emirIds)
 
-      const toplam = detaylar?.length ?? 0
-      const taranan = detaylar?.filter(
-        (d: any) => d.siparis_detaylari?.uretim_durumu === 'yikandi'
-      ).length ?? 0
+    // Gruplama
+    const detayMap = new Map<string, { toplam: number; taranan: number; musteriSet: Set<string> }>()
+    for (const d of tumDetaylar ?? []) {
+      const entry = detayMap.get(d.uretim_emri_id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
+      entry.toplam++
+      if ((d as any).siparis_detaylari?.uretim_durumu === 'yikandi') entry.taranan++
+      const musteriAd: string = (d as any).siparis_detaylari?.siparisler?.cari?.ad ?? ''
+      const nihai = extractNihaiMusteri((d as any).siparis_detaylari?.siparisler?.notlar ?? '')
+      const etiket = musteriEtiket(musteriAd, nihai)
+      if (etiket) entry.musteriSet.add(etiket)
+      detayMap.set(d.uretim_emri_id, entry)
+    }
 
-      sonuc.push({
+    const sonuc: BatchSatir[] = emirler.map(e => {
+      const d = detayMap.get(e.id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
+      return {
         id: e.id,
         batch_no: e.batch_no,
         durum: e.durum as UretimEmriDurum,
-        toplam_cam: toplam,
-        taranan_cam: taranan,
-      })
-    }
+        toplam_cam: d.toplam,
+        taranan_cam: d.taranan,
+        musteriler: Array.from(d.musteriSet),
+      }
+    })
 
     setBatchler(sonuc)
     setBatchYukleniyor(false)
@@ -170,7 +183,7 @@ export default function PozGirisPage() {
         siparis_detaylari (
           siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, uretim_durumu,
           stok!stok_id ( ad ),
-          siparisler ( siparis_no, cari ( ad ) )
+          siparisler ( siparis_no, notlar, cari ( ad ) )
         )
       `)
       .eq('uretim_emri_id', batchId)
@@ -188,6 +201,7 @@ export default function PozGirisPage() {
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
+      nihai_musteri: extractNihaiMusteri(d.siparis_detaylari.siparisler?.notlar ?? ''),
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
     }))
     setBatchCamlari(camlar)
@@ -201,7 +215,7 @@ export default function PozGirisPage() {
     setSonTarananCam(null)
     setAktifMusteri(null)
     const camlar = await batchCamlariniGetir(batch.id)
-    if (camlar && camlar.length > 0) setAktifMusteri(camlar[0].musteri)
+    if (camlar && camlar.length > 0) setAktifMusteri(`${camlar[0].musteri}||${camlar[0].nihai_musteri}`)
     setTimeout(() => inputRef.current?.focus(), 100)
     // Kumanda Paneli ve diğer istasyonlara aktif batch'i bildir
     channelRef.current?.send({
@@ -267,18 +281,19 @@ export default function PozGirisPage() {
   const toplamSayisi = batchCamlari.length
 
   const musteriListesi = useMemo(() => {
-    const map = new Map<string, { toplam: number; tamamlandi: number }>()
+    const map = new Map<string, { key: string; etiket: string; toplam: number; tamamlandi: number }>()
     for (const c of batchCamlari) {
-      const e = map.get(c.musteri) ?? { toplam: 0, tamamlandi: 0 }
+      const key = `${c.musteri}||${c.nihai_musteri}`
+      const e = map.get(key) ?? { key, etiket: musteriEtiket(c.musteri, c.nihai_musteri), toplam: 0, tamamlandi: 0 }
       e.toplam++
       if (c.uretim_durumu === 'yikandi') e.tamamlandi++
-      map.set(c.musteri, e)
+      map.set(key, e)
     }
-    return Array.from(map.entries()).map(([musteri, d]) => ({ musteri, ...d }))
+    return Array.from(map.values())
   }, [batchCamlari])
 
   const aktifMusteriCamlari = useMemo(
-    () => aktifMusteri ? batchCamlari.filter(c => c.musteri === aktifMusteri) : [],
+    () => aktifMusteri ? batchCamlari.filter(c => `${c.musteri}||${c.nihai_musteri}` === aktifMusteri) : [],
     [aktifMusteri, batchCamlari]
   )
 
@@ -359,7 +374,7 @@ export default function PozGirisPage() {
     })
 
     setSonTarananCam(cam)
-    setAktifMusteri(cam.musteri)
+    setAktifMusteri(`${cam.musteri}||${cam.nihai_musteri}`)
 
     // Tüm camlar yıkandı mı kontrol
     const yeniTaranan = tekrar ? tarananSayisi : tarananSayisi + 1
@@ -454,9 +469,18 @@ export default function PozGirisPage() {
                          b.durum === 'yikamada' ? 'Devam Ediyor' : 'Eksik Var'}
                       </span>
                     </div>
-                    <div className="text-sm text-gray-400 mb-3">
+                    <div className="text-sm text-gray-400 mb-2">
                       {b.taranan_cam} / {b.toplam_cam} cam girildi
                     </div>
+                    {b.musteriler.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {b.musteriler.map((m, i) => (
+                          <span key={i} className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300 font-medium border border-gray-700">
+                            {m}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="w-full bg-gray-800 rounded-full h-2">
                       <div
                         className="bg-blue-500 h-2 rounded-full transition-all"
@@ -512,11 +536,11 @@ export default function PozGirisPage() {
             {musteriListesi.map(m => {
               const pct = m.toplam > 0 ? Math.round((m.tamamlandi / m.toplam) * 100) : 0
               const tamam = m.tamamlandi === m.toplam
-              const aktif = aktifMusteri === m.musteri
+              const aktif = aktifMusteri === m.key
               return (
                 <button
-                  key={m.musteri}
-                  onClick={() => { setAktifMusteri(m.musteri); setTimeout(() => inputRef.current?.focus(), 50) }}
+                  key={m.key}
+                  onClick={() => { setAktifMusteri(m.key); setTimeout(() => inputRef.current?.focus(), 50) }}
                   className={`w-full text-left px-5 py-4 border-b border-gray-800 transition-colors ${
                     aktif
                       ? 'bg-blue-900/30 border-l-4 border-l-blue-400'
@@ -524,10 +548,10 @@ export default function PozGirisPage() {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`text-base font-bold truncate max-w-[150px] ${
+                    <span className={`text-base font-bold truncate flex-1 min-w-0 ${
                       tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
                     }`}>
-                      {m.musteri || '—'}
+                      {m.etiket || '—'}
                     </span>
                     <span className={`text-sm font-bold tabular-nums shrink-0 ml-2 ${
                       tamam ? 'text-emerald-300' : aktif ? 'text-blue-300' : 'text-gray-400'
@@ -673,7 +697,7 @@ export default function PozGirisPage() {
             {aktifMusteri ? (
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-0.5">Seçili Müşteri</p>
-                <p className="text-base font-bold text-white truncate">{aktifMusteri}</p>
+                <p className="text-base font-bold text-white truncate">{aktifMusteri ? musteriKeyToLabel(aktifMusteri) : ''}</p>
               </div>
             ) : (
               <p className="text-xs font-black uppercase tracking-widest text-gray-500">Müşteri seçilmedi</p>

@@ -1,20 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { generateCariKod } from '@/lib/idGenerator'
 import type { Cari, YeniCari } from '@/types/cari'
-
-/** Sonraki cari kodunu üretir: C-0001, C-0002 ... */
-async function generateCariKod(): Promise<string> {
-  const { data } = await supabase
-    .from('cari')
-    .select('kod')
-    .like('kod', 'C-%')
-    .order('kod', { ascending: false })
-    .limit(1)
-
-  if (!data || data.length === 0) return 'C-0001'
-  const last = parseInt((data[0].kod as string).replace('C-', ''), 10)
-  return `C-${String(last + 1).padStart(4, '0')}`
-}
 
 export function useCari() {
   const [cariler, setCariler] = useState<Cari[]>([])

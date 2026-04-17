@@ -1,25 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Wifi, WifiOff, Settings, Volume2, VolumeX, AlertTriangle, Keyboard, ArrowRight, Package } from 'lucide-react'
-
-/* ========== Ses ========== */
-
-function beepAlert() {
-  try {
-    const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = 'square'
-    osc.frequency.value = 440
-    gain.gain.setValueAtTime(0.25, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.6)
-  } catch { /* */ }
-}
+import { beepAlert } from '@/lib/audio'
+import { ArrowLeft, Wifi, WifiOff, Settings, Volume2, VolumeX, AlertTriangle, Keyboard, ArrowRight } from 'lucide-react'
 
 /* ========== Tipler ========== */
 
@@ -53,7 +36,7 @@ export default function GostergeEkraniPage() {
   const [flash, setFlash] = useState(false)
 
   // Batch bilgisi
-  const [aktifBatch, setAktifBatch] = useState<AktifBatch | null>(null)
+  const [_aktifBatch, setAktifBatch] = useState<AktifBatch | null>(null)
 
   const sesRef = useRef(sesAcik)
   useEffect(() => { sesRef.current = sesAcik }, [sesAcik])

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Pencil } from 'lucide-react'
 import type { Siparis, SiparisDetay, SiparisDurum, UretimDurumu } from '@/types/siparis'
 import { getSiparisDetaylari } from '@/hooks/useSiparis'
 import { supabase } from '@/lib/supabase'
@@ -8,6 +8,7 @@ import { cn, formatDate } from '@/lib/utils'
 interface Props {
   siparis: Siparis
   onKapat: () => void
+  onGuncelle?: (id: string, form: { tarih?: string; teslim_tarihi?: string | null; notlar?: string | null }) => Promise<void>
 }
 
 const SIPARIS_DURUM_STIL: Record<SiparisDurum, string> = {
@@ -48,9 +49,14 @@ interface DetayWithBatch extends SiparisDetay {
   batch_no?: string | null
 }
 
-export default function SiparisDetayModal({ siparis, onKapat }: Props) {
+export default function SiparisDetayModal({ siparis, onKapat, onGuncelle }: Props) {
   const [detaylar, setDetaylar] = useState<DetayWithBatch[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
+  const [duzenleAcik, setDuzenleAcik] = useState(false)
+  const [editTarih, setEditTarih] = useState(siparis.tarih)
+  const [editTeslim, setEditTeslim] = useState(siparis.teslim_tarihi ?? '')
+  const [editNotlar, setEditNotlar] = useState(siparis.notlar ?? '')
+  const [kaydediyor, setKaydediyor] = useState(false)
 
   useEffect(() => {
     const yukle = async () => {
@@ -84,6 +90,21 @@ export default function SiparisDetayModal({ siparis, onKapat }: Props) {
   const yikanmis = detaylar.filter(d => d.uretim_durumu === 'yikandi').length
   const toplam = detaylar.length
 
+  const handleDuzenleKaydet = async () => {
+    if (!onGuncelle) return
+    setKaydediyor(true)
+    try {
+      await onGuncelle(siparis.id, {
+        tarih: editTarih,
+        teslim_tarihi: editTeslim || null,
+        notlar: editNotlar || null,
+      })
+      setDuzenleAcik(false)
+    } finally {
+      setKaydediyor(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
@@ -97,6 +118,16 @@ export default function SiparisDetayModal({ siparis, onKapat }: Props) {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* Düzenle butonu */}
+            {onGuncelle && !duzenleAcik && (
+              <button
+                onClick={() => setDuzenleAcik(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                <Pencil size={14} />
+                Düzenle
+              </button>
+            )}
             {/* Durum badge (readonly) */}
             <span className={cn(
               'rounded-lg px-3 py-1.5 text-sm font-medium',
@@ -127,6 +158,57 @@ export default function SiparisDetayModal({ siparis, onKapat }: Props) {
                 )}
                 style={{ width: `${toplam > 0 ? (yikanmis / toplam) * 100 : 0}%` }}
               />
+            </div>
+          </div>
+        )}
+
+        {/* Düzenleme formu */}
+        {duzenleAcik && (
+          <div className="px-6 pt-4 shrink-0 border-b border-gray-100 pb-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Tarih</label>
+                <input
+                  type="date"
+                  value={editTarih}
+                  onChange={(e) => setEditTarih(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Teslim Tarihi</label>
+                <input
+                  type="date"
+                  value={editTeslim}
+                  onChange={(e) => setEditTeslim(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Notlar</label>
+                <input
+                  type="text"
+                  value={editNotlar}
+                  onChange={(e) => setEditNotlar(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Sipariş notu..."
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={() => setDuzenleAcik(false)}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleDuzenleKaydet}
+                disabled={kaydediyor}
+                className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {kaydediyor ? 'Kaydediliyor...' : 'Kaydet'}
+              </button>
             </div>
           </div>
         )}
