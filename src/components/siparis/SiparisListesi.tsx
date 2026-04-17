@@ -1,0 +1,98 @@
+import { Eye, Trash2 } from 'lucide-react'
+import type { Siparis, SiparisDurum } from '@/types/siparis'
+import { cn } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+
+interface Props {
+  siparisler: Siparis[]
+  yukleniyor: boolean
+  onGoruntule: (siparis: Siparis) => void
+  onSil: (siparis: Siparis) => void
+}
+
+const DURUM_STIL: Record<SiparisDurum, string> = {
+  beklemede: 'bg-gray-100 text-gray-600',
+  batchte: 'bg-blue-50 text-blue-700',
+  yikamada: 'bg-cyan-50 text-cyan-700',
+  tamamlandi: 'bg-green-50 text-green-700',
+  eksik_var: 'bg-red-50 text-red-600',
+  iptal: 'bg-red-50 text-red-600',
+}
+
+const DURUM_ETIKET: Record<SiparisDurum, string> = {
+  beklemede: 'Beklemede',
+  batchte: 'Batch\'te',
+  yikamada: 'Yıkamada',
+  tamamlandi: 'Tamamlandı',
+  eksik_var: 'Eksik Var',
+  iptal: 'İptal',
+}
+
+export default function SiparisListesi({ siparisler, yukleniyor, onGoruntule, onSil }: Props) {
+  if (yukleniyor) {
+    return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
+  }
+
+  if (siparisler.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 font-medium">
+            <th className="px-4 py-3">Sipariş No</th>
+            <th className="px-4 py-3">Müşteri</th>
+            <th className="px-4 py-3">Tarih</th>
+            <th className="px-4 py-3">Teslim</th>
+            <th className="px-4 py-3">Durum</th>
+            <th className="px-4 py-3 text-right">İşlem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {siparisler.map((s) => (
+            <tr
+              key={s.id}
+              className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
+            >
+              <td className="px-4 py-3 font-mono font-medium text-gray-800">{s.siparis_no}</td>
+              <td className="px-4 py-3 text-gray-700">
+                <div className="font-medium">{s.cari?.ad ?? '—'}</div>
+                <div className="text-xs text-gray-400">{s.cari?.kod}</div>
+              </td>
+              <td className="px-4 py-3 text-gray-600">{formatDate(s.tarih)}</td>
+              <td className="px-4 py-3 text-gray-600">
+                {s.teslim_tarihi ? formatDate(s.teslim_tarihi) : '—'}
+              </td>
+              <td className="px-4 py-3">
+                <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
+                  {DURUM_ETIKET[s.durum]}
+                </span>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => onGoruntule(s)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Görüntüle"
+                  >
+                    <Eye size={15} />
+                  </button>
+                  <button
+                    onClick={() => onSil(s)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    title="Sil"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
+        {siparisler.length} sipariş
+      </div>
+    </div>
+  )
+}
