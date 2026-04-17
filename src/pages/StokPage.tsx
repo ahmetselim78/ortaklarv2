@@ -1,12 +1,21 @@
 import { useState } from 'react'
 import { Plus, Package } from 'lucide-react'
 import { useStok } from '@/hooks/useStok'
+import { useCari } from '@/hooks/useCari'
 import StokListesi from '@/components/stok/StokListesi'
 import StokForm from '@/components/stok/StokForm'
-import type { Stok } from '@/types/stok'
+import type { Stok, StokKategori } from '@/types/stok'
+
+const SEKMELER: { key: StokKategori; label: string }[] = [
+  { key: 'cam', label: 'Cam' },
+  { key: 'cita', label: 'Çıta' },
+  { key: 'yan_malzeme', label: 'Yan Malzemeler' },
+]
 
 export default function StokPage() {
   const { stoklar, yukleniyor, hata, ekle, guncelle, sil } = useStok()
+  const { cariler } = useCari()
+  const [aktifSekme, setAktifSekme] = useState<StokKategori>('cam')
   const [formAcik, setFormAcik] = useState(false)
   const [duzenlenecek, setDuzenlenecek] = useState<Stok | null>(null)
   const [silinecek, setSilinecek] = useState<Stok | null>(null)
@@ -41,12 +50,14 @@ export default function StokPage() {
     }
   }
 
+  const aktifStokSayisi = stoklar.filter((s) => s.kategori === aktifSekme).length
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800">Stok / Ürün Kataloğu</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{stoklar.length} cam çeşidi</p>
+          <p className="text-sm text-gray-500 mt-0.5">{aktifStokSayisi} kayıt</p>
         </div>
         <button
           onClick={() => setFormAcik(true)}
@@ -55,6 +66,23 @@ export default function StokPage() {
           <Plus size={16} />
           Yeni Stok
         </button>
+      </div>
+
+      {/* Kategori sekmeleri */}
+      <div className="flex gap-1 mb-4 border-b border-gray-200">
+        {SEKMELER.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setAktifSekme(s.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              aktifSekme === s.key
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {hata && (
@@ -72,6 +100,7 @@ export default function StokPage() {
       ) : (
         <StokListesi
           stoklar={stoklar}
+          kategori={aktifSekme}
           yukleniyor={yukleniyor}
           onDuzenle={handleDuzenle}
           onSil={setSilinecek}
@@ -81,6 +110,8 @@ export default function StokPage() {
       {formAcik && (
         <StokForm
           duzenlenecek={duzenlenecek}
+          cariler={cariler}
+          defaultKategori={aktifSekme}
           onKaydet={handleKaydet}
           onKapat={handleFormKapat}
         />

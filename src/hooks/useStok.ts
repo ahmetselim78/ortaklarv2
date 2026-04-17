@@ -25,11 +25,18 @@ export function useStok() {
     setHata(null)
     const { data, error } = await supabase
       .from('stok')
-      .select('*')
+      .select('*, cari!tedarikci_id(ad)')
       .order('created_at', { ascending: false })
 
     if (error) setHata(error.message)
-    else setStoklar(data as Stok[])
+    else {
+      const mapped = (data ?? []).map((d: any) => ({
+        ...d,
+        tedarikci_ad: d.cari?.ad ?? null,
+        cari: undefined,
+      })) as Stok[]
+      setStoklar(mapped)
+    }
     setYukleniyor(false)
   }, [])
 

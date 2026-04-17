@@ -180,7 +180,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                             )}
                           >
                             <option value="">Seçiniz...</option>
-                            {stoklar.map((s) => (
+                            {stoklar.filter((s) => s.kategori === 'cam').map((s) => (
                               <option key={s.id} value={s.id}>{s.ad}</option>
                             ))}
                           </select>
