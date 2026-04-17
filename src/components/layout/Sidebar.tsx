@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Package, ClipboardList, Factory, Waves, Tag, Ruler } from 'lucide-react'
+import { LayoutDashboard, Users, Package, ClipboardList, Factory, Radio } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -8,9 +8,7 @@ const navItems = [
   { to: '/stok', label: 'Stok', icon: Package },
   { to: '/siparisler', label: 'Siparişler', icon: ClipboardList },
   { to: '/uretim', label: 'Üretim Emirleri', icon: Factory },
-  { to: '/yikama', label: 'Yıkama İstasyonu', icon: Waves },
-  { to: '/etiket', label: 'Etiket Yazıcı', icon: Tag },
-  { to: '/cita', label: 'Çıta İstasyonu', icon: Ruler },
+  { to: '/istasyonlar', label: 'Üretim İstasyonları', icon: Radio },
 ]
 
 export default function Sidebar() {

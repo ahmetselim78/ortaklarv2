@@ -96,7 +96,7 @@ export function useSiparis() {
 export async function getSiparisDetaylari(siparisId: string): Promise<SiparisDetay[]> {
   const { data, error } = await supabase
     .from('siparis_detaylari')
-    .select('*, stok(ad)')
+    .select('*, stok!stok_id(ad)')
     .eq('siparis_id', siparisId)
     .order('created_at')
 

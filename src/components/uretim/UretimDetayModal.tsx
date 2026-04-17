@@ -62,7 +62,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
 
     const { data } = await supabase
       .from('siparis_detaylari')
-      .select('*, stok(ad), siparisler(siparis_no, cari(ad))')
+      .select('*, stok!stok_id(ad), siparisler(siparis_no, cari(ad))')
       .order('cam_kodu')
 
     const filtrelenmis = (data as SiparisDetay[]).filter(
