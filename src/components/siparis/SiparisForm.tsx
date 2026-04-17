@@ -34,7 +34,7 @@ interface Props {
   onKapat: () => void
 }
 
-const BOŞ_CAM = { stok_id: '', genislik_mm: '' as unknown as number, yukseklik_mm: '' as unknown as number, adet: 1, ara_bosluk_mm: '' as unknown as number, kenar_islemi: '', notlar: '' }
+const BOŞ_CAM = { stok_id: '', genislik_mm: '' as unknown as number, yukseklik_mm: '' as unknown as number, adet: 1, ara_bosluk_mm: '' as unknown as number, cita_stok_id: '', kenar_islemi: '', notlar: '' }
 
 export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Props) {
   const [kaydediliyor, setKaydediliyor] = useState(false)

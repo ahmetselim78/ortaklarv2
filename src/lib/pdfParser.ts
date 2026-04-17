@@ -335,7 +335,7 @@ export async function parsePDF(
 
 /* ===== Eşleştirme Yardımcıları ===== */
 
-/** Basit benzerlik skoru (case-insensitive, normalize) */
+/** Normalize: küçük harf, Türkçe karakter düzleştirme, boşlukları koru */
 function normalize(s: string): string {
   return s
     .toLowerCase()
@@ -345,21 +345,25 @@ function normalize(s: string): string {
     .replace(/[çÇ]/g, 'c')
     .replace(/[şŞ]/g, 's')
     .replace(/[ğĞ]/g, 'g')
-    .replace(/[^a-z0-9]/g, '')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
+/** Kelime bazlı Jaccard benzerlik skoru */
 export function benzerlikSkoru(a: string, b: string): number {
   const na = normalize(a)
   const nb = normalize(b)
   if (na === nb) return 1
   if (na.includes(nb) || nb.includes(na)) return 0.8
 
-  // Basit karakter kesişimi
-  const setA = new Set(na.split(''))
-  const setB = new Set(nb.split(''))
+  // Word-level Jaccard similarity
+  const wordsA = new Set(na.split(' ').filter(Boolean))
+  const wordsB = new Set(nb.split(' ').filter(Boolean))
   let ortak = 0
-  for (const c of setA) if (setB.has(c)) ortak++
-  return ortak / Math.max(setA.size, setB.size)
+  for (const w of wordsA) if (wordsB.has(w)) ortak++
+  const birlesim = new Set([...wordsA, ...wordsB]).size
+  return birlesim > 0 ? ortak / birlesim : 0
 }
 
 /** Cari listesinden en yakın eşleşmeyi bul */
@@ -404,4 +408,23 @@ export function stokEslestir(
   }
 
   return enIyi
+}
+
+/** Çıta eşleştirme — ara boşluk mm değerine göre çıta stok bul */
+export function citaEslestir(
+  mm: number,
+  citaStoklar: { id: string; ad: string }[]
+): { id: string; ad: string; skor: number } | null {
+  if (citaStoklar.length === 0) return null
+
+  // Önce ad'ında "Xmm" geçen stok ara (kesin eşleşme)
+  for (const s of citaStoklar) {
+    const normalAd = normalize(s.ad)
+    if (normalAd.includes(`${mm}mm`) || normalAd.includes(`${mm} mm`)) {
+      return { ...s, skor: 1 }
+    }
+  }
+
+  // Fallback: genel benzerlik
+  return stokEslestir(`${mm}mm çıta`, citaStoklar)
 }

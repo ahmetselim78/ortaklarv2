@@ -22,11 +22,13 @@ export interface SiparisDetay {
   yukseklik_mm: number
   adet: number
   ara_bosluk_mm: number | null
+  cita_stok_id: string | null
   kenar_islemi: string | null
   notlar: string | null
   uretim_durumu: UretimDurumu
   created_at: string
   stok?: { ad: string } | null
+  cita_stok?: { ad: string } | null
 }
 
 export interface CamFormSatiri {
@@ -35,6 +37,7 @@ export interface CamFormSatiri {
   yukseklik_mm: number | string
   adet: number | string
   ara_bosluk_mm: number | string
+  cita_stok_id: string
   kenar_islemi: string
   notlar: string
 }

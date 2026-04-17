@@ -62,6 +62,7 @@ export function useSiparis() {
       yukseklik_mm: Number(cam.yukseklik_mm),
       adet: Number(cam.adet),
       ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
+      cita_stok_id: cam.cita_stok_id || null,
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,
     }))

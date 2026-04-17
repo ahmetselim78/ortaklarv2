@@ -131,7 +131,7 @@ export default function SiparisPage() {
       {/* PDF Import */}
       {pdfModalAcik && (
         <PDFImportModal
-          cariler={cariler}
+          cariler={cariler.filter((c) => c.tipi === 'musteri')}
           stoklar={stoklar}
           onIceAktar={async (form) => { await ekle(form); yenile(); return '' }}
           onKapat={() => { setPdfModalAcik(false); yenile() }}

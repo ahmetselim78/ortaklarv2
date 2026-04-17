@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react'
-import { parsePDF, cariEslestir, stokEslestir, extractAraBosluk } from '@/lib/pdfParser'
+import { parsePDF, cariEslestir, stokEslestir, citaEslestir, extractAraBosluk } from '@/lib/pdfParser'
 import type { PDFParseResult, PDFCamSatir } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
 import type { CamFormSatiri } from '@/types/siparis'
@@ -37,6 +37,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
   const [secilenStokId, setSecilenStokId] = useState<string>('')
   const [stokSkor, setStokSkor] = useState<number>(0)
   const [mukerrer, setMukerrer] = useState(false)
+
+  // Çıta eşleştirme: mm → stok_id
+  const [citaSecimler, setCitaSecimler] = useState<Record<number, string>>({})
 
   // Import
   const [iceAktariliyor, setIceAktariliyor] = useState(false)
@@ -95,14 +98,27 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         }
       }
 
-      // Stok eşleştirme (ilk satırın açıklaması referans)
+      // Stok eşleştirme — sadece cam kategorisi
+      const camStoklar = stoklar.filter((s) => s.kategori === 'cam')
       if (result.satirlar.length > 0) {
-        const stokMatch = stokEslestir(result.satirlar[0].aciklama, stoklar)
+        const stokMatch = stokEslestir(result.satirlar[0].aciklama, camStoklar)
         if (stokMatch) {
           setSecilenStokId(stokMatch.id)
           setStokSkor(stokMatch.skor)
         }
       }
+
+      // Çıta eşleştirme — her unique ara_bosluk_mm için çıta stok bul
+      const citaStoklar = stoklar.filter((s) => s.kategori === 'cita')
+      const uniqueMmler = [...new Set(result.satirlar.map((s) => s.ara_bosluk_mm).filter((v): v is number => v != null))]
+      const yeniCitaSecimler: Record<number, string> = {}
+      for (const mm of uniqueMmler) {
+        const match = citaEslestir(mm, citaStoklar)
+        if (match && match.skor >= 0.5) {
+          yeniCitaSecimler[mm] = match.id
+        }
+      }
+      setCitaSecimler(yeniCitaSecimler)
 
       setAdim('eslestirme')
     } catch (err: any) {
@@ -140,6 +156,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         yukseklik_mm: s.yukseklik_mm,
         adet: s.adet,
         ara_bosluk_mm: s.ara_bosluk_mm ?? '',
+        cita_stok_id: (s.ara_bosluk_mm && citaSecimler[s.ara_bosluk_mm]) || '',
         kenar_islemi: '',
         notlar: s.pozNo ? `Poz: ${s.pozNo}` : '',
       }))
@@ -320,7 +337,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 </select>
               </div>
 
-              {/* Stok Eşleştirme */}
+              {/* Stok Eşleştirme — sadece cam */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Cam Tipi (Stok) Eşleştirme
@@ -335,21 +352,58 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 </label>
                 <div className="text-xs text-gray-400 mb-1.5">
                   PDF'deki açıklama: <span className="font-mono text-gray-600">{parseResult.satirlar[0]?.aciklama ?? '—'}</span>
-                  {parseResult.satirlar[0]?.ara_bosluk_mm && (
-                    <span className="ml-2">→ Çıta: <strong>{parseResult.satirlar[0].ara_bosluk_mm}mm</strong></span>
-                  )}
                 </div>
                 <select
                   value={secilenStokId}
                   onChange={(e) => setSecilenStokId(e.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">— Stok Seçin (opsiyonel) —</option>
-                  {stoklar.map((s) => (
+                  <option value="">— Cam Stok Seçin (opsiyonel) —</option>
+                  {stoklar.filter((s) => s.kategori === 'cam').map((s) => (
                     <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>
                   ))}
                 </select>
               </div>
+
+              {/* Çıta Eşleştirme — her unique mm için */}
+              {(() => {
+                const uniqueMmler = [...new Set(parseResult.satirlar.map((s) => s.ara_bosluk_mm).filter((v): v is number => v != null))].sort((a, b) => a - b)
+                if (uniqueMmler.length === 0) return null
+                const citaStoklar = stoklar.filter((s) => s.kategori === 'cita')
+                return (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Çıta Eşleştirme
+                      <span className="ml-2 text-xs text-gray-400 font-normal">
+                        {uniqueMmler.length} farklı çıta boyutu tespit edildi
+                      </span>
+                    </label>
+                    <div className="space-y-2">
+                      {uniqueMmler.map((mm) => {
+                        const satirSayisi = parseResult.satirlar.filter((s) => s.ara_bosluk_mm === mm).length
+                        return (
+                          <div key={mm} className="flex items-center gap-3">
+                            <div className="shrink-0 w-20 text-sm font-mono font-medium text-cyan-700 bg-cyan-50 px-2 py-1.5 rounded text-center">
+                              {mm}mm
+                            </div>
+                            <select
+                              value={citaSecimler[mm] ?? ''}
+                              onChange={(e) => setCitaSecimler((prev) => ({ ...prev, [mm]: e.target.value }))}
+                              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">— Çıta Stok Seçin —</option>
+                              {citaStoklar.map((s) => (
+                                <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>
+                              ))}
+                            </select>
+                            <span className="shrink-0 text-xs text-gray-400">{satirSayisi} satır</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
 
@@ -375,6 +429,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                         <th className="px-3 py-2">Yükseklik</th>
                         <th className="px-3 py-2">Adet</th>
                         <th className="px-3 py-2">Çıta (mm)</th>
+                        <th className="px-3 py-2">Çıta Stok</th>
                         <th className="px-3 py-2">Poz No</th>
                       </tr>
                     </thead>
@@ -389,6 +444,11 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                             {s.ara_bosluk_mm ? (
                               <span className="text-cyan-700 font-medium">{s.ara_bosluk_mm}</span>
                             ) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            {s.ara_bosluk_mm && citaSecimler[s.ara_bosluk_mm]
+                              ? stoklar.find((st) => st.id === citaSecimler[s.ara_bosluk_mm!])?.ad ?? '—'
+                              : '—'}
                           </td>
                           <td className="px-3 py-2 text-gray-500 text-xs">{s.pozNo || '—'}</td>
                         </tr>
