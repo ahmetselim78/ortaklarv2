@@ -23,11 +23,38 @@ export function useUretim() {
     setHata(null)
     const { data, error } = await supabase
       .from('uretim_emirleri')
-      .select('*')
+      .select(`
+        *,
+        uretim_emri_detaylari(
+          siparis_detaylari(
+            siparisler(id, siparis_no, cari(ad))
+          )
+        )
+      `)
       .order('olusturulma_tarihi', { ascending: false })
 
-    if (error) setHata(error.message)
-    else setEmirler(data as UretimEmri[])
+    if (error) {
+      setHata(error.message)
+    } else {
+      const enriched = (data as any[]).map((emir) => {
+        const detaylar: any[] = emir.uretim_emri_detaylari ?? []
+        const cam_sayisi = detaylar.length
+        const siparisMap = new Map<string, { id: string; siparis_no: string; musteri_ad: string }>()
+        for (const d of detaylar) {
+          const sip = d.siparis_detaylari?.siparisler
+          if (sip && !siparisMap.has(sip.id)) {
+            siparisMap.set(sip.id, {
+              id: sip.id,
+              siparis_no: sip.siparis_no,
+              musteri_ad: sip.cari?.ad ?? '—',
+            })
+          }
+        }
+        const { uretim_emri_detaylari: _, ...rest } = emir
+        return { ...rest, cam_sayisi, siparis_listesi: Array.from(siparisMap.values()) } as UretimEmri
+      })
+      setEmirler(enriched)
+    }
     setYukleniyor(false)
   }, [])
 

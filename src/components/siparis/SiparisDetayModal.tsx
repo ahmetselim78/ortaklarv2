@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { X, Pencil } from 'lucide-react'
+import { X, Pencil, Wrench } from 'lucide-react'
 import type { Siparis, SiparisDetay, SiparisDurum, UretimDurumu } from '@/types/siparis'
 import { getSiparisDetaylari } from '@/hooks/useSiparis'
 import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
+import { SORUN_ETIKETLERI } from '@/types/tamir'
 
 interface Props {
   siparis: Siparis
@@ -45,8 +46,43 @@ const URETIM_DURUM_ETIKET: Record<UretimDurumu, string> = {
   tamamlandi: 'Tamamlandı',
 }
 
+/* ========== Tamir badge yardımcısı ========== */
+
+const TAMIR_DURUM_STIL: Record<string, string> = {
+  bekliyor:       'bg-red-50 text-red-700 border border-red-200',
+  tamir_ediliyor: 'bg-amber-50 text-amber-700 border border-amber-200',
+  tamamlandi:     'bg-gray-100 text-gray-500 border border-gray-200',
+  hurda:          'bg-gray-100 text-gray-400 border border-gray-200 line-through',
+}
+
+const TAMIR_DURUM_ETIKET: Record<string, string> = {
+  bekliyor:       'Tamirde',
+  tamir_ediliyor: 'Tamir Ediliyor',
+  tamamlandi:     'Tamir Tamamlandı',
+  hurda:          'Hurda',
+}
+
+function TamirBadge({ tamir }: { tamir: { durum: string; sorun_tipi: string } }) {
+  const sorunEtiket = SORUN_ETIKETLERI[tamir.sorun_tipi as keyof typeof SORUN_ETIKETLERI] ?? tamir.sorun_tipi
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', TAMIR_DURUM_STIL[tamir.durum] ?? 'bg-gray-100 text-gray-500')}>
+        <Wrench size={9} />
+        {TAMIR_DURUM_ETIKET[tamir.durum] ?? tamir.durum}
+      </span>
+      <span className="text-[10px] text-gray-400 pl-1">{sorunEtiket}</span>
+    </div>
+  )
+}
+
+interface TamirBilgi {
+  durum: string
+  sorun_tipi: string
+}
+
 interface DetayWithBatch extends SiparisDetay {
   batch_no?: string | null
+  aktif_tamir?: TamirBilgi | null
 }
 
 export default function SiparisDetayModal({ siparis, onKapat, onGuncelle }: Props) {
@@ -62,9 +98,10 @@ export default function SiparisDetayModal({ siparis, onKapat, onGuncelle }: Prop
     const yukle = async () => {
       const camlar = await getSiparisDetaylari(siparis.id)
 
-      // Batch bilgisini getir
       if (camlar.length > 0) {
         const camIds = camlar.map(c => c.id)
+
+        // Batch bilgisi
         const { data: batchData } = await supabase
           .from('uretim_emri_detaylari')
           .select('siparis_detay_id, uretim_emirleri(batch_no)')
@@ -75,9 +112,25 @@ export default function SiparisDetayModal({ siparis, onKapat, onGuncelle }: Prop
           batchMap.set(b.siparis_detay_id, (b as any).uretim_emirleri?.batch_no ?? '')
         }
 
+        // Tamir bilgisi — aktif veya geçmiş kayıtlar
+        const { data: tamirData } = await supabase
+          .from('tamir_kayitlari')
+          .select('siparis_detay_id, durum, sorun_tipi, created_at')
+          .in('siparis_detay_id', camIds)
+          .order('created_at', { ascending: false })
+
+        // Her cam için en son tamir kaydını al
+        const tamirMap = new Map<string, TamirBilgi>()
+        for (const t of tamirData ?? []) {
+          if (!tamirMap.has(t.siparis_detay_id)) {
+            tamirMap.set(t.siparis_detay_id, { durum: t.durum, sorun_tipi: t.sorun_tipi })
+          }
+        }
+
         setDetaylar(camlar.map(c => ({
           ...c,
           batch_no: batchMap.get(c.id) || null,
+          aktif_tamir: tamirMap.get(c.id) ?? null,
         })))
       } else {
         setDetaylar([])
@@ -230,6 +283,7 @@ export default function SiparisDetayModal({ siparis, onKapat, onGuncelle }: Prop
                     <th className="px-4 py-2.5">Adet</th>
                     <th className="px-4 py-2.5">Batch</th>
                     <th className="px-4 py-2.5">Yıkama</th>
+                    <th className="px-4 py-2.5">Tamir</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -261,6 +315,13 @@ export default function SiparisDetayModal({ siparis, onKapat, onGuncelle }: Prop
                         )}>
                           {URETIM_DURUM_ETIKET[d.uretim_durumu]}
                         </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {d.aktif_tamir ? (
+                          <TamirBadge tamir={d.aktif_tamir} />
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

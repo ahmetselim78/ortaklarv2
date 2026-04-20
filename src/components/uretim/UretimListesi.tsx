@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { Eye, Trash2, Download } from 'lucide-react'
 import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,8 @@ const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
 }
 
 export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil }: Props) {
+  const navigate = useNavigate()
+
   if (yukleniyor) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
   }
@@ -44,7 +47,8 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil 
             <th className="px-4 py-3">Oluşturma Tarihi</th>
             <th className="px-4 py-3">Durum</th>
             <th className="px-4 py-3">Export Tarihi</th>
-            <th className="px-4 py-3">Notlar</th>
+            <th className="px-4 py-3">Cam Adedi</th>
+            <th className="px-4 py-3">Siparişler</th>
             <th className="px-4 py-3 text-right">İşlem</th>
           </tr>
         </thead>
@@ -69,7 +73,27 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil 
                   </span>
                 ) : '—'}
               </td>
-              <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{emir.notlar ?? '—'}</td>
+              <td className="px-4 py-3">
+                {emir.cam_sayisi != null ? (
+                  <span className="text-sm font-semibold text-gray-700">{emir.cam_sayisi}</span>
+                ) : '—'}
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap gap-1">
+                  {(emir.siparis_listesi ?? []).map((sip) => (
+                    <button
+                      key={sip.id}
+                      onClick={() => navigate('/siparisler', { state: { openSiparisId: sip.id } })}
+                      className="group flex flex-col items-start px-2 py-1 rounded-lg bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 transition-colors text-left"
+                      title={`${sip.siparis_no} — ${sip.musteri_ad}`}
+                    >
+                      <span className="font-mono text-xs font-semibold text-gray-700 group-hover:text-blue-700">{sip.siparis_no}</span>
+                      <span className="text-xs text-gray-400 group-hover:text-blue-500 leading-tight">{sip.musteri_ad}</span>
+                    </button>
+                  ))}
+                  {(emir.siparis_listesi ?? []).length === 0 && <span className="text-gray-400">—</span>}
+                </div>
+              </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
                   <button

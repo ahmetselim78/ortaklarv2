@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, Package, ClipboardList, Factory, Radio } from 'lucide-react'
+import { LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -9,6 +9,10 @@ const navItems = [
   { to: '/siparisler', label: 'Siparişler', icon: ClipboardList },
   { to: '/uretim', label: 'Üretim Emirleri', icon: Factory },
   { to: '/istasyonlar', label: 'Üretim İstasyonları', icon: Radio },
+]
+
+const altNavItems = [
+  { to: '/ayarlar', label: 'Ayarlar', icon: Settings },
 ]
 
 export default function Sidebar() {
@@ -37,6 +41,25 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+      <div className="px-3 pb-4 border-t border-gray-700 pt-3 space-y-1">
+        {altNavItems.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              )
+            }
+          >
+            <Icon size={18} />
+            {label}
+          </NavLink>
+        ))}
+      </div>
     </aside>
   )
 }

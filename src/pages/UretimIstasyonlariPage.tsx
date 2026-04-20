@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, LayoutGrid, Monitor, Info, Keyboard } from 'lucide-react'
+import { ClipboardList, LayoutGrid, Monitor, Info, Keyboard, Wrench } from 'lucide-react'
 
 const stations = [
   {
@@ -26,6 +26,14 @@ const stations = [
     sub: 'Macun Robotu',
     desc: 'Sadece ölçü bilgisini dev ekranda gösterir.',
     icon: Monitor,
+  },
+  {
+    key: 4,
+    to: '/istasyonlar/tamir',
+    label: 'Tamir İstasyonu',
+    sub: 'Kalite Kontrol',
+    desc: 'Kırık ve sorunlu camları takip et, tamire al.',
+    icon: Wrench,
   },
 ]
 
@@ -53,7 +61,7 @@ export default function UretimIstasyonlariPage() {
       </div>
 
       {/* Kartlar */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl w-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl w-full">
         {stations.map((s) => {
           const Icon = s.icon
           return (
@@ -96,8 +104,10 @@ export default function UretimIstasyonlariPage() {
               <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">1</kbd>
               {' '},{' '}
               <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">2</kbd>
-              {' '}veya{' '}
+              {' '},{' '}
               <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">3</kbd>
+              {' '}veya{' '}
+              <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">4</kbd>
               {' '}tuşlarını kullanabilirsiniz.
             </p>
           </div>

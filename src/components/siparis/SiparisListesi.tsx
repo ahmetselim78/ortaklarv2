@@ -1,4 +1,4 @@
-import { Eye, Trash2 } from 'lucide-react'
+import { Eye, Trash2, Wrench } from 'lucide-react'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
@@ -6,6 +6,7 @@ import { formatDate } from '@/lib/utils'
 interface Props {
   siparisler: Siparis[]
   yukleniyor: boolean
+  tamirdeSiparisIds?: Set<string>
   onGoruntule: (siparis: Siparis) => void
   onSil: (siparis: Siparis) => void
 }
@@ -28,7 +29,7 @@ const DURUM_ETIKET: Record<SiparisDurum, string> = {
   iptal: 'İptal',
 }
 
-export default function SiparisListesi({ siparisler, yukleniyor, onGoruntule, onSil }: Props) {
+export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisIds, onGoruntule, onSil }: Props) {
   if (yukleniyor) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
   }
@@ -64,9 +65,17 @@ export default function SiparisListesi({ siparisler, yukleniyor, onGoruntule, on
                 {s.teslim_tarihi ? formatDate(s.teslim_tarihi) : '—'}
               </td>
               <td className="px-4 py-3">
-                <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
-                  {DURUM_ETIKET[s.durum]}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
+                    {DURUM_ETIKET[s.durum]}
+                  </span>
+                  {tamirdeSiparisIds?.has(s.id) && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200" title="Tamirde cam var">
+                      <Wrench size={10} />
+                      Tamirde
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">

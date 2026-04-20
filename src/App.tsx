@@ -9,6 +9,8 @@ import UretimIstasyonlariPage from '@/pages/UretimIstasyonlariPage'
 import PozGirisPage from '@/pages/PozGirisPage'
 import KumandaPaneliPage from '@/pages/KumandaPaneliPage'
 import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
+import TamirIstasyonuPage from '@/pages/TamirIstasyonuPage'
+import AyarlarPage from '@/pages/AyarlarPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 
 export default function App() {
@@ -19,6 +21,7 @@ export default function App() {
         <Route path="/istasyonlar/poz-giris" element={<PozGirisPage />} />
         <Route path="/istasyonlar/kumanda" element={<KumandaPaneliPage />} />
         <Route path="/istasyonlar/gosterge" element={<GostergeEkraniPage />} />
+        <Route path="/istasyonlar/tamir" element={<TamirIstasyonuPage />} />
 
         {/* Ana uygulama -- sidebar'li layout */}
         <Route element={<AppLayout />}>
@@ -28,6 +31,7 @@ export default function App() {
           <Route path="/siparisler" element={<SiparisPage />} />
           <Route path="/uretim" element={<UretimPage />} />
           <Route path="/istasyonlar" element={<UretimIstasyonlariPage />} />
+          <Route path="/ayarlar" element={<AyarlarPage />} />
         </Route>
 
         {/* 404 */}

@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
-import { Plus, ClipboardList, FileUp } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
+import { Plus, ClipboardList, FileUp, Wrench } from 'lucide-react'
 import Pagination from '@/components/ui/Pagination'
 import { useSiparis } from '@/hooks/useSiparis'
 import { useCari } from '@/hooks/useCari'
 import { useStok } from '@/hooks/useStok'
+import { supabase } from '@/lib/supabase'
 import SiparisListesi from '@/components/siparis/SiparisListesi'
 import SiparisForm from '@/components/siparis/SiparisForm'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
@@ -11,33 +13,82 @@ import PDFImportModal from '@/components/siparis/PDFImportModal'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 
-const DURUM_FILTRELER: { deger: 'hepsi' | SiparisDurum; etiket: string }[] = [
-  { deger: 'hepsi', etiket: 'Hepsi' },
-  { deger: 'beklemede', etiket: 'Beklemede' },
-  { deger: 'batchte', etiket: 'Batch\'te' },
-  { deger: 'yikamada', etiket: 'Yıkamada' },
-  { deger: 'tamamlandi', etiket: 'Tamamlandı' },
-  { deger: 'eksik_var', etiket: 'Eksik Var' },
-  { deger: 'iptal', etiket: 'İptal' },
+type DurumFiltre = 'hepsi' | 'tamirde' | SiparisDurum
+
+const DURUM_FILTRELER: { deger: DurumFiltre; etiket: string }[] = [
+  { deger: 'hepsi',       etiket: 'Hepsi' },
+  { deger: 'beklemede',   etiket: 'Beklemede' },
+  { deger: 'batchte',     etiket: 'Batch\'te' },
+  { deger: 'yikamada',    etiket: 'Yıkamada' },
+  { deger: 'tamamlandi',  etiket: 'Tamamlandı' },
+  { deger: 'eksik_var',   etiket: 'Eksik Var' },
+  { deger: 'iptal',       etiket: 'İptal' },
+  { deger: 'tamirde',     etiket: 'Tamirde' },
 ]
 
 export default function SiparisPage() {
   const { siparisler, yukleniyor, hata, ekle, guncelle, sil, yenile } = useSiparis()
   const { cariler } = useCari()
   const { stoklar } = useStok()
+  const location = useLocation()
 
   const [formAcik, setFormAcik] = useState(false)
   const [pdfModalAcik, setPdfModalAcik] = useState(false)
   const [gorunenSiparis, setGorunenSiparis] = useState<Siparis | null>(null)
   const [silinecek, setSilinecek] = useState<Siparis | null>(null)
   const [siliniyor, setSiliniyor] = useState(false)
-  const [durumFiltre, setDurumFiltre] = useState<'hepsi' | SiparisDurum>('hepsi')
+  const [durumFiltre, setDurumFiltre] = useState<DurumFiltre>('hepsi')
   const [sayfa, setSayfa] = useState(1)
   const SAYFA_BOYUTU = 20
 
-  const filtrelenmis = durumFiltre === 'hepsi'
-    ? siparisler
-    : siparisler.filter((s) => s.durum === durumFiltre)
+  // Üretim emirleri panelinden gelen sipariş açma isteği — ref ile tek seferlik
+  const pendingOpenId = useRef<string | null>((location.state as any)?.openSiparisId ?? null)
+
+  useEffect(() => {
+    if (pendingOpenId.current && siparisler.length > 0) {
+      const found = siparisler.find((s) => s.id === pendingOpenId.current)
+      if (found) {
+        setGorunenSiparis(found)
+        pendingOpenId.current = null
+      }
+    }
+  }, [siparisler])
+
+  // Aktif tamir kaydı olan sipariş id'leri
+  const [tamirdeSiparisIds, setTamirdeSiparisIds] = useState<Set<string>>(new Set())
+
+  const tamirBilgisiGetir = useCallback(async () => {
+    const { data } = await supabase
+      .from('tamir_kayitlari')
+      .select('siparis_detay_id, siparis_detaylari(siparis_id)')
+      .in('durum', ['bekliyor', 'tamir_ediliyor'])
+      .not('siparis_detay_id', 'is', null)
+
+    const ids = new Set<string>()
+    for (const row of data ?? []) {
+      const sipId = (row as any).siparis_detaylari?.siparis_id
+      if (sipId) ids.add(sipId)
+    }
+    setTamirdeSiparisIds(ids)
+  }, [])
+
+  useEffect(() => { tamirBilgisiGetir() }, [tamirBilgisiGetir])
+
+  // Tamir değişimlerini realtime izle
+  useEffect(() => {
+    const ch = supabase
+      .channel('tamir-siparis-page')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tamir_kayitlari' },
+        () => tamirBilgisiGetir())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tamirBilgisiGetir])
+
+  const filtrelenmis = (() => {
+    if (durumFiltre === 'hepsi') return siparisler
+    if (durumFiltre === 'tamirde') return siparisler.filter(s => tamirdeSiparisIds.has(s.id))
+    return siparisler.filter(s => s.durum === durumFiltre)
+  })()
 
   const sayfali = filtrelenmis.slice((sayfa - 1) * SAYFA_BOYUTU, sayfa * SAYFA_BOYUTU)
 
@@ -82,20 +133,37 @@ export default function SiparisPage() {
 
       {/* Durum Filtresi */}
       <div className="flex gap-2 mb-5 flex-wrap">
-        {DURUM_FILTRELER.map(({ deger, etiket }) => (
-          <button
-            key={deger}
-            onClick={() => setDurumFiltre(deger)}
-            className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
-              durumFiltre === deger
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            )}
-          >
-            {etiket}
-          </button>
-        ))}
+        {DURUM_FILTRELER.map(({ deger, etiket }) => {
+          const isTamir = deger === 'tamirde'
+          const count = isTamir ? tamirdeSiparisIds.size : null
+          return (
+            <button
+              key={deger}
+              onClick={() => setDurumFiltre(deger)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
+                durumFiltre === deger
+                  ? isTamir
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-blue-600 text-white border-blue-600'
+                  : isTamir && count && count > 0
+                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              )}
+            >
+              {isTamir && <Wrench size={11} />}
+              {etiket}
+              {isTamir && count !== null && count > 0 && (
+                <span className={cn(
+                  'px-1.5 py-0.5 rounded-full text-xs font-bold leading-none',
+                  durumFiltre === 'tamirde' ? 'bg-white/30 text-white' : 'bg-red-200 text-red-700'
+                )}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {hata && (
@@ -113,6 +181,7 @@ export default function SiparisPage() {
           <SiparisListesi
             siparisler={sayfali}
             yukleniyor={yukleniyor}
+            tamirdeSiparisIds={tamirdeSiparisIds}
             onGoruntule={setGorunenSiparis}
             onSil={setSilinecek}
           />

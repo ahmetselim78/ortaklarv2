@@ -1,5 +1,11 @@
 export type UretimEmriDurum = 'hazirlaniyor' | 'onaylandi' | 'export_edildi' | 'yikamada' | 'tamamlandi' | 'eksik_var'
 
+export interface UretimEmriSiparisOzet {
+  id: string
+  siparis_no: string
+  musteri_ad: string
+}
+
 export interface UretimEmri {
   id: string
   batch_no: string
@@ -7,6 +13,8 @@ export interface UretimEmri {
   notlar: string | null
   olusturulma_tarihi: string
   export_tarihi: string | null
+  cam_sayisi?: number
+  siparis_listesi?: UretimEmriSiparisOzet[]
 }
 
 export interface UretimEmriDetay {

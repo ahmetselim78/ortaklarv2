@@ -4,9 +4,10 @@ import { supabase } from '@/lib/supabase'
 import { beep } from '@/lib/audio'
 import {
   Wifi, WifiOff, ArrowLeft, Package, CheckCircle2,
-  AlertTriangle, XCircle, Loader2,
+  AlertTriangle, XCircle, Loader2, Wrench,
 } from 'lucide-react'
 import type { UretimEmriDurum } from '@/types/uretim'
+import TamireGonderModal from '@/components/tamir/TamireGonderModal'
 
 /* ========== Tipler ========== */
 
@@ -33,6 +34,7 @@ interface BatchCam {
   musteri: string
   nihai_musteri: string  // siparisler.notlar'dan çıkarılan nihai kullanıcı
   siparis_no: string
+  sira_no: number | null
 }
 
 interface GecmisSatir {
@@ -99,6 +101,7 @@ export default function PozGirisPage() {
   const [sonTarananCam, setSonTarananCam] = useState<BatchCam | null>(null)
   const [gecmis, setGecmis] = useState<GecmisSatir[]>([])
   const [aktifMusteri, setAktifMusteri] = useState<string | null>(null)
+  const [tamirCam, setTamirCam] = useState<BatchCam | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -179,7 +182,7 @@ export default function PozGirisPage() {
     const { data } = await supabase
       .from('uretim_emri_detaylari')
       .select(`
-        id, siparis_detay_id,
+        id, siparis_detay_id, sira_no,
         siparis_detaylari (
           siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, uretim_durumu,
           stok!stok_id ( ad ),
@@ -198,6 +201,7 @@ export default function PozGirisPage() {
       yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
       adet: d.siparis_detaylari.adet,
       ara_bosluk_mm: d.siparis_detaylari.ara_bosluk_mm,
+      sira_no: d.sira_no ?? null,
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
@@ -625,6 +629,13 @@ export default function PozGirisPage() {
                   <p className="font-mono text-3xl font-black text-green-300 mb-1">{sonTarananCam.cam_kodu}</p>
                   <p className="text-green-300/80 text-base font-medium">{sonTarananCam.musteri}</p>
                   <p className="text-green-400/60 text-sm mt-0.5">{sonTarananCam.genislik_mm} × {sonTarananCam.yukseklik_mm} mm</p>
+                  <button
+                    onClick={() => setTamirCam(sonTarananCam)}
+                    className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-700 rounded-xl text-red-300 text-sm font-semibold transition-colors"
+                  >
+                    <Wrench size={14} />
+                    Tamire Gönder
+                  </button>
                 </>
               )}
               {durum === 'tekrar' && (
@@ -747,6 +758,28 @@ export default function PozGirisPage() {
         </div>
 
       </div>
+
+      {/* Tamir Modal */}
+      {tamirCam && seciliBatch && (
+        <TamireGonderModal
+          cam={{
+            cam_kodu: tamirCam.cam_kodu,
+            siparis_detay_id: tamirCam.siparis_detay_id,
+            uretim_emri_id: seciliBatch.id,
+            batch_no: seciliBatch.batch_no,
+            sira_no: tamirCam.sira_no,
+            musteri: tamirCam.musteri,
+            nihai_musteri: tamirCam.nihai_musteri,
+            siparis_no: tamirCam.siparis_no,
+            genislik_mm: tamirCam.genislik_mm,
+            yukseklik_mm: tamirCam.yukseklik_mm,
+            stok_ad: tamirCam.stok_ad,
+          }}
+          kaynak="poz_giris"
+          onClose={() => { setTamirCam(null); setTimeout(() => inputRef.current?.focus(), 100) }}
+          onSuccess={() => { setTamirCam(null); setTimeout(() => inputRef.current?.focus(), 100) }}
+        />
+      )}
     </div>
   )
 }

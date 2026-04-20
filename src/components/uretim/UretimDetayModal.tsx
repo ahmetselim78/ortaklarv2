@@ -1,14 +1,10 @@
-import { useEffect, useState } from 'react'
-import { X, Plus, Trash2, Download } from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
+import { X, Download, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
-import type { SiparisDetay } from '@/types/siparis'
 import {
   getBatchDetaylari,
-  batcheCamEkle,
-  batchtenCamCikar,
 } from '@/hooks/useUretim'
 import { exportDetaylariCSV, exportTarihiGuncelle } from '@/services/exportService'
-import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
@@ -44,12 +40,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   const [onayDialogAcik, setOnayDialogAcik] = useState(false)
   const [exportDialogAcik, setExportDialogAcik] = useState(false)
   const [onayYapiliyor, setOnayYapiliyor] = useState(false)
-
-  // Sipariş detaylarından cam ekleme paneli
-  const [camPaneliAcik, setCamPaneliAcik] = useState(false)
-  const [eklenebilirCamlar, setEklenebilirCamlar] = useState<SiparisDetay[]>([])
-  const [camArama, setCamArama] = useState('')
-  const [ekleniyor, setEkleniyor] = useState<string | null>(null)
+  const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
 
   const detaylariGetir = async () => {
     setYukleniyor(true)
@@ -60,43 +51,6 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
 
   useEffect(() => { detaylariGetir() }, [emir.id])
 
-  // Batch'e henüz eklenmemiş, onaylanmış kamları getir
-  const eklenebilirGetir = async () => {
-    const ekliIds = detaylar.map((d) => d.siparis_detay_id)
-
-    const { data } = await supabase
-      .from('siparis_detaylari')
-      .select('*, stok!stok_id(ad), siparisler(siparis_no, cari(ad))')
-      .order('cam_kodu')
-
-    const filtrelenmis = (data as SiparisDetay[]).filter(
-      (c) => !ekliIds.includes(c.id)
-    )
-    setEklenebilirCamlar(filtrelenmis)
-  }
-
-  const handlePaneliAc = async () => {
-    await eklenebilirGetir()
-    setCamPaneliAcik(true)
-  }
-
-  const handleCamEkle = async (siparisBatchId: string) => {
-    setEkleniyor(siparisBatchId)
-    try {
-      await batcheCamEkle(emir.id, siparisBatchId)
-      await detaylariGetir()
-      await eklenebilirGetir()
-      onGuncellendi()
-    } finally {
-      setEkleniyor(null)
-    }
-  }
-
-  const handleCamCikar = async (uretimDetayId: string) => {
-    await batchtenCamCikar(uretimDetayId)
-    await detaylariGetir()
-    onGuncellendi()
-  }
 
   const handleExport = async () => {
     setExportYapiliyor(true)
@@ -109,19 +63,59 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
     }
   }
 
-  const aramaFiltresi = eklenebilirCamlar.filter((c) => {
-    const q = camArama.toLowerCase()
-    return (
-      c.cam_kodu.toLowerCase().includes(q) ||
-      (c as any).siparisler?.siparis_no?.toLowerCase().includes(q) ||
-      (c as any).siparisler?.cari?.ad?.toLowerCase().includes(q) ||
-      (c as any).stok?.ad?.toLowerCase().includes(q)
-    )
-  })
+  // Detayları müşteri adı + sipariş no'ya göre grupla
+  type Grup = { musteriAd: string; siparisNo: string; renkIndex: number; satirlar: UretimEmriDetay[] }
+  const RENK_SINIFI = [
+    { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
+    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700' },
+    { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700' },
+    { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700' },
+    { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', badge: 'bg-rose-100 text-rose-700' },
+    { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', badge: 'bg-cyan-100 text-cyan-700' },
+  ]
+
+  const { gruplar, musteriRenk } = useMemo(() => {
+    const gruplar: Grup[] = []
+    const musteriRenk: Record<string, number> = {}
+    let renkSayac = 0
+    for (const d of detaylar) {
+      const musteriAd = d.siparis_detaylari?.siparisler?.cari?.ad ?? '—'
+      const siparisNo = d.siparis_detaylari?.siparisler?.siparis_no ?? '—'
+      if (!(musteriAd in musteriRenk)) {
+        musteriRenk[musteriAd] = renkSayac++ % RENK_SINIFI.length
+      }
+      const mevcutGrup = gruplar.find((g) => g.musteriAd === musteriAd && g.siparisNo === siparisNo)
+      if (mevcutGrup) {
+        mevcutGrup.satirlar.push(d)
+      } else {
+        gruplar.push({ musteriAd, siparisNo, renkIndex: musteriRenk[musteriAd], satirlar: [d] })
+      }
+    }
+    return { gruplar, musteriRenk }
+  }, [detaylar])
+
+  const tumKapali = kapaliGruplar.size === gruplar.length && gruplar.length > 0
+
+  const toggleTumu = () => {
+    if (tumKapali) {
+      setKapaliGruplar(new Set())
+    } else {
+      setKapaliGruplar(new Set(gruplar.map((g) => `${g.musteriAd}||${g.siparisNo}`)))
+    }
+  }
+
+  const toggleGrup = (key: string) => {
+    setKapaliGruplar((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-xl flex flex-col h-[90vh]">
         {/* Başlık */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
@@ -161,131 +155,107 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Sol: Batch'teki camlar */}
           <div className="flex-1 overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-gray-700">Batch'teki Cam Parçaları</h3>
-              <button
-                onClick={handlePaneliAc}
-                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-              >
-                <Plus size={13} /> Cam Ekle
-              </button>
+              {gruplar.length > 0 && (
+                <div className="flex items-center gap-3 flex-wrap">
+                  {Object.entries(musteriRenk).map(([ad, ri]) => (
+                    <span key={ad} className={cn('text-xs font-medium px-2 py-0.5 rounded-full', RENK_SINIFI[ri].badge)}>{ad}</span>
+                  ))}
+                  <button
+                    onClick={toggleTumu}
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-lg px-2 py-1 transition-colors"
+                    title={tumKapali ? 'Tümünü Aç' : 'Tümünü Kıs'}
+                  >
+                    {tumKapali ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
+                    {tumKapali ? 'Tümünü Aç' : 'Tümünü Kıs'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {yukleniyor ? (
               <div className="text-center py-10 text-gray-400">Yükleniyor...</div>
             ) : detaylar.length === 0 ? (
               <div className="text-center py-10 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
-                <p className="font-medium">Henüz cam eklenmedi</p>
-                <p className="text-xs mt-1">"Cam Ekle" butonuyla sipariş detaylarından ekleyin.</p>
+                <p className="font-medium">Bu batch'te henüz cam bulunmuyor</p>
               </div>
             ) : (
               <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
-                      <th className="px-3 py-2">#</th>
-                      <th className="px-3 py-2">Cam Kodu</th>
-                      <th className="px-3 py-2">Sipariş / Müşteri</th>
-                      <th className="px-3 py-2">Cam Cinsi</th>
-                      <th className="px-3 py-2">Boyut (mm)</th>
-                      <th className="px-3 py-2">Adet</th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detaylar.map((d, i) => {
-                      const cam = d.siparis_detaylari
-                      return (
-                        <tr key={d.id} className="border-b border-gray-50 last:border-0">
-                          <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
-                          <td className="px-3 py-2">
-                            <span className="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">
-                              {cam?.cam_kodu}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-600">
-                            <div className="font-medium">{cam?.siparisler?.cari?.ad}</div>
-                            <div className="text-gray-400">{cam?.siparisler?.siparis_no}</div>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-600">{cam?.stok?.ad ?? '—'}</td>
-                          <td className="px-3 py-2 text-xs text-gray-600">
-                            {cam?.genislik_mm} × {cam?.yukseklik_mm}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-600">{cam?.adet}</td>
-                          <td className="px-3 py-2">
-                            <button
-                              onClick={() => handleCamCikar(d.id)}
-                              className="p-1 text-gray-300 hover:text-red-500 transition-colors"
-                              title="Batch'ten çıkar"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                {/* Tablo başlığı */}
+                <div className="flex bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
+                  <div className="w-8 px-3 py-2 shrink-0">#</div>
+                  <div className="w-32 px-3 py-2 shrink-0">Cam Kodu</div>
+                  <div className="flex-1 px-3 py-2">Cam Cinsi</div>
+                  <div className="w-28 px-3 py-2 shrink-0">Boyut (mm)</div>
+                  <div className="w-14 px-3 py-2 shrink-0">Adet</div>
+                </div>
+
+                {/* Gruplar */}
+                {(() => {
+                  let globalSira = 0
+                  return gruplar.map((grup) => {
+                    const renk = RENK_SINIFI[grup.renkIndex]
+                    const grupKey = `${grup.musteriAd}||${grup.siparisNo}`
+                    const kapali = kapaliGruplar.has(grupKey)
+                    const baslangicSira = globalSira
+                    globalSira += grup.satirlar.length
+                    return (
+                      <div key={grupKey} className="border-b border-gray-100 last:border-0">
+                        {/* Grup başlığı */}
+                        <div
+                          className={cn('flex items-center gap-2 px-3 py-2 cursor-pointer select-none border-b', renk.bg, renk.border)}
+                          onClick={() => toggleGrup(grupKey)}
+                        >
+                          <span className={cn('transition-transform duration-200 shrink-0', renk.text)}>
+                            {kapali ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                          </span>
+                          <span className={cn('font-semibold text-xs', renk.text)}>{grup.musteriAd}</span>
+                          <span className="text-gray-300">·</span>
+                          <span className={cn('font-mono text-xs', renk.text)}>{grup.siparisNo}</span>
+                          <span className={cn('ml-auto text-xs font-medium px-2 py-0.5 rounded-full shrink-0', renk.badge)}>
+                            {grup.satirlar.length} parça
+                          </span>
+                        </div>
+
+                        {/* Animasyonlu içerik */}
+                        <div
+                          className={cn(
+                            'overflow-hidden transition-all duration-200 ease-in-out',
+                            kapali ? 'max-h-0 opacity-0' : 'max-h-[5000px] opacity-100'
+                          )}
+                        >
+                          {grup.satirlar.map((d, i) => {
+                            const satirNo = baslangicSira + i + 1
+                            const cam = d.siparis_detaylari
+                            return (
+                              <div
+                                key={d.id}
+                                className="flex items-center border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors"
+                              >
+                                <div className="w-8 px-3 py-2 text-gray-400 text-xs shrink-0">{satirNo}</div>
+                                <div className="w-32 px-3 py-2 shrink-0">
+                                  <span className={cn('font-mono font-semibold px-2 py-0.5 rounded text-xs', renk.badge)}>
+                                    {cam?.cam_kodu}
+                                  </span>
+                                </div>
+                                <div className="flex-1 px-3 py-2 text-xs text-gray-600">{cam?.stok?.ad ?? '—'}</div>
+                                <div className="w-28 px-3 py-2 text-xs text-gray-600 shrink-0">
+                                  {cam?.genislik_mm} × {cam?.yukseklik_mm}
+                                </div>
+                                <div className="w-14 px-3 py-2 text-xs text-gray-600 shrink-0">{cam?.adet}</div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })
+                })()}
               </div>
             )}
           </div>
-
-          {/* Sağ: Cam ekleme paneli */}
-          {camPaneliAcik && (
-            <div className="w-80 border-l border-gray-100 flex flex-col shrink-0">
-              <div className="p-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-                <h3 className="text-sm font-semibold text-gray-700">Cam Seç</h3>
-                <button
-                  onClick={() => { setCamPaneliAcik(false); setCamArama('') }}
-                  className="p-1 text-gray-400 hover:text-gray-600"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="p-3 border-b border-gray-100 shrink-0">
-                <input
-                  type="text"
-                  placeholder="Kod, müşteri veya sipariş ara..."
-                  value={camArama}
-                  onChange={(e) => setCamArama(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                {aramaFiltresi.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-gray-400">
-                    {camArama ? 'Sonuç bulunamadı' : 'Tüm camlar zaten eklendi'}
-                  </div>
-                ) : (
-                  aramaFiltresi.map((cam) => (
-                    <div
-                      key={cam.id}
-                      className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 hover:bg-gray-50"
-                    >
-                      <div>
-                        <div className="font-mono text-xs font-semibold text-blue-700">{cam.cam_kodu}</div>
-                        <div className="text-xs text-gray-500">
-                          {(cam as any).siparisler?.cari?.ad} · {(cam as any).stok?.ad ?? '—'}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {cam.genislik_mm}×{cam.yukseklik_mm} · {cam.adet} adet
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleCamEkle(cam.id)}
-                        disabled={ekleniyor === cam.id}
-                        className="ml-2 p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-40 transition-colors"
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Onay diyalogu */}

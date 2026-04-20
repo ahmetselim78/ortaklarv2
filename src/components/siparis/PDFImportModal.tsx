@@ -1,11 +1,106 @@
-import { useState, useRef, useCallback } from 'react'
-import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2 } from 'lucide-react'
 import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
 import type { PDFParseResult } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
 import type { CamFormSatiri } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { getDocument } from 'pdfjs-dist'
+import { generateCariKod } from '@/lib/idGenerator'
+
+/* ===== PDF Sayfa Görüntüleyici ===== */
+function PDFPageViewer({
+  file,
+  scale,
+  page,
+  onTotalPages,
+}: {
+  file: File
+  scale: number
+  page: number
+  onTotalPages: (n: number) => void
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const docRef = useRef<any>(null)
+  const taskRef = useRef<any>(null)
+  const cbRef = useRef(onTotalPages)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    cbRef.current = onTotalPages
+  })
+
+  useEffect(() => {
+    let active = true
+    setReady(false)
+    taskRef.current?.cancel()
+    if (docRef.current) {
+      docRef.current.destroy()
+      docRef.current = null
+    }
+    file
+      .arrayBuffer()
+      .then((buf) => {
+        if (!active) return null
+        return getDocument({
+          data: buf,
+          cMapUrl: '/cmaps/',
+          cMapPacked: true,
+          standardFontDataUrl: '/standard_fonts/',
+        }).promise
+      })
+      .then((doc) => {
+        if (!doc || !active) return
+        docRef.current = doc
+        cbRef.current(doc.numPages)
+        setReady(true)
+      })
+      .catch(console.error)
+    return () => {
+      active = false
+      taskRef.current?.cancel()
+      docRef.current?.destroy()
+      docRef.current = null
+    }
+  }, [file])
+
+  useEffect(() => {
+    if (!ready || !docRef.current || !canvasRef.current) return
+    let active = true
+    taskRef.current?.cancel()
+    docRef.current
+      .getPage(page)
+      .then((pg: any) => {
+        if (!active || !canvasRef.current) return
+        const viewport = pg.getViewport({ scale })
+        const canvas = canvasRef.current
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        const task = pg.render({ canvasContext: ctx, viewport })
+        taskRef.current = task
+        return task.promise
+      })
+      .catch((e: any) => {
+        if (e?.name !== 'RenderingCancelledException') console.error('[PDFViewer]', e)
+      })
+    return () => {
+      active = false
+    }
+  }, [ready, page, scale])
+
+  if (!ready) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 size={20} className="animate-spin text-blue-400" />
+      </div>
+    )
+  }
+
+  return <canvas ref={canvasRef} className="max-w-full shadow-sm rounded border border-gray-100" />
+}
 
 interface Props {
   cariler: { id: string; ad: string; kod: string }[]
@@ -38,6 +133,14 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
   const [stokSkor, setStokSkor] = useState<number>(0)
   const [mukerrer, setMukerrer] = useState(false)
 
+  // Yerel cari listesi (prop + modal içinde yeni eklenenler)
+  const [localCariler, setLocalCariler] = useState<{ id: string; ad: string; kod: string }[]>(() => cariler)
+
+  // Yeni cari ekleme (inline form)
+  const [yeniCariGoster, setYeniCariGoster] = useState(false)
+  const [yeniCariAd, setYeniCariAd] = useState('')
+  const [yeniCariKaydediliyor, setYeniCariKaydediliyor] = useState(false)
+
   // Çıta eşleştirme: mm → stok_id
   const [citaSecimler, setCitaSecimler] = useState<Record<number, string>>({})
 
@@ -45,6 +148,12 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
   const [iceAktariliyor, setIceAktariliyor] = useState(false)
 
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // PDF Viewer state
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [pdfViewerScale, setPdfViewerScale] = useState(1.2)
+  const [pdfViewerPage, setPdfViewerPage] = useState(1)
+  const [pdfViewerTotalPages, setPdfViewerTotalPages] = useState(0)
 
   /* ===== Adım 1: PDF Yükle ===== */
 
@@ -78,6 +187,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
       }
 
       setParseResult(result)
+      setPdfFile(file)
+      setPdfViewerPage(1)
+      setPdfViewerScale(1.2)
 
       // Otomatik eşleştirme
       if (result.header) {
@@ -136,10 +248,37 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
     if (file) handleFileChange(file)
   }, [handleFileChange])
 
+  /* ===== Yeni Cari Ekle (inline) ===== */
+
+  const handleYeniCariEkle = async () => {
+    if (!yeniCariAd.trim()) return
+    setYeniCariKaydediliyor(true)
+    setHata(null)
+    try {
+      const kod = await generateCariKod()
+      const { data, error } = await supabase
+        .from('cari')
+        .insert({ ad: yeniCariAd.trim(), kod, tipi: 'musteri', telefon: null, email: null, adres: null, notlar: null })
+        .select('id, ad, kod')
+        .single()
+      if (error) throw new Error(error.message)
+      const yeni = { id: data.id as string, ad: data.ad as string, kod: data.kod as string }
+      setLocalCariler((prev) => [yeni, ...prev])
+      setSecilenCariId(yeni.id)
+      setCariSkor(1)
+      setYeniCariGoster(false)
+      setYeniCariAd('')
+    } catch (err: any) {
+      setHata(`Cari eklenemedi: ${err.message ?? 'Bilinmeyen hata'}`)
+    } finally {
+      setYeniCariKaydediliyor(false)
+    }
+  }
+
   /* ===== Adım 3: İçe Aktar ===== */
 
   const handleIceAktar = async () => {
-    if (!parseResult || !secilenCariId) return
+    if (!parseResult) return
     setIceAktariliyor(true)
     setHata(null)
 
@@ -187,8 +326,15 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2">
+      <div
+        className="w-full bg-white rounded-2xl shadow-xl flex flex-col transition-all duration-300 ease-in-out"
+        style={{
+          maxWidth: adim === 'onizleme' ? '98vw' : '56rem',
+          maxHeight: adim === 'onizleme' ? '97vh' : '90vh',
+          height: adim === 'onizleme' ? '97vh' : 'auto',
+        }}
+      >
         {/* Başlık */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
@@ -229,7 +375,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         )}
 
         {/* İçerik */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className={cn('flex-1 px-6 py-4 min-h-0', adim === 'onizleme' ? 'overflow-hidden' : 'overflow-y-auto')}>
           {/* ===== ADIM 1: YÜKLEME ===== */}
           {adim === 'yukleme' && (
             <div
@@ -329,14 +475,14 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                       <CheckCircle2 size={12} /> Otomatik eşleştirildi
                     </span>
                   )}
-                  {cariSkor > 0 && cariSkor < 0.8 && (
+                  {cariSkor >= 0.6 && cariSkor < 0.8 && (
                     <span className="ml-2 text-xs text-yellow-600 font-normal inline-flex items-center gap-1">
                       <AlertTriangle size={12} /> Eşleşme düşük — lütfen kontrol edin
                     </span>
                   )}
                   {cariSkor === 0 && !secilenCariId && (
-                    <span className="ml-2 text-xs text-red-500 font-normal inline-flex items-center gap-1">
-                      <AlertTriangle size={12} /> Eşleşme bulunamadı — manuel seçin
+                    <span className="ml-2 text-xs text-gray-400 font-normal">
+                      Müşteri Yok — sistemde bulunamadı
                     </span>
                   )}
                 </label>
@@ -351,23 +497,74 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 )}
                 <select
                   value={secilenCariId}
-                  onChange={(e) => { setSecilenCariId(e.target.value); setCariSkor(0) }}
+                  onChange={(e) => { setSecilenCariId(e.target.value); setCariSkor(0); setYeniCariGoster(false) }}
                   className={cn(
                     'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
                     cariSkor >= 0.8
                       ? 'border-green-400 bg-green-50 focus:ring-green-400'
-                      : cariSkor > 0
+                      : cariSkor >= 0.6
                       ? 'border-yellow-400 bg-yellow-50 focus:ring-yellow-400'
-                      : secilenCariId
-                      ? 'border-gray-200 focus:ring-blue-500'
-                      : 'border-red-300 bg-red-50 focus:ring-red-400'
+                      : 'border-gray-200 focus:ring-blue-500'
                   )}
                 >
-                  <option value="">— Cari Seçin —</option>
-                  {cariler.map((c) => (
+                  <option value="">— Müşteri Yok —</option>
+                  {localCariler.map((c) => (
                     <option key={c.id} value={c.id}>{c.kod} — {c.ad}</option>
                   ))}
                 </select>
+
+                {/* Eşleşme yok: Yeni Cari Ekle seçeneği */}
+                {!secilenCariId && !yeniCariGoster && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-400">
+                      "{parseResult.header?.tedarikciUnvan}" sistemde bulunamadı.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setYeniCariAd(parseResult.header?.tedarikciUnvan ?? '')
+                        setYeniCariGoster(true)
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium underline-offset-2 underline"
+                    >
+                      + Yeni Cari Olarak Ekle
+                    </button>
+                  </div>
+                )}
+
+                {/* Inline yeni cari formu */}
+                {yeniCariGoster && (
+                  <div className="mt-2 p-3 border border-blue-200 bg-blue-50 rounded-xl space-y-2">
+                    <div className="text-xs font-semibold text-blue-800">Yeni Cari Ekle</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={yeniCariAd}
+                        onChange={(e) => setYeniCariAd(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleYeniCariEkle()}
+                        placeholder="Cari adı"
+                        autoFocus
+                        className="flex-1 border border-blue-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleYeniCariEkle}
+                        disabled={!yeniCariAd.trim() || yeniCariKaydediliyor}
+                        className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      >
+                        {yeniCariKaydediliyor ? <Loader2 size={14} className="animate-spin" /> : 'Kaydet'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setYeniCariGoster(false)}
+                        className="px-3 py-1.5 text-sm text-gray-500 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        İptal
+                      </button>
+                    </div>
+                    <p className="text-xs text-blue-600">Cari kodu otomatik atanacak (C-XXXX), tipi: Müşteri</p>
+                  </div>
+                )}
               </div>
 
               {/* Stok Eşleştirme — sadece cam */}
@@ -448,9 +645,21 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
           )}
 
           {/* ===== ADIM 3: ÖNİZLEME ===== */}
-          {adim === 'onizleme' && parseResult && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
+          {adim === 'onizleme' && parseResult && (() => {
+            const hesaplananM2 = parseResult.satirlar.reduce(
+              (sum, s) => sum + (s.genislik_mm * s.yukseklik_mm * s.adet) / 1_000_000,
+              0
+            )
+            const pdfM2 = parseResult.header?.toplamMetrekare ?? null
+            const fark = pdfM2 !== null ? Math.abs(hesaplananM2 - pdfM2) : null
+            const tolerans = pdfM2 ? Math.max(0.5, pdfM2 * 0.005) : 0.5
+            const eslesme = fark !== null ? fark <= tolerans : null
+
+            return (
+            <div className="flex gap-0 h-full">
+              {/* Sol: tablo + M² doğrulama */}
+              <div className="flex-1 min-w-0 flex flex-col pr-5 border-r border-gray-100">
+              <div className="flex items-center justify-between mb-3 shrink-0">
                 <h3 className="text-sm font-semibold text-gray-700">
                   İçe aktarılacak {parseResult.satirlar.reduce((s, r) => s + r.adet, 0)} adet cam ({parseResult.satirlar.length} satır)
                 </h3>
@@ -459,8 +668,8 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                   Stok: {stoklar.find(s => s.id === secilenStokId)?.ad ?? 'Belirtilmemiş'}
                 </span>
               </div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <div className="max-h-[45vh] overflow-y-auto">
+              <div className="border border-gray-200 rounded-xl overflow-hidden flex-1 flex flex-col min-h-0">
+                <div className="flex-1 overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
@@ -468,6 +677,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                         <th className="px-3 py-2">Genişlik</th>
                         <th className="px-3 py-2">Yükseklik</th>
                         <th className="px-3 py-2">Adet</th>
+                        <th className="px-3 py-2">M²</th>
                         <th className="px-3 py-2">Çıta (mm)</th>
                         <th className="px-3 py-2">Çıta Stok</th>
                         <th className="px-3 py-2">Poz No</th>
@@ -480,6 +690,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                           <td className="px-3 py-2 font-mono text-gray-800">{s.genislik_mm}</td>
                           <td className="px-3 py-2 font-mono text-gray-800">{s.yukseklik_mm}</td>
                           <td className="px-3 py-2 text-gray-700">{s.adet}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-blue-700">
+                            {(s.genislik_mm * s.yukseklik_mm * s.adet / 1_000_000).toFixed(3)}
+                          </td>
                           <td className="px-3 py-2">
                             {s.ara_bosluk_mm ? (
                               <span className="text-cyan-700 font-medium">{s.ara_bosluk_mm}</span>
@@ -500,8 +713,146 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                   Toplam: {parseResult.satirlar.reduce((s, r) => s + r.adet, 0)} adet · {parseResult.satirlar.length} satır
                 </div>
               </div>
+
+              {/* M² Doğrulama Kartı */}
+              <div className={cn(
+                'mt-3 rounded-xl border p-3 shrink-0',
+                eslesme === true
+                  ? 'border-green-200 bg-green-50'
+                  : eslesme === false
+                  ? 'border-red-200 bg-red-50'
+                  : 'border-blue-200 bg-blue-50'
+              )}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600 mb-1">M² Doğrulama</div>
+                    <div className="flex flex-wrap gap-4">
+                      <div>
+                        <div className="text-xs text-gray-400">Hesaplanan (boyutlardan)</div>
+                        <div className="text-lg font-bold text-blue-700">
+                          {hesaplananM2.toFixed(3)} m²
+                        </div>
+                      </div>
+                      {pdfM2 !== null ? (
+                        <div>
+                          <div className="text-xs text-gray-400">PDF'deki toplam</div>
+                          <div className="text-lg font-bold text-gray-700">
+                            {pdfM2.toFixed(3)} m²
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="text-xs text-gray-400">PDF'deki toplam</div>
+                          <div className="text-sm text-gray-400 italic">Tespit edilemedi</div>
+                        </div>
+                      )}
+                      {fark !== null && (
+                        <div>
+                          <div className="text-xs text-gray-400">Fark</div>
+                          <div className={cn(
+                            'text-sm font-semibold',
+                            eslesme ? 'text-green-700' : 'text-red-700'
+                          )}>
+                            {fark < 0.001 ? '0.000' : fark.toFixed(3)} m²
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    {eslesme === true && (
+                      <div className="flex items-center gap-1.5 text-green-700 bg-green-100 px-2.5 py-1.5 rounded-lg">
+                        <CheckCircle2 size={16} />
+                        <span className="text-xs font-semibold">Eşleşti</span>
+                      </div>
+                    )}
+                    {eslesme === false && (
+                      <div className="flex items-center gap-1.5 text-red-700 bg-red-100 px-2.5 py-1.5 rounded-lg">
+                        <AlertTriangle size={16} />
+                        <span className="text-xs font-semibold">Uyumsuz!</span>
+                      </div>
+                    )}
+                    {eslesme === null && (
+                      <div className="flex items-center gap-1.5 text-blue-600 bg-blue-100 px-2.5 py-1.5 rounded-lg">
+                        <AlertTriangle size={14} />
+                        <span className="text-xs font-semibold">PDF toplamı bulunamadı</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {eslesme === false && (
+                  <div className="mt-2 text-xs text-red-700 border-t border-red-200 pt-2">
+                    ⚠️ Hesaplanan m² ile PDF'deki toplam arasında {fark!.toFixed(3)} m² fark var. Ölçü okuma hatası olabilir; satırları tek tek kontrol edin.
+                  </div>
+                )}
+              </div>
+              </div>
+
+              {/* Sağ: PDF Görüntüleyici */}
+              <div className="w-[42%] shrink-0 flex flex-col pl-5">
+                {/* Kontroller */}
+                <div className="flex items-center gap-1 mb-2 pb-2 border-b border-gray-100 shrink-0">
+                  <button
+                    onClick={() => setPdfViewerScale((s) => Math.max(0.4, +(s - 0.2).toFixed(1)))}
+                    disabled={pdfViewerScale <= 0.4}
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-500 disabled:opacity-30"
+                    title="Küçült"
+                  >
+                    <ZoomOut size={15} />
+                  </button>
+                  <span className="text-xs text-gray-500 w-11 text-center select-none">
+                    {Math.round(pdfViewerScale * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setPdfViewerScale((s) => Math.min(3.0, +(s + 0.2).toFixed(1)))}
+                    disabled={pdfViewerScale >= 3.0}
+                    className="p-1.5 rounded hover:bg-gray-100 text-gray-500 disabled:opacity-30"
+                    title="Büyüt"
+                  >
+                    <ZoomIn size={15} />
+                  </button>
+                  <button
+                    onClick={() => setPdfViewerScale(1.2)}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded hover:bg-gray-100"
+                    title="Sıfırla"
+                  >
+                    ↺
+                  </button>
+                  <div className="ml-auto flex items-center gap-0.5">
+                    <button
+                      onClick={() => setPdfViewerPage((p) => Math.max(1, p - 1))}
+                      disabled={pdfViewerPage <= 1}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500 disabled:opacity-30"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <span className="text-xs text-gray-500 w-14 text-center select-none">
+                      {pdfViewerPage} / {pdfViewerTotalPages || '?'}
+                    </span>
+                    <button
+                      onClick={() => setPdfViewerPage((p) => Math.min(pdfViewerTotalPages || 1, p + 1))}
+                      disabled={pdfViewerPage >= pdfViewerTotalPages}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500 disabled:opacity-30"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                  </div>
+                </div>
+                {/* Canvas scroll alanı */}
+                <div className="flex-1 overflow-auto bg-gray-50 rounded-xl flex items-start justify-center p-3">
+                  {pdfFile && (
+                    <PDFPageViewer
+                      file={pdfFile}
+                      scale={pdfViewerScale}
+                      page={pdfViewerPage}
+                      onTotalPages={(n) => setPdfViewerTotalPages(n)}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
-          )}
+            )
+          })()}
         </div>
 
         {/* Alt bar */}
@@ -523,8 +874,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
             {adim === 'eslestirme' && (
               <button
                 onClick={() => { setHata(null); setAdim('onizleme') }}
-                disabled={!secilenCariId}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
               >
                 Devam
               </button>

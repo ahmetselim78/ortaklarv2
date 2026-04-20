@@ -1,11 +1,9 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { supabase } from './supabase'
 
-// Worker ayarı (text extraction fallback için)
-GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
+// Worker ayarı — ?url ile Vite'ın doğru şekilde resolve etmesi sağlanır
+GlobalWorkerOptions.workerSrc = workerUrl
 
 /* ===== Tipler ===== */
 
@@ -26,6 +24,8 @@ export interface PDFSiparisHeader {
   sipTarihi: string | null
   sevkTarihi: string | null
   toplamAdet: number | null
+  /** PDF'nin en altındaki toplam m² değeri (doğrulama için) */
+  toplamMetrekare: number | null
 }
 
 export interface PDFCamSatir {
@@ -210,6 +210,53 @@ function parseTrInt(s: string): number {
   return Math.round(parseFloat(cleaned))
 }
 
+/** "31,248" veya "1,243" (Türkçe ondalık) → 31.248 */
+function parseTrFloat(s: string): number {
+  const trimmed = s.trim()
+  // "1.234,56" → 1234.56 (binlik nokta, ondalık virgül)
+  if (/^\d{1,3}(?:\.\d{3})+,\d+$/.test(trimmed)) {
+    return parseFloat(trimmed.replace(/\./g, '').replace(',', '.'))
+  }
+  // "31,248" → 31.248 (ondalık virgül)
+  return parseFloat(trimmed.replace(',', '.'))
+}
+
+/**
+ * PDF metnindeki "toplam satırı" satırlarından toplam metrekareyi çıkarır.
+ * Pimapen/Ercom formatında footer: "66  26,716 m²." veya "74  27,319 m²."
+ *
+ * NOT: pdfjs-dist superscript ² glifini ana satırdan farklı y koordinatında
+ * çıkarabilir. Bu durumda satır "27,319  m ." şeklinde görünür (² ayrı satır).
+ * Bu nedenle m²/m2/m sonrası karakterler opsiyonel tutulur.
+ */
+function extractToplamMetrekare(text: string): number | null {
+  const candidates: number[] = []
+  for (let rawLine of text.split('\n')) {
+    let trimmed = rawLine.trim()
+    if (!trimmed) continue
+
+    // Markdown tablo satırlarını düzleştir: "| a | b |" → "a b"
+    if (trimmed.startsWith('|')) {
+      trimmed = trimmed.replace(/^\||\|$/g, '').split('|').map((s) => s.trim()).join(' ').trim()
+    }
+
+    // Toplam/ara-toplam satırı tespiti:
+    // Satır "m²." veya "m2." veya "m ." (² ayrı satırda) ile bitiyor olmalı.
+    // \u00b2 = ², \s* opsiyonel boşluk (² ile . arasında), \.? opsiyonel nokta
+    if (!/m[\u00b222]?\s*\.?\s*$/i.test(trimmed)) continue
+
+    // Sadece ondalık (virgüllü) sayıları al — tam sayılar (adet) değil
+    const matches = [...trimmed.matchAll(/(\d+[,]\d+)/g)]
+    for (const m of matches) {
+      const val = parseTrFloat(m[1])
+      if (!isNaN(val) && val > 0) candidates.push(val)
+    }
+  }
+  if (candidates.length === 0) return null
+  // En büyük değer genel toplam (her satır toplamından büyük ya da eşit)
+  return Math.max(...candidates)
+}
+
 /* ===== Ara Boşluk Çıkarma ===== */
 
 /** "4+16+4 Çift Cam Konfor" → 16 */
@@ -232,18 +279,35 @@ function parsePimapenHeader(text: string): PDFSiparisHeader {
   let cariUnvan = cariUnvanMatch?.[1]?.trim() ?? ''
   cariUnvan = cariUnvan.replace(/\s{2,}.*/, '').replace(/Cam\s*S.*/i, '').replace(/Sipari.*/i, '').trim()
 
-  // Tedarikçi ünvanı: PDF'in en üstündeki şirket adı — bizim doğrudan müşterimiz
-  // "NOVEL PVC ALÜMİNYUM SANAYİ TİCARET LTD. ŞTİ." gibi, TEL/Cari/Sipariş satırlarından önce gelir
-  const lines = text.split(/\n/).slice(0, 10)
-  const tedarikciLine = lines.find(
+  // Tedarikçi ünvanı: PDF'in en üstündeki şirket adı — bizim doğrudan müşterimiz.
+  // Strateji:
+  //   1) LTD.ŞTİ/A.Ş. gibi yasal suffix içeren satırlara bak (en güvenilir)
+  //   2) Bulamazsa: ilk 10 satırda, veri etiketleri hariç, tamamen büyük harfli ve
+  //      en az 3 kelimeli satırı al ("YKS PVC PLASTİK DOĞRAMA" gibi)
+  const lines = text.split(/\n/).slice(0, 15)
+  const skipPattern = /^\s*(?:Cari|Tel|Fax|Sipari|Cam\s*S|Müşteri|Sip\s*\/|Adres|\d)/i
+
+  let tedarikciLine = lines.find(
     (line) =>
-      /(?:LTD\.?\s*ŞTİ\.?|A\.Ş\.?|LİMİTED|ANONİM)/i.test(line) &&
-      !/^\s*(?:Cari|Tel|Sipari|Cam\s*S|Müşteri|Sip\s*\/)/i.test(line.trim()),
+      /(?:LTD\.?\s*ŞTİ\.?|A\.\u015e\.?|LİMİTED|ANONİM)/i.test(line) &&
+      !skipPattern.test(line.trim()),
   )
+
+  if (!tedarikciLine) {
+    // Fallback: büyük harfli, kısa, etiket olmayan satır
+    tedarikciLine = lines.find((line) => {
+      const t = line.trim()
+      if (!t || skipPattern.test(t)) return false
+      // En az 3 karakter, çoğunluğu büyük harf veya rakam/boşluk olan satır
+      const upperRatio = (t.match(/[A-ZİÜÖÇŞĞ]/g)?.length ?? 0) / t.replace(/\s/g, '').length
+      return upperRatio >= 0.6 && t.length >= 5 && t.length <= 80
+    })
+  }
+
   const tedarikciUnvan = (tedarikciLine ?? '')
     // Logo marka etiketini sil ("PIMAPEN", "Ercom Smart" vb.)
     .replace(/\s*(?:pimapen|ercom\s*smart)[^\n]*/gi, '')
-    // Satırın geri kalanını (sayfa no vb.) sil
+    // Sayfa numarası / sonuç bilgisi sil
     .replace(/\s{2,}.*/, '')
     .trim()
 
@@ -255,6 +319,7 @@ function parsePimapenHeader(text: string): PDFSiparisHeader {
     sipTarihi: isValidDate(tarihMatch?.[1] ?? null) ? tarihMatch![1] : null,
     sevkTarihi: isValidDate(tarihMatch?.[2] ?? null) ? tarihMatch![2] : null,
     toplamAdet: adetMatch ? parseInt(adetMatch[1], 10) : null,
+    toplamMetrekare: extractToplamMetrekare(text),
   }
 }
 
@@ -327,8 +392,10 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
     if (/m[²2]\.?\s*$/.test(trimmed)) continue
 
     // Format: {açıklama} {adet} {gen} {yük_veya_çöp} {Bm²: D,DDD} {Tm²: D,DDD} {pozNo}
+    // Not: "Ø 150" gibi iki kelimeli açıklama sonekleri (delik çapı) özel olarak ele alınır.
+    // Sadece \S+ kullanılsaydı "Ø" açıklamaya, "150" yanlışlıkla adet'e atanırdı.
     const m = trimmed.match(
-      /^(.+?[Çç]ift\s+Cam(?:\s+\S+)?)\s+(\d{1,3})\s+([\d.]+)\s+(\S+)\s+(\d[,.]\d[\d,]*)\s+(\d[,.]\d[\d,]*)\s*(.*)/
+      /^(.+?[Çç]ift\s+Cam(?:\s+(?:Ø\s*\d+|\S+))?)\s+(\d{1,3})\s+([\d.]+)\s+(\S+)\s+(\d[,.]\d[\d,]*)\s+(\d[,.]\d[\d,]*)\s*(.*)/
     )
     if (!m) continue
 
@@ -401,8 +468,12 @@ function normalize(s: string): string {
 export function benzerlikSkoru(a: string, b: string): number {
   const na = normalize(a)
   const nb = normalize(b)
+  // Boş string kontrolü — '' her stringin içinde yer alır, yanlış 0.8 skoru üretir
+  if (!na || !nb) return 0
   if (na === nb) return 1
-  if (na.includes(nb) || nb.includes(na)) return 0.8
+  // includes kontrolü: kısa string uzun stringin tam parçasıysa (min 4 karakter)
+  if (na.length >= 4 && nb.includes(na)) return 0.8
+  if (nb.length >= 4 && na.includes(nb)) return 0.8
 
   // Word-level Jaccard similarity
   const wordsA = new Set(na.split(' ').filter(Boolean))
@@ -413,18 +484,20 @@ export function benzerlikSkoru(a: string, b: string): number {
   return birlesim > 0 ? ortak / birlesim : 0
 }
 
-/** Cari listesinden en yakın eşleşmeyi bul */
+/** Cari listesinden en yakın eşleşmeyi bul.
+ *  minSkor altında kalan sonuçlar null döndürür — yanlış otomatik eşleştirmeyi önler. */
 export function cariEslestir(
   pdfCariKodu: string,
   pdfCariUnvan: string,
-  cariler: { id: string; ad: string; kod: string }[]
+  cariler: { id: string; ad: string; kod: string }[],
+  minSkor = 0.6
 ): { id: string; ad: string; kod: string; skor: number } | null {
   if (cariler.length === 0) return null
 
   let enIyi: { id: string; ad: string; kod: string; skor: number } | null = null
 
   for (const c of cariler) {
-    // Kod eşleşmesi → tam puan
+    // Kod eşleşmesi → tam puan, direkt döndür
     if (c.kod && pdfCariKodu && normalize(c.kod) === normalize(pdfCariKodu)) {
       return { ...c, skor: 1 }
     }
@@ -434,6 +507,9 @@ export function cariEslestir(
       enIyi = { ...c, skor }
     }
   }
+
+  // Eşik altında kalan en iyi skor → eşleşme yok say
+  if (!enIyi || enIyi.skor < minSkor) return null
 
   return enIyi
 }
