@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm, useFieldArray, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { X, Plus, Trash2 } from 'lucide-react'
+import { X, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { cn } from '@/lib/utils'
@@ -16,14 +16,17 @@ const camSchema = z.object({
   yukseklik_mm: z.coerce.number().positive('Pozitif olmalı'),
   adet: z.coerce.number().int().min(1, 'En az 1'),
   ara_bosluk_mm: z.coerce.number().positive('Seçiniz').optional(),
+  cita_stok_id: z.string().optional(),
   kenar_islemi: z.string().optional(),
   notlar: z.string().optional(),
+  poz: z.string().optional(),
 })
 
 const schema = z.object({
   cari_id: z.string().min(1, 'Müşteri seçiniz'),
   tarih: z.string().min(1, 'Tarih zorunludur'),
   teslim_tarihi: z.string().optional(),
+  alt_musteri: z.string().optional(),
   notlar: z.string().optional(),
   camlar: z.array(camSchema).min(1, 'En az 1 cam parçası eklenmelidir'),
 })
@@ -37,11 +40,31 @@ interface Props {
   onKapat: () => void
 }
 
-const BOŞ_CAM = { stok_id: '', genislik_mm: '' as unknown as number, yukseklik_mm: '' as unknown as number, adet: 1, ara_bosluk_mm: '' as unknown as number, kenar_islemi: '', notlar: '' }
+const BOŞ_CAM = {
+  stok_id: '',
+  genislik_mm: '' as unknown as number,
+  yukseklik_mm: '' as unknown as number,
+  adet: 1,
+  ara_bosluk_mm: '' as unknown as number,
+  cita_stok_id: '',
+  kenar_islemi: '',
+  notlar: '',
+  poz: '',
+}
 
 export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Props) {
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
+  // Which rows have kenar işlemi buttons expanded
+  const [genisletilmis, setGenisletilmis] = useState<Set<number>>(new Set())
+
+  const toggleGenislet = (idx: number) => {
+    setGenisletilmis(prev => {
+      const s = new Set(prev)
+      s.has(idx) ? s.delete(idx) : s.add(idx)
+      return s
+    })
+  }
 
   const {
     register,
@@ -59,6 +82,56 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
 
   const { fields, append, remove } = useFieldArray({ control, name: 'camlar' })
   const watchedCamlar = useWatch({ control, name: 'camlar' })
+
+  /** Append a new glass row copying cam cinsi and çıta from the first row */
+  const appendCam = () => {
+    const first = watchedCamlar?.[0]
+    append({
+      ...BOŞ_CAM,
+      stok_id: first?.stok_id ?? '',
+      ara_bosluk_mm: first?.ara_bosluk_mm ?? ('' as unknown as number),
+      cita_stok_id: first?.cita_stok_id ?? '',
+    })
+  }
+
+  /**
+   * Enter key navigation:
+   * - genislik_mm gate: only advances if value is filled
+   * - yukseklik_mm, adet: always advance
+   * - adet: adds a new row when it's the last row
+   */
+  const handleEnterNav = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowIdx: number,
+    fieldName: 'genislik_mm' | 'yukseklik_mm' | 'adet',
+  ) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (fieldName === 'genislik_mm') {
+      const val = e.currentTarget.value
+      if (!val || Number(val) <= 0) return
+    }
+    const nextFieldMap: Record<string, string | null> = {
+      genislik_mm: 'yukseklik_mm',
+      yukseklik_mm: 'adet',
+      adet: null,
+    }
+    const nextField = nextFieldMap[fieldName]
+    if (nextField) {
+      document.querySelector<HTMLElement>(`[data-row="${rowIdx}"][data-field="${nextField}"]`)?.focus()
+    } else {
+      const nextIdx = rowIdx + 1
+      const existing = document.querySelector<HTMLElement>(`[data-row="${nextIdx}"][data-field="genislik_mm"]`)
+      if (existing) {
+        existing.focus()
+      } else {
+        appendCam()
+        setTimeout(() => {
+          document.querySelector<HTMLElement>(`[data-row="${nextIdx}"][data-field="genislik_mm"]`)?.focus()
+        }, 60)
+      }
+    }
+  }
 
   const toggleTag = (index: number, field: 'kenar_islemi' | 'notlar', tag: string) => {
     const current = (watchedCamlar?.[index]?.[field] ?? '') as string
@@ -142,6 +215,17 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                 />
               </div>
 
+              {/* Alt Müşteri */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Alt Müşteri</label>
+                <input
+                  type="text"
+                  {...register('alt_musteri')}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Nihai / alt müşteri adı (isteğe bağlı)..."
+                />
+              </div>
+
               {/* Notlar */}
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notlar</label>
@@ -165,7 +249,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                 </h3>
                 <button
                   type="button"
-                  onClick={() => append({ ...BOŞ_CAM })}
+                  onClick={appendCam}
                   className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
                 >
                   <Plus size={14} /> Cam Ekle
@@ -176,11 +260,13 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
+                      <th className="px-3 py-2">Poz</th>
                       <th className="px-3 py-2">Cam Cinsi *</th>
                       <th className="px-3 py-2">Gen. (mm) *</th>
                       <th className="px-3 py-2">Yük. (mm) *</th>
                       <th className="px-3 py-2">Adet</th>
-                      <th className="px-3 py-2">Çıta (mm)</th>
+                      <th className="px-3 py-2">Boşluk (mm)</th>
+                      <th className="px-3 py-2">Çıta</th>
                       <th className="px-3 py-2">Özellikler</th>
                       <th className="px-2 py-2"></th>
                     </tr>
@@ -188,6 +274,16 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                   <tbody>
                     {fields.map((field, index) => (
                       <tr key={field.id} className="border-b border-gray-100 last:border-0">
+                        {/* Poz */}
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            {...register(`camlar.${index}.poz`)}
+                            className="w-16 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            placeholder="—"
+                          />
+                        </td>
+                        {/* Cam Cinsi */}
                         <td className="px-2 py-2">
                           <select
                             {...register(`camlar.${index}.stok_id`)}
@@ -202,10 +298,14 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                             ))}
                           </select>
                         </td>
+                        {/* Genişlik */}
                         <td className="px-2 py-2">
                           <input
                             type="number"
                             {...register(`camlar.${index}.genislik_mm`)}
+                            data-row={index}
+                            data-field="genislik_mm"
+                            onKeyDown={(e) => handleEnterNav(e, index, 'genislik_mm')}
                             className={cn(
                               'w-20 rounded border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
                               errors.camlar?.[index]?.genislik_mm ? 'border-red-300' : 'border-gray-200'
@@ -213,10 +313,14 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                             placeholder="0"
                           />
                         </td>
+                        {/* Yükseklik */}
                         <td className="px-2 py-2">
                           <input
                             type="number"
                             {...register(`camlar.${index}.yukseklik_mm`)}
+                            data-row={index}
+                            data-field="yukseklik_mm"
+                            onKeyDown={(e) => handleEnterNav(e, index, 'yukseklik_mm')}
                             className={cn(
                               'w-20 rounded border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
                               errors.camlar?.[index]?.yukseklik_mm ? 'border-red-300' : 'border-gray-200'
@@ -224,10 +328,14 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                             placeholder="0"
                           />
                         </td>
+                        {/* Adet */}
                         <td className="px-2 py-2">
                           <input
                             type="number"
                             {...register(`camlar.${index}.adet`)}
+                            data-row={index}
+                            data-field="adet"
+                            onKeyDown={(e) => handleEnterNav(e, index, 'adet')}
                             className="w-14 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                             placeholder="1"
                             min={1}
@@ -248,8 +356,19 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                           </select>
                         </td>
                         <td className="px-2 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {/* Not etiketleri */}
+                          <select
+                            {...register(`camlar.${index}.cita_stok_id`)}
+                            className="w-28 rounded border border-gray-200 px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="">—</option>
+                            {stoklar.filter((s) => s.kategori === 'cita').map((s) => (
+                              <option key={s.id} value={s.id}>{s.ad}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {/* Menfez — her zaman görünür */}
                             {NOT_ETIKETLERI.map((tag) => (
                               <button
                                 key={tag}
@@ -265,8 +384,22 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                                 {tag}
                               </button>
                             ))}
-                            {/* Kenar işlemi etiketleri */}
-                            {KENAR_ISLEMLERI.map((tag) => (
+
+                            {/* Daha Fazla / Daha Az toggle */}
+                            <button
+                              type="button"
+                              onClick={() => toggleGenislet(index)}
+                              className="px-2 py-0.5 rounded-full text-[10px] font-medium border border-gray-200 bg-white text-gray-400 hover:border-blue-300 hover:text-blue-600 transition-colors flex items-center gap-0.5"
+                            >
+                              {genisletilmis.has(index) ? (
+                                <><ChevronUp size={9} /> Daha Az</>
+                              ) : (
+                                <><ChevronDown size={9} /> Daha Fazla</>
+                              )}
+                            </button>
+
+                            {/* Kenar işlemleri — sadece genişletilmiş satırlarda */}
+                            {genisletilmis.has(index) && KENAR_ISLEMLERI.map((tag) => (
                               <button
                                 key={tag}
                                 type="button"
@@ -281,6 +414,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                                 {tag}
                               </button>
                             ))}
+
                             {/* Hidden inputs for form registration */}
                             <input type="hidden" {...register(`camlar.${index}.kenar_islemi`)} />
                             <input type="hidden" {...register(`camlar.${index}.notlar`)} />
@@ -304,6 +438,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
               </div>
               <p className="mt-2 text-xs text-gray-400">
                 Her cam parçasına otomatik <span className="font-mono font-medium text-gray-600">GLS-XXXX</span> kodu atanacak.
+                Boyutları girdikten sonra <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px] font-mono">Enter</kbd> ile sonraki cama geçebilirsiniz.
               </p>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { Eye, Trash2, Wrench } from 'lucide-react'
+import { Eye, Ban, Wrench } from 'lucide-react'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
@@ -8,7 +8,7 @@ interface Props {
   yukleniyor: boolean
   tamirdeSiparisIds?: Set<string>
   onGoruntule: (siparis: Siparis) => void
-  onSil: (siparis: Siparis) => void
+  onIptal: (siparis: Siparis) => void
 }
 
 const DURUM_STIL: Record<SiparisDurum, string> = {
@@ -29,7 +29,7 @@ const DURUM_ETIKET: Record<SiparisDurum, string> = {
   iptal: 'İptal',
 }
 
-export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisIds, onGoruntule, onSil }: Props) {
+export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisIds, onGoruntule, onIptal }: Props) {
   if (yukleniyor) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
   }
@@ -66,9 +66,19 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
               </td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
-                    {DURUM_ETIKET[s.durum]}
-                  </span>
+                  {s.durum === 'yikamada' ? (
+                    <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-500" />
+                      </span>
+                      {DURUM_ETIKET[s.durum]}
+                    </span>
+                  ) : (
+                    <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
+                      {DURUM_ETIKET[s.durum]}
+                    </span>
+                  )}
                   {tamirdeSiparisIds?.has(s.id) && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200" title="Tamirde cam var">
                       <Wrench size={10} />
@@ -86,13 +96,15 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                   >
                     <Eye size={15} />
                   </button>
-                  <button
-                    onClick={() => onSil(s)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    title="Sil"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {s.durum === 'beklemede' && (
+                    <button
+                      onClick={() => onIptal(s)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="İptal Et"
+                    >
+                      <Ban size={15} />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>

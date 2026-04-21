@@ -109,6 +109,7 @@ interface Props {
     cari_id: string
     tarih: string
     teslim_tarihi?: string
+    alt_musteri?: string
     notlar?: string
     camlar: CamFormSatiri[]
   }) => Promise<string>
@@ -298,14 +299,16 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         adet: s.adet,
         ara_bosluk_mm: s.ara_bosluk_mm ?? '',
         kenar_islemi: '',
-        notlar: s.pozNo ? `Poz: ${s.pozNo}` : '',
+        poz: s.pozNo || '',
+        notlar: '',
       }))
 
       await onIceAktar({
         cari_id: secilenCariId,
         tarih,
         teslim_tarihi: teslimTarihi,
-        notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Tedarikçi: ${header.tedarikciUnvan}${header.cariUnvan ? ` / Nihai Müşteri: ${header.cariUnvan}` : ''}`,
+        alt_musteri: header.cariUnvan || undefined,
+        notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Tedarikçi: ${header.tedarikciUnvan}`,
         camlar,
       })
 

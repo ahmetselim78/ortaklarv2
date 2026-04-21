@@ -14,10 +14,9 @@ import {
 
 function durumRenk(d: TamirDurum) {
   switch (d) {
-    case 'bekliyor':       return 'bg-amber-900/30 border-amber-700 text-amber-300'
-    case 'tamir_ediliyor': return 'bg-blue-900/30 border-blue-700 text-blue-300'
-    case 'tamamlandi':     return 'bg-emerald-900/30 border-emerald-700 text-emerald-300'
-    case 'hurda':          return 'bg-red-900/30 border-red-700 text-red-300'
+    case 'bekliyor':   return 'bg-amber-900/30 border-amber-700 text-amber-300'
+    case 'tamamlandi': return 'bg-emerald-900/30 border-emerald-700 text-emerald-300'
+    case 'hurda':      return 'bg-red-900/30 border-red-700 text-red-300'
   }
 }
 
@@ -39,23 +38,18 @@ function kaynakRenk(k: string) {
 }
 
 const TABS: { durum: TamirDurum | 'hepsi'; label: string }[] = [
-  { durum: 'hepsi',        label: 'Tümü' },
-  { durum: 'bekliyor',     label: 'Bekliyor' },
-  { durum: 'tamir_ediliyor', label: 'Tamir Ediliyor' },
-  { durum: 'tamamlandi',   label: 'Tamamlandı' },
-  { durum: 'hurda',        label: 'Hurda' },
+  { durum: 'hepsi',      label: 'Tümü' },
+  { durum: 'bekliyor',   label: 'Bekliyor' },
+  { durum: 'tamamlandi', label: 'Tamamlandı' },
+  { durum: 'hurda',      label: 'Hurda' },
 ]
 
 /* ========== Durum geçiş butonları ========== */
 
 const GECIS_BUTONLARI: Record<TamirDurum, { durum: TamirDurum; label: string; renk: string }[]> = {
   bekliyor: [
-    { durum: 'tamir_ediliyor', label: 'Tamire Al', renk: 'bg-blue-700 hover:bg-blue-600 text-white' },
-    { durum: 'hurda',          label: 'Hurda',     renk: 'bg-red-800 hover:bg-red-700 text-white' },
-  ],
-  tamir_ediliyor: [
-    { durum: 'tamamlandi',     label: 'Tamamlandı', renk: 'bg-emerald-700 hover:bg-emerald-600 text-white' },
-    { durum: 'hurda',          label: 'Hurda',      renk: 'bg-red-800 hover:bg-red-700 text-white' },
+    { durum: 'tamamlandi', label: 'Tamamlandı', renk: 'bg-emerald-700 hover:bg-emerald-600 text-white' },
+    { durum: 'hurda',      label: 'Hurda',      renk: 'bg-red-800 hover:bg-red-700 text-white' },
   ],
   tamamlandi: [],
   hurda: [],
@@ -111,6 +105,18 @@ export default function TamirIstasyonuPage() {
       patch.tamamlanma_tarihi = new Date().toISOString()
     }
     await supabase.from('tamir_kayitlari').update(patch).eq('id', id)
+
+    // Hurda seçildiğinde camın üretim sırasını sıfırla (yeniden üretim için)
+    if (yeniDurum === 'hurda') {
+      const kayit = kayitlar.find(k => k.id === id)
+      if (kayit?.siparis_detay_id) {
+        await supabase
+          .from('siparis_detaylari')
+          .update({ uretim_durumu: 'bekliyor' })
+          .eq('id', kayit.siparis_detay_id)
+      }
+    }
+
     // optimistic update
     setKayitlar(prev => prev.map(k =>
       k.id === id
@@ -232,7 +238,7 @@ export default function TamirIstasyonuPage() {
       {/* ===== ALT BAR ===== */}
       <div className="border-t border-gray-800 px-6 py-2 flex items-center justify-between text-xs text-gray-600 shrink-0">
         <span>
-          {sayac('bekliyor')} bekliyor · {sayac('tamir_ediliyor')} tamir ediliyor · {sayac('tamamlandi')} tamamlandı · {sayac('hurda')} hurda
+          {sayac('bekliyor')} bekliyor · {sayac('tamamlandi')} tamamlandı · {sayac('hurda')} hurda
         </span>
         <span className="font-mono tabular-nums">{saat.toLocaleTimeString('tr-TR')}</span>
       </div>
@@ -262,7 +268,6 @@ function TamirKarti({ kayit: k, guncelleniyor, onDurumGuncelle, onSil }: TamirKa
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800">
         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${durumRenk(k.durum)}`}>
           {k.durum === 'bekliyor' && <Clock size={10} className="inline mr-1" />}
-          {k.durum === 'tamir_ediliyor' && <Wrench size={10} className="inline mr-1" />}
           {k.durum === 'tamamlandi' && <CheckCircle2 size={10} className="inline mr-1" />}
           {k.durum === 'hurda' && <XCircle size={10} className="inline mr-1" />}
           {DURUM_ETIKETLERI[k.durum]}
@@ -279,7 +284,10 @@ function TamirKarti({ kayit: k, guncelleniyor, onDurumGuncelle, onSil }: TamirKa
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-mono font-black text-white text-2xl leading-tight">{k.cam_kodu}</p>
-            <p className="text-gray-400 text-sm mt-0.5">{k.genislik_mm} × {k.yukseklik_mm} mm</p>
+            <p className="text-gray-400 text-sm mt-0.5">
+              {k.genislik_mm} × {k.yukseklik_mm} mm
+              {k.adet > 1 && <span className="ml-2 text-amber-400 font-semibold">{k.adet} adet</span>}
+            </p>
           </div>
           <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border shrink-0 ml-2 ${sorunRenk(k.sorun_tipi)}`}>
             {SORUN_ETIKETLERI[k.sorun_tipi as keyof typeof SORUN_ETIKETLERI]}

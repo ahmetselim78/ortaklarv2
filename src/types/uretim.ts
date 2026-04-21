@@ -32,6 +32,7 @@ export interface UretimEmriDetay {
     notlar: string | null
     stok?: { ad: string } | null
     siparisler?: {
+      id: string
       siparis_no: string
       cari?: { ad: string } | null
     } | null

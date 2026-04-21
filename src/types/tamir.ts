@@ -1,4 +1,4 @@
-export type TamirDurum = 'bekliyor' | 'tamir_ediliyor' | 'tamamlandi' | 'hurda'
+export type TamirDurum = 'bekliyor' | 'tamamlandi' | 'hurda'
 export type TamirSorun = 'kirik' | 'cizik' | 'olcum_hatasi' | 'diger'
 export type TamirKaynak = 'poz_giris' | 'kumanda' | 'manuel'
 
@@ -13,6 +13,7 @@ export interface TamirKayit {
   sorun_tipi: TamirSorun
   aciklama: string | null
   durum: TamirDurum
+  adet: number
   musteri: string
   nihai_musteri: string
   siparis_no: string
@@ -34,7 +35,6 @@ export const SORUN_ETIKETLERI: Record<TamirSorun, string> = {
 
 export const DURUM_ETIKETLERI: Record<TamirDurum, string> = {
   bekliyor: 'Bekliyor',
-  tamir_ediliyor: 'Tamir Ediliyor',
   tamamlandi: 'Tamamlandı',
   hurda: 'Hurda',
 }

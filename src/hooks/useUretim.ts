@@ -191,7 +191,7 @@ export async function getBatchDetaylari(uretimEmriId: string): Promise<UretimEmr
       siparis_detaylari (
         cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, kenar_islemi, notlar,
         stok!stok_id ( ad ),
-        siparisler ( siparis_no, cari ( ad ) )
+        siparisler ( id, siparis_no, cari ( ad ) )
       )
     `)
     .eq('uretim_emri_id', uretimEmriId)

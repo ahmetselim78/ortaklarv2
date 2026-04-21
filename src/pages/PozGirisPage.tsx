@@ -28,6 +28,7 @@ interface BatchCam {
   genislik_mm: number
   yukseklik_mm: number
   adet: number
+  taranan_adet: number  // kaç adet yıkamadan geçti (yikama_loglari'dan)
   ara_bosluk_mm: number | null
   uretim_durumu: string
   stok_ad: string
@@ -102,6 +103,7 @@ export default function PozGirisPage() {
   const [gecmis, setGecmis] = useState<GecmisSatir[]>([])
   const [aktifMusteri, setAktifMusteri] = useState<string | null>(null)
   const [tamirCam, setTamirCam] = useState<BatchCam | null>(null)
+  const [tamirGonderildi, setTamirGonderildi] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -142,7 +144,7 @@ export default function PozGirisPage() {
       .from('uretim_emri_detaylari')
       .select(`
         uretim_emri_id, siparis_detay_id,
-        siparis_detaylari ( uretim_durumu, siparisler ( notlar, cari ( ad ) ) )
+        siparis_detaylari ( uretim_durumu, adet, siparisler ( notlar, cari ( ad ) ) )
       `)
       .in('uretim_emri_id', emirIds)
 
@@ -150,8 +152,9 @@ export default function PozGirisPage() {
     const detayMap = new Map<string, { toplam: number; taranan: number; musteriSet: Set<string> }>()
     for (const d of tumDetaylar ?? []) {
       const entry = detayMap.get(d.uretim_emri_id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
-      entry.toplam++
-      if ((d as any).siparis_detaylari?.uretim_durumu === 'yikandi') entry.taranan++
+      const adet: number = (d as any).siparis_detaylari?.adet ?? 1
+      entry.toplam += adet
+      if ((d as any).siparis_detaylari?.uretim_durumu === 'yikandi') entry.taranan += adet
       const musteriAd: string = (d as any).siparis_detaylari?.siparisler?.cari?.ad ?? ''
       const nihai = extractNihaiMusteri((d as any).siparis_detaylari?.siparisler?.notlar ?? '')
       const etiket = musteriEtiket(musteriAd, nihai)
@@ -199,7 +202,8 @@ export default function PozGirisPage() {
       cam_kodu: d.siparis_detaylari.cam_kodu,
       genislik_mm: d.siparis_detaylari.genislik_mm,
       yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
-      adet: d.siparis_detaylari.adet,
+      adet: d.siparis_detaylari.adet ?? 1,
+      taranan_adet: 0,  // aşağıda yikama_loglari ile doldurulacak
       ara_bosluk_mm: d.siparis_detaylari.ara_bosluk_mm,
       sira_no: d.sira_no ?? null,
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
@@ -208,8 +212,31 @@ export default function PozGirisPage() {
       nihai_musteri: extractNihaiMusteri(d.siparis_detaylari.siparisler?.notlar ?? ''),
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
     }))
-    setBatchCamlari(camlar)
-    return camlar
+
+    // Yıkama log sayısını her cam için çek (kısmi adet takibi için)
+    const detayIds = camlar.map(c => c.siparis_detay_id)
+    const logCountMap = new Map<string, number>()
+    if (detayIds.length > 0) {
+      const { data: loglar } = await supabase
+        .from('yikama_loglari')
+        .select('siparis_detay_id')
+        .in('siparis_detay_id', detayIds)
+      for (const log of loglar ?? []) {
+        const prev = logCountMap.get((log as any).siparis_detay_id) ?? 0
+        logCountMap.set((log as any).siparis_detay_id, prev + 1)
+      }
+    }
+
+    // taranan_adet'i doldur: yikandi ise adet, değilse log sayısı (adet-1 ile sınırlı)
+    const camlarFinal = camlar.map(c => ({
+      ...c,
+      taranan_adet: c.uretim_durumu === 'yikandi'
+        ? c.adet
+        : Math.min(logCountMap.get(c.siparis_detay_id) ?? 0, c.adet - 1),
+    }))
+
+    setBatchCamlari(camlarFinal)
+    return camlarFinal
   }, [])
 
   const handleBatchSec = async (batch: BatchSatir) => {
@@ -219,20 +246,44 @@ export default function PozGirisPage() {
     setSonTarananCam(null)
     setAktifMusteri(null)
     const camlar = await batchCamlariniGetir(batch.id)
-    if (camlar && camlar.length > 0) setAktifMusteri(`${camlar[0].musteri}||${camlar[0].nihai_musteri}`)
+    if (camlar && camlar.length > 0) {
+      // Tamamlanmamış ilk müşteriyi bul; hepsi tamamlandıysa ilk müşteriden başla
+      const ilkTamamlanmamis = camlar.find(c => c.uretim_durumu !== 'yikandi')
+      const ilkCam = ilkTamamlanmamis ?? camlar[0]
+      setAktifMusteri(`${ilkCam.musteri}||${ilkCam.nihai_musteri}`)
+    }
     setTimeout(() => inputRef.current?.focus(), 100)
+
+    // Batch henüz yıkamada değilse hemen yıkamada'ya al
+    let aktifBatch = batch
+    if (batch.durum === 'export_edildi') {
+      await supabase
+        .from('uretim_emirleri')
+        .update({ durum: 'yikamada' })
+        .eq('id', batch.id)
+      aktifBatch = { ...batch, durum: 'yikamada' }
+      setSeciliBatch(aktifBatch)
+      const benzersizSiparisIds = [...new Set((camlar ?? []).map(c => c.siparis_id))]
+      if (benzersizSiparisIds.length > 0) {
+        await supabase
+          .from('siparisler')
+          .update({ durum: 'yikamada' })
+          .in('id', benzersizSiparisIds)
+      }
+    }
+
     // Kumanda Paneli ve diğer istasyonlara aktif batch'i bildir
     channelRef.current?.send({
       type: 'broadcast',
       event: 'batch_secildi',
-      payload: { batch_id: batch.id, batch_no: batch.batch_no },
+      payload: { batch_id: aktifBatch.id, batch_no: aktifBatch.batch_no },
     })
   }
 
   const handleBatchDegistir = async () => {
     if (seciliBatch && seciliBatch.durum === 'yikamada') {
-      const taranan = batchCamlari.filter(c => c.uretim_durumu === 'yikandi').length
-      const toplam = batchCamlari.length
+      const taranan = batchCamlari.reduce((sum, c) => sum + (c.uretim_durumu === 'yikandi' ? c.adet : c.taranan_adet), 0)
+      const toplam = batchCamlari.reduce((sum, c) => sum + c.adet, 0)
       if (taranan > 0 && taranan < toplam) {
         await supabase
           .from('uretim_emirleri')
@@ -281,16 +332,23 @@ export default function PozGirisPage() {
     }, ms)
   }
 
-  const tarananSayisi = batchCamlari.filter(c => c.uretim_durumu === 'yikandi').length
-  const toplamSayisi = batchCamlari.length
+  const tarananSayisi = useMemo(
+    () => batchCamlari.reduce((sum, c) => sum + (c.uretim_durumu === 'yikandi' ? c.adet : c.taranan_adet), 0),
+    [batchCamlari]
+  )
+  const toplamSayisi = useMemo(
+    () => batchCamlari.reduce((sum, c) => sum + c.adet, 0),
+    [batchCamlari]
+  )
 
   const musteriListesi = useMemo(() => {
     const map = new Map<string, { key: string; etiket: string; toplam: number; tamamlandi: number }>()
     for (const c of batchCamlari) {
       const key = `${c.musteri}||${c.nihai_musteri}`
       const e = map.get(key) ?? { key, etiket: musteriEtiket(c.musteri, c.nihai_musteri), toplam: 0, tamamlandi: 0 }
-      e.toplam++
-      if (c.uretim_durumu === 'yikandi') e.tamamlandi++
+      e.toplam += c.adet
+      if (c.uretim_durumu === 'yikandi') e.tamamlandi += c.adet
+      else e.tamamlandi += c.taranan_adet
       map.set(key, e)
     }
     return Array.from(map.values())
@@ -308,6 +366,7 @@ export default function PozGirisPage() {
     if (/^\d+$/.test(kod)) kod = `GLS-${kod}`
     if (!kod) return
     setInput('')
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
     setDurum('yukleniyor')
 
     const cam = batchCamlari.find(c => c.cam_kodu === kod)
@@ -331,18 +390,31 @@ export default function PozGirisPage() {
       siparis_detay_id: cam.siparis_detay_id,
     })
 
-    // Durumu güncelle (ilk kez)
-    if (!tekrar) {
-      await supabase
-        .from('siparis_detaylari')
-        .update({ uretim_durumu: 'yikandi' })
-        .eq('id', cam.siparis_detay_id)
+    // Adet takibi: her tarama 1 adet sayar
+    const yeniTarananadet = cam.taranan_adet + 1
+    const tumAdetTamamlandi = yeniTarananadet >= cam.adet
 
-      setBatchCamlari(prev => prev.map(c =>
-        c.siparis_detay_id === cam.siparis_detay_id
-          ? { ...c, uretim_durumu: 'yikandi' }
-          : c
-      ))
+    if (!tekrar) {
+      if (tumAdetTamamlandi) {
+        // Tüm adetler işlendi → satırı yikandi olarak işaretle
+        await supabase
+          .from('siparis_detaylari')
+          .update({ uretim_durumu: 'yikandi' })
+          .eq('id', cam.siparis_detay_id)
+
+        setBatchCamlari(prev => prev.map(c =>
+          c.siparis_detay_id === cam.siparis_detay_id
+            ? { ...c, uretim_durumu: 'yikandi', taranan_adet: yeniTarananadet }
+            : c
+        ))
+      } else {
+        // Kısmi tamamlama — sadece lokal sayacı güncelle
+        setBatchCamlari(prev => prev.map(c =>
+          c.siparis_detay_id === cam.siparis_detay_id
+            ? { ...c, taranan_adet: yeniTarananadet }
+            : c
+        ))
+      }
     }
 
     // İlk taramada batch durumunu 'yikamada' yap
@@ -377,11 +449,11 @@ export default function PozGirisPage() {
       },
     })
 
-    setSonTarananCam(cam)
+    setSonTarananCam({ ...cam, taranan_adet: tekrar ? cam.taranan_adet : yeniTarananadet })
     setAktifMusteri(`${cam.musteri}||${cam.nihai_musteri}`)
 
-    // Tüm camlar yıkandı mı kontrol
-    const yeniTaranan = tekrar ? tarananSayisi : tarananSayisi + 1
+    // Tüm camlar yıkandı mı kontrol (her tarama 1 adet sayar)
+    const yeniTaranan = tarananSayisi + (tekrar ? 0 : 1)
     if (yeniTaranan >= toplamSayisi) {
       beep('complete')
       setDurum('tamamlandi')
@@ -400,9 +472,11 @@ export default function PozGirisPage() {
       beep('error')
       setDurum('tekrar')
       setHataMesaji(`${cam.cam_kodu} daha önce girildi`)
+      sifirla(4000)
     } else {
       beep('success')
       setDurum('basarili')
+      // basarili durumu yeni GLS girilene kadar ekranda kalır — sifirla çağrılmaz
     }
 
     setGecmis(prev => [{
@@ -412,8 +486,6 @@ export default function PozGirisPage() {
       zaman: new Date(),
       durum: tekrar ? 'tekrar' : 'ok',
     }, ...prev].slice(0, 15))
-
-    sifirla(4000)
   }
 
   /* ========== RENDER ========== */
@@ -614,10 +686,17 @@ export default function PozGirisPage() {
           <div className="flex-1 flex flex-col items-center justify-center px-6 gap-3 overflow-y-auto py-3">
             {/* Durum kartı */}
             <div className={`w-full border-2 rounded-2xl p-6 text-center transition-colors ${durumRenk(durum)}`}>
-              {durum === 'bos' && (
+              {durum === 'bos' && !tamirGonderildi && (
                 <>
                   <p className="text-gray-300 text-xl font-semibold mb-1">GLS kodunu girin</p>
                   <p className="text-gray-500 text-sm">Numara veya tam GLS-XXXX formatı</p>
+                </>
+              )}
+              {durum === 'bos' && tamirGonderildi && (
+                <>
+                  <Wrench size={44} className="text-orange-400 mx-auto mb-2" />
+                  <p className="text-orange-200 font-bold text-xl">Tamire Gönderildi</p>
+                  <p className="text-orange-400/70 text-sm mt-1">Kayıt oluşturuldu</p>
                 </>
               )}
               {durum === 'yukleniyor' && (
@@ -629,6 +708,11 @@ export default function PozGirisPage() {
                   <p className="font-mono text-3xl font-black text-green-300 mb-1">{sonTarananCam.cam_kodu}</p>
                   <p className="text-green-300/80 text-base font-medium">{sonTarananCam.musteri}</p>
                   <p className="text-green-400/60 text-sm mt-0.5">{sonTarananCam.genislik_mm} × {sonTarananCam.yukseklik_mm} mm</p>
+                  {sonTarananCam.adet > 1 && (
+                    <p className={`text-sm mt-1.5 font-bold tabular-nums ${sonTarananCam.taranan_adet >= sonTarananCam.adet ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {sonTarananCam.taranan_adet} / {sonTarananCam.adet} adet
+                    </p>
+                  )}
                   <button
                     onClick={() => setTamirCam(sonTarananCam)}
                     className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-700 rounded-xl text-red-300 text-sm font-semibold transition-colors"
@@ -672,6 +756,17 @@ export default function PozGirisPage() {
                 disabled={durum === 'tamamlandi'}
               />
             </form>
+
+            {/* Tamir butonu — yeni cam girilene kadar göster */}
+            {sonTarananCam && durum !== 'basarili' && durum !== 'tamamlandi' && (
+              <button
+                onClick={() => setTamirCam(sonTarananCam)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-900/30 hover:bg-red-800/50 border border-red-800 rounded-xl text-red-400 text-sm font-semibold transition-colors"
+              >
+                <Wrench size={14} />
+                {sonTarananCam.cam_kodu} — Tamire Gönder
+              </button>
+            )}
           </div>
 
           {/* Alt: Geçmiş */}
@@ -727,6 +822,7 @@ export default function PozGirisPage() {
               <div className="divide-y divide-gray-800">
                 {aktifMusteriCamlari.map(c => {
                   const girildi = c.uretim_durumu === 'yikandi'
+                  const kismi = !girildi && c.taranan_adet > 0 && c.adet > 1
                   return (
                     <div
                       key={c.cam_kodu}
@@ -737,9 +833,11 @@ export default function PozGirisPage() {
                       <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${
                         girildi
                           ? 'bg-emerald-900/60 text-emerald-300'
+                          : kismi
+                          ? 'bg-amber-900/60 text-amber-300'
                           : 'bg-gray-700 text-gray-300'
                       }`}>
-                        {girildi ? 'Girildi' : 'Bekliyor'}
+                        {girildi ? 'Girildi' : kismi ? `${c.taranan_adet}/${c.adet}` : 'Bekliyor'}
                       </span>
                       <div className="min-w-0">
                         <p className={`font-mono text-base font-bold leading-tight ${
@@ -747,7 +845,12 @@ export default function PozGirisPage() {
                         }`}>{c.cam_kodu}</p>
                         <p className={`text-sm mt-0.5 ${
                           girildi ? 'text-gray-600' : 'text-gray-400'
-                        }`}>{c.genislik_mm} × {c.yukseklik_mm} mm</p>
+                        }`}>{c.genislik_mm} × {c.yukseklik_mm} mm{c.adet > 1 ? ` · ${c.adet} adet` : ''}</p>
+                        {c.stok_ad && (
+                          <p className={`text-xs mt-0.5 truncate ${
+                            girildi ? 'text-gray-600' : 'text-gray-500'
+                          }`}>{c.stok_ad}</p>
+                        )}
                       </div>
                     </div>
                   )
@@ -762,6 +865,7 @@ export default function PozGirisPage() {
       {/* Tamir Modal */}
       {tamirCam && seciliBatch && (
         <TamireGonderModal
+          key={tamirCam.siparis_detay_id}
           cam={{
             cam_kodu: tamirCam.cam_kodu,
             siparis_detay_id: tamirCam.siparis_detay_id,
@@ -774,10 +878,20 @@ export default function PozGirisPage() {
             genislik_mm: tamirCam.genislik_mm,
             yukseklik_mm: tamirCam.yukseklik_mm,
             stok_ad: tamirCam.stok_ad,
+            adet: tamirCam.adet,
           }}
           kaynak="poz_giris"
           onClose={() => { setTamirCam(null); setTimeout(() => inputRef.current?.focus(), 100) }}
-          onSuccess={() => { setTamirCam(null); setTimeout(() => inputRef.current?.focus(), 100) }}
+          onSuccess={() => {
+            setTamirCam(null)
+            setDurum('bos')
+            setSonTarananCam(null)
+            setTamirGonderildi(true)
+            setTimeout(() => {
+              setTamirGonderildi(false)
+              inputRef.current?.focus()
+            }, 2500)
+          }}
         />
       )}
     </div>

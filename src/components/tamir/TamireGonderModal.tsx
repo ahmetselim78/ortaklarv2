@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AlertTriangle, X, Wrench } from 'lucide-react'
 import type { TamirKaynak, TamirSorun } from '@/types/tamir'
@@ -16,6 +16,7 @@ export interface TamireGonderCam {
   genislik_mm: number
   yukseklik_mm: number
   stok_ad: string
+  adet: number
 }
 
 interface Props {
@@ -27,9 +28,18 @@ interface Props {
 
 export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: Props) {
   const [sorunTipi, setSorunTipi] = useState<TamirSorun>('kirik')
+  const [tamirAdeti, setTamirAdeti] = useState(1)
   const [aciklama, setAciklama] = useState('')
   const [yukleniyor, setYukleniyor] = useState(false)
   const [hata, setHata] = useState('')
+
+  // cam değiştiğinde formu sıfırla
+  useEffect(() => {
+    setSorunTipi('kirik')
+    setTamirAdeti(1)
+    setAciklama('')
+    setHata('')
+  }, [cam.siparis_detay_id])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,6 +56,7 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
       sorun_tipi: sorunTipi,
       aciklama: aciklama.trim() || null,
       durum: 'bekliyor',
+      adet: tamirAdeti,
       musteri: cam.musteri,
       nihai_musteri: cam.nihai_musteri,
       siparis_no: cam.siparis_no,
@@ -122,6 +133,31 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {/* Adet seçimi — sadece adet > 1 ise göster */}
+          {cam.adet > 1 && (
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+                Kaç Adet Tamire Gönderiliyor? *
+              </label>
+              <div className="flex gap-2">
+                {Array.from({ length: cam.adet }, (_, i) => i + 1).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setTamirAdeti(n)}
+                    className={`flex-1 py-2.5 rounded-xl border text-sm font-bold transition-colors ${
+                      tamirAdeti === n
+                        ? 'bg-red-900/50 border-red-600 text-red-200'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'
+                    }`}
+                  >
+                    {n} Adet
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Sorun Türü */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">

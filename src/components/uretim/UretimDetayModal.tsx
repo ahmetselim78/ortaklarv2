@@ -1,12 +1,16 @@
 import { useEffect, useState, useMemo } from 'react'
 import { X, Download, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
+import type { Siparis } from '@/types/siparis'
 import {
   getBatchDetaylari,
 } from '@/hooks/useUretim'
 import { exportDetaylariCSV, exportTarihiGuncelle } from '@/services/exportService'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
+import { useStok } from '@/hooks/useStok'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 
 interface Props {
   emir: UretimEmri
@@ -41,6 +45,18 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   const [exportDialogAcik, setExportDialogAcik] = useState(false)
   const [onayYapiliyor, setOnayYapiliyor] = useState(false)
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
+  const [secilenSiparis, setSecilenSiparis] = useState<Siparis | null>(null)
+  const { stoklar } = useStok()
+
+  const handleSiparisAc = async (e: React.MouseEvent, siparisId: string) => {
+    e.stopPropagation()
+    const { data, error } = await supabase
+      .from('siparisler')
+      .select('*, cari(ad, kod)')
+      .eq('id', siparisId)
+      .single()
+    if (!error && data) setSecilenSiparis(data as Siparis)
+  }
 
   const detaylariGetir = async () => {
     setYukleniyor(true)
@@ -64,7 +80,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   }
 
   // Detayları müşteri adı + sipariş no'ya göre grupla
-  type Grup = { musteriAd: string; siparisNo: string; renkIndex: number; satirlar: UretimEmriDetay[] }
+  type Grup = { musteriAd: string; siparisNo: string; siparisId: string; renkIndex: number; satirlar: UretimEmriDetay[] }
   const RENK_SINIFI = [
     { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700' },
     { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700' },
@@ -84,11 +100,12 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
       if (!(musteriAd in musteriRenk)) {
         musteriRenk[musteriAd] = renkSayac++ % RENK_SINIFI.length
       }
+      const siparisId = d.siparis_detaylari?.siparisler?.id ?? ''
       const mevcutGrup = gruplar.find((g) => g.musteriAd === musteriAd && g.siparisNo === siparisNo)
       if (mevcutGrup) {
         mevcutGrup.satirlar.push(d)
       } else {
-        gruplar.push({ musteriAd, siparisNo, renkIndex: musteriRenk[musteriAd], satirlar: [d] })
+        gruplar.push({ musteriAd, siparisNo, siparisId, renkIndex: musteriRenk[musteriAd], satirlar: [d] })
       }
     }
     return { gruplar, musteriRenk }
@@ -213,7 +230,13 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
                           </span>
                           <span className={cn('font-semibold text-xs', renk.text)}>{grup.musteriAd}</span>
                           <span className="text-gray-300">·</span>
-                          <span className={cn('font-mono text-xs', renk.text)}>{grup.siparisNo}</span>
+                          <button
+                            onClick={(e) => grup.siparisId && handleSiparisAc(e, grup.siparisId)}
+                            className={cn('font-mono text-xs underline underline-offset-2 hover:opacity-70 transition-opacity', renk.text)}
+                            title="Siparişi görüntüle"
+                          >
+                            {grup.siparisNo}
+                          </button>
                           <span className={cn('ml-auto text-xs font-medium px-2 py-0.5 rounded-full shrink-0', renk.badge)}>
                             {grup.satirlar.length} parça
                           </span>
@@ -292,6 +315,15 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
           }}
           onKapat={() => setExportDialogAcik(false)}
         />
+
+        {/* Sipariş detay modalı */}
+        {secilenSiparis && (
+          <SiparisDetayModal
+            siparis={secilenSiparis}
+            stoklar={stoklar}
+            onKapat={() => setSecilenSiparis(null)}
+          />
+        )}
       </div>
     </div>
   )

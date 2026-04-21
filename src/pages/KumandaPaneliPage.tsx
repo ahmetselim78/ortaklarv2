@@ -36,6 +36,7 @@ interface BatchCamKumanda {
   uretim_durumu: string
   genislik_mm: number
   yukseklik_mm: number
+  adet: number
   stok_ad: string
   sira_no: number | null
 }
@@ -69,7 +70,7 @@ export default function KumandaPaneliPage() {
       .select(`
         id, siparis_detay_id, sira_no,
         siparis_detaylari (
-          cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm,
+          cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet,
           stok!stok_id ( ad ),
           siparisler ( siparis_no, notlar, cari ( ad ) )
         )
@@ -85,6 +86,7 @@ export default function KumandaPaneliPage() {
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       genislik_mm: d.siparis_detaylari.genislik_mm,
       yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
+      adet: d.siparis_detaylari.adet ?? 1,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
       sira_no: d.sira_no ?? null,
     }))
@@ -239,7 +241,7 @@ export default function KumandaPaneliPage() {
         </div>
 
         {/* ===== ORTA: Cam Kartları ===== */}
-        <div className="flex-1 flex flex-col px-6 py-4 overflow-y-auto gap-3">
+        <div className="flex-1 flex flex-col px-6 py-3 overflow-y-auto gap-2">
           {kartlar.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center">
               <div className="w-20 h-20 rounded-full bg-gray-900 flex items-center justify-center mb-4">
@@ -251,19 +253,20 @@ export default function KumandaPaneliPage() {
           ) : (
             kartlar.map((k, i) => {
               const aktif = i === 0
+              const batchCam = batchCamlari.find(c => c.cam_kodu === k.cam_kodu)
               return (
                 <div
                   key={`${k.cam_kodu}-${k.zaman}`}
-                  className={`rounded-2xl border p-6 transition-all ${
+                  className={`rounded-xl border p-3 transition-all ${
                     aktif
                       ? 'bg-gray-900 border-blue-600 ring-1 ring-blue-600/30'
                       : 'bg-gray-900/70 border-gray-800'
                   }`}
                 >
-                  {/* Üst satır: GLS kodu + Etiket durumu */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <span className={`font-mono font-black tracking-wider text-3xl ${aktif ? 'text-blue-300' : 'text-gray-300'}`}>
+                  {/* Üst satır: GLS kodu + Etiket durumu + Tamir butonu */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-mono font-black tracking-wider text-2xl ${aktif ? 'text-blue-300' : 'text-gray-300'}`}>
                         {k.cam_kodu}
                       </span>
                       {aktif && (
@@ -271,38 +274,60 @@ export default function KumandaPaneliPage() {
                           AKTİF
                         </span>
                       )}
+                      <span className="flex items-center gap-1 text-xs text-green-400 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                        Etiket Basıldı
+                      </span>
                     </div>
-                    <span className="flex items-center gap-1.5 text-sm text-green-400 font-medium">
-                      <span className="w-2 h-2 rounded-full bg-green-400" />
-                      Etiket Basıldı
-                    </span>
+                    <button
+                      onClick={() => batchCam && setTamirCam({
+                        cam_kodu: batchCam.cam_kodu,
+                        siparis_detay_id: batchCam.siparis_detay_id,
+                        uretim_emri_id: batchId ?? '',
+                        batch_no: batchNo ?? '',
+                        sira_no: batchCam.sira_no,
+                        musteri: batchCam.musteri,
+                        nihai_musteri: batchCam.nihai_musteri,
+                        siparis_no: batchCam.siparis_no,
+                        genislik_mm: batchCam.genislik_mm,
+                        yukseklik_mm: batchCam.yukseklik_mm,
+                        stok_ad: batchCam.stok_ad,
+                        adet: batchCam.adet,
+                      })}
+                      disabled={!batchCam}
+                      className="p-2 rounded-lg bg-red-900/60 border border-red-700 text-red-400 hover:bg-red-800/80 hover:text-red-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Tamire Gönder"
+                    >
+                      <Wrench size={18} />
+                    </button>
                   </div>
 
                   {/* Detay grid */}
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-5 gap-3">
                     <div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">MÜŞTERİ</div>
-                      <div className="font-semibold text-white text-base truncate">{k.musteri || '—'}</div>
+                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">MÜŞTERİ</div>
+                      <div className="font-semibold text-white text-sm truncate">{k.musteri || '—'}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">SİPARİŞ</div>
+                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">SİPARİŞ</div>
                       <div className="font-mono text-gray-300 text-sm">{k.siparis_no}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">BOYUT</div>
-                      <div className="text-gray-300 text-sm">{k.genislik_mm} × {k.yukseklik_mm} mm</div>
+                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">POZ</div>
+                      <div className="font-black text-amber-300 text-base tabular-nums">
+                        {batchCam?.sira_no != null ? `#${batchCam.sira_no}` : '—'}
+                      </div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">ÇITA</div>
-                      <div className="font-bold text-amber-300 text-lg">
+                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">BOYUT</div>
+                      <div className="font-bold text-white text-base tabular-nums">{k.genislik_mm} × {k.yukseklik_mm} mm</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">ÇITA</div>
+                      <div className="font-bold text-amber-300 text-base tabular-nums">
                         {k.ara_bosluk_mm != null ? `${k.ara_bosluk_mm} mm` : '—'}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Zaman */}
-                  <div className="mt-3 text-xs text-gray-600 tabular-nums">
-                    {new Date(k.zaman).toLocaleTimeString('tr-TR')}
                   </div>
                 </div>
               )
@@ -355,25 +380,6 @@ export default function KumandaPaneliPage() {
                           girildi ? 'text-gray-600' : 'text-gray-400'
                         }`}>{c.genislik_mm} × {c.yukseklik_mm} mm</p>
                       </div>
-                      <button
-                        onClick={() => setTamirCam({
-                          cam_kodu: c.cam_kodu,
-                          siparis_detay_id: c.siparis_detay_id,
-                          uretim_emri_id: batchId ?? '',
-                          batch_no: batchNo ?? '',
-                          sira_no: c.sira_no,
-                          musteri: c.musteri,
-                          nihai_musteri: c.nihai_musteri,
-                          siparis_no: c.siparis_no,
-                          genislik_mm: c.genislik_mm,
-                          yukseklik_mm: c.yukseklik_mm,
-                          stok_ad: c.stok_ad,
-                        })}
-                        className="shrink-0 p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-gray-800 transition-colors"
-                        title="Tamire Gönder"
-                      >
-                        <Wrench size={14} />
-                      </button>
                     </div>
                   )
                 })}
@@ -393,6 +399,7 @@ export default function KumandaPaneliPage() {
       {/* Tamir Modal */}
       {tamirCam && (
         <TamireGonderModal
+          key={tamirCam.siparis_detay_id}
           cam={tamirCam}
           kaynak="kumanda"
           onClose={() => setTamirCam(null)}

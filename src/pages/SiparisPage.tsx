@@ -27,7 +27,7 @@ const DURUM_FILTRELER: { deger: DurumFiltre; etiket: string }[] = [
 ]
 
 export default function SiparisPage() {
-  const { siparisler, yukleniyor, hata, ekle, guncelle, sil, yenile } = useSiparis()
+  const { siparisler, yukleniyor, hata, ekle, guncelle, durumGuncelle, yenile } = useSiparis()
   const { cariler } = useCari()
   const { stoklar } = useStok()
   const location = useLocation()
@@ -35,8 +35,8 @@ export default function SiparisPage() {
   const [formAcik, setFormAcik] = useState(false)
   const [pdfModalAcik, setPdfModalAcik] = useState(false)
   const [gorunenSiparis, setGorunenSiparis] = useState<Siparis | null>(null)
-  const [silinecek, setSilinecek] = useState<Siparis | null>(null)
-  const [siliniyor, setSiliniyor] = useState(false)
+  const [iptalEdilecek, setIptalEdilecek] = useState<Siparis | null>(null)
+  const [iptalEdiliyor, setIptalEdiliyor] = useState(false)
   const [durumFiltre, setDurumFiltre] = useState<DurumFiltre>('hepsi')
   const [sayfa, setSayfa] = useState(1)
   const SAYFA_BOYUTU = 20
@@ -61,7 +61,7 @@ export default function SiparisPage() {
     const { data } = await supabase
       .from('tamir_kayitlari')
       .select('siparis_detay_id, siparis_detaylari(siparis_id)')
-      .in('durum', ['bekliyor', 'tamir_ediliyor'])
+      .in('durum', ['bekliyor'])
       .not('siparis_detay_id', 'is', null)
 
     const ids = new Set<string>()
@@ -94,14 +94,14 @@ export default function SiparisPage() {
 
   useEffect(() => { setSayfa(1) }, [durumFiltre])
 
-  const handleSilOnayla = async () => {
-    if (!silinecek) return
-    setSiliniyor(true)
+  const handleIptalOnayla = async () => {
+    if (!iptalEdilecek) return
+    setIptalEdiliyor(true)
     try {
-      await sil(silinecek.id)
+      await durumGuncelle(iptalEdilecek.id, 'iptal')
     } finally {
-      setSiliniyor(false)
-      setSilinecek(null)
+      setIptalEdiliyor(false)
+      setIptalEdilecek(null)
     }
   }
 
@@ -183,7 +183,7 @@ export default function SiparisPage() {
             yukleniyor={yukleniyor}
             tamirdeSiparisIds={tamirdeSiparisIds}
             onGoruntule={setGorunenSiparis}
-            onSil={setSilinecek}
+            onIptal={setIptalEdilecek}
           />
           <Pagination
             toplamKayit={filtrelenmis.length}
@@ -208,6 +208,7 @@ export default function SiparisPage() {
       {gorunenSiparis && (
         <SiparisDetayModal
           siparis={gorunenSiparis}
+          stoklar={stoklar}
           onGuncelle={guncelle}
           onKapat={() => { setGorunenSiparis(null); yenile() }}
         />
@@ -223,28 +224,28 @@ export default function SiparisPage() {
         />
       )}
 
-      {/* Silme Onayı */}
-      {silinecek && (
+      {/* İptal Onayı */}
+      {iptalEdilecek && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Sipariş Silinsin mi?</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Sipariş İptal Edilsin mi?</h3>
             <p className="text-sm text-gray-500 mb-5">
-              <span className="font-medium text-gray-700">{silinecek.siparis_no}</span> ve
-              tüm cam parçaları kalıcı olarak silinecek.
+              <span className="font-medium text-gray-700">{iptalEdilecek.siparis_no}</span> siparişi
+              iptal durumuna alınacak. Bu işlem geri alınabilir.
             </p>
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setSilinecek(null)}
+                onClick={() => setIptalEdilecek(null)}
                 className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
               >
-                İptal
+                Vazgeç
               </button>
               <button
-                onClick={handleSilOnayla}
-                disabled={siliniyor}
+                onClick={handleIptalOnayla}
+                disabled={iptalEdiliyor}
                 className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
               >
-                {siliniyor ? 'Siliniyor...' : 'Sil'}
+                {iptalEdiliyor ? 'İptal ediliyor...' : 'İptal Et'}
               </button>
             </div>
           </div>

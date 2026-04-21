@@ -18,6 +18,7 @@ interface YeniSiparisForm {
   tarih: string
   teslim_tarihi?: string
   notlar?: string
+  alt_musteri?: string
   camlar: CamFormSatiri[]
 }
 
@@ -54,6 +55,7 @@ export function useSiparis() {
         tarih: form.tarih,
         teslim_tarihi: form.teslim_tarihi || null,
         notlar: form.notlar || null,
+        alt_musteri: form.alt_musteri || null,
       })
       .select()
       .single()
@@ -72,8 +74,10 @@ export function useSiparis() {
       yukseklik_mm: Number(cam.yukseklik_mm),
       adet: Number(cam.adet),
       ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
+      cita_stok_id: cam.cita_stok_id || null,
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,
+      poz: cam.poz || null,
     }))
 
     const { error: detayHata } = await supabase
@@ -100,8 +104,13 @@ export function useSiparis() {
     await getir()
   }
 
-  const guncelle = async (id: string, form: { tarih?: string; teslim_tarihi?: string | null; notlar?: string | null }) => {
-    const { error } = await supabase.from('siparisler').update(form).eq('id', id)
+  const guncelle = async (id: string, form: { tarih?: string; teslim_tarihi?: string | null; alt_musteri?: string | null; notlar?: string | null }) => {
+    const { error } = await supabase.from('siparisler').update({
+      tarih: form.tarih,
+      teslim_tarihi: form.teslim_tarihi,
+      alt_musteri: form.alt_musteri,
+      notlar: form.notlar,
+    }).eq('id', id)
     if (error) throw new Error(error.message)
     await getir()
   }
@@ -119,7 +128,7 @@ export function useSiparis() {
 export async function getSiparisDetaylari(siparisId: string): Promise<SiparisDetay[]> {
   const { data, error } = await supabase
     .from('siparis_detaylari')
-    .select('*, stok!stok_id(ad)')
+    .select('*, stok:stok!stok_id(ad), cita_stok:stok!cita_stok_id(ad)')
     .eq('siparis_id', siparisId)
     .order('created_at')
 

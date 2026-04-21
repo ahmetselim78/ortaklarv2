@@ -1,4 +1,3 @@
-import { useNavigate } from 'react-router-dom'
 import { Eye, Trash2, Download } from 'lucide-react'
 import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
 import { cn } from '@/lib/utils'
@@ -9,6 +8,7 @@ interface Props {
   yukleniyor: boolean
   onGoruntule: (emir: UretimEmri) => void
   onSil: (emir: UretimEmri) => void
+  onSiparisAc: (siparisId: string) => void
 }
 
 const DURUM_STIL: Record<UretimEmriDurum, string> = {
@@ -29,8 +29,7 @@ const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
   eksik_var: 'Eksik Var',
 }
 
-export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil }: Props) {
-  const navigate = useNavigate()
+export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil, onSiparisAc }: Props) {
 
   if (yukleniyor) {
     return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
@@ -83,7 +82,7 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil 
                   {(emir.siparis_listesi ?? []).map((sip) => (
                     <button
                       key={sip.id}
-                      onClick={() => navigate('/siparisler', { state: { openSiparisId: sip.id } })}
+                      onClick={() => onSiparisAc(sip.id)}
                       className="group flex flex-col items-start px-2 py-1 rounded-lg bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 transition-colors text-left"
                       title={`${sip.siparis_no} — ${sip.musteri_ad}`}
                     >

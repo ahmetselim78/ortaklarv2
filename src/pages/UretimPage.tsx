@@ -1,17 +1,32 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useUretim } from '@/hooks/useUretim'
+import { useStok } from '@/hooks/useStok'
+import { supabase } from '@/lib/supabase'
 import UretimListesi from '@/components/uretim/UretimListesi'
 import UretimDetayModal from '@/components/uretim/UretimDetayModal'
 import YeniBatchModal from '@/components/uretim/YeniBatchModal'
+import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
+import type { Siparis } from '@/types/siparis'
 
 export default function UretimPage() {
   const { emirler, yukleniyor, hata, yeniBatch, durumGuncelle, sil, yenile } = useUretim()
+  const { stoklar } = useStok()
   const [seciliEmir, setSeciliEmir] = useState<UretimEmri | null>(null)
+  const [seciliSiparis, setSeciliSiparis] = useState<Siparis | null>(null)
   const [silinecek, setSilinecek] = useState<UretimEmri | null>(null)
   const [modalAcik, setModalAcik] = useState(false)
   const [siliniyorId, setSiliniyorId] = useState<string | null>(null)
+
+  const handleSiparisAc = async (siparisId: string) => {
+    const { data, error } = await supabase
+      .from('siparisler')
+      .select('*, cari(ad, kod)')
+      .eq('id', siparisId)
+      .single()
+    if (!error && data) setSeciliSiparis(data as Siparis)
+  }
 
   const handleBatchOlustur = async (siparisIds: string[]) => {
     await yeniBatch(siparisIds)
@@ -68,6 +83,7 @@ export default function UretimPage() {
         yukleniyor={yukleniyor}
         onGoruntule={setSeciliEmir}
         onSil={setSilinecek}
+        onSiparisAc={handleSiparisAc}
       />
 
       {/* Detay Modalı */}
@@ -112,6 +128,15 @@ export default function UretimPage() {
         <YeniBatchModal
           onOlustur={handleBatchOlustur}
           onKapat={() => setModalAcik(false)}
+        />
+      )}
+
+      {/* Sipariş Detay Modalı */}
+      {seciliSiparis && (
+        <SiparisDetayModal
+          siparis={seciliSiparis}
+          stoklar={stoklar}
+          onKapat={() => setSeciliSiparis(null)}
         />
       )}
     </div>

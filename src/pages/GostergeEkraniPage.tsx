@@ -121,6 +121,9 @@ export default function GostergeEkraniPage() {
   useEffect(() => {
     const channel = supabase
       .channel('uretim-istasyonlar')
+      .on('broadcast', { event: 'batch_secildi' }, () => {
+        fetchRef.current()
+      })
       .on('broadcast', { event: 'yeni_cam' }, ({ payload }) => {
         const gelenBosluk = (payload as any).ara_bosluk_mm as number | null
 
