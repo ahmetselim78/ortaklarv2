@@ -42,17 +42,26 @@ export function exportDetaylariCSV(detaylar: UretimEmriDetay[], batchNo: string)
   const link = document.createElement('a')
   link.href = url
   link.download = `${batchNo}.csv`
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
+  document.body.removeChild(link)
+  // Safari ve bazı tarayıcılarda hemen revoke indirmeyi iptal edebilir
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** Export sonrası batch'in durumunu ve export tarihini günceller */
+/** Export sonrası batch'in durumunu ve export tarihini günceller.
+ *  Sadece 'onaylandi' veya 'eksik_var' durumundan 'export_edildi'ye geçiş yapar. */
 export async function exportTarihiGuncelle(uretimEmriId: string) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('uretim_emirleri')
     .update({ export_tarihi: new Date().toISOString(), durum: 'export_edildi' })
     .eq('id', uretimEmriId)
+    .in('durum', ['onaylandi', 'eksik_var'])
+    .select('id')
 
   if (error) throw new Error(`Export tarihi güncellenemedi: ${error.message}`)
+  if (!data || data.length === 0) {
+    throw new Error('Batch export edilemez: sadece Onaylandı veya Eksik Var durumundaki batch\'ler export edilebilir.')
+  }
 }
 

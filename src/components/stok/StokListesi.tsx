@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import type { Stok, StokKategori } from '@/types/stok'
 import Pagination from '@/components/ui/Pagination'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 
 interface Props {
   stoklar: Stok[]
@@ -32,7 +33,7 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
   useEffect(() => { setSayfa(1) }, [arama, kategori])
 
   if (yukleniyor) {
-    return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
+    return <TableSkeleton satir={6} kolon={5} />
   }
 
   return (

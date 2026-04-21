@@ -107,13 +107,24 @@ export default function TamirIstasyonuPage() {
     await supabase.from('tamir_kayitlari').update(patch).eq('id', id)
 
     // Hurda seçildiğinde camın üretim sırasını sıfırla (yeniden üretim için)
+    // — sadece tamir.adet, detay.adet ile aynıysa (kısmi hurda ise başka adetler halen yıkanmış olabilir)
     if (yeniDurum === 'hurda') {
       const kayit = kayitlar.find(k => k.id === id)
       if (kayit?.siparis_detay_id) {
-        await supabase
+        const { data: detay } = await supabase
           .from('siparis_detaylari')
-          .update({ uretim_durumu: 'bekliyor' })
+          .select('adet')
           .eq('id', kayit.siparis_detay_id)
+          .maybeSingle()
+        const detayAdet = (detay as any)?.adet ?? 1
+        if (kayit.adet >= detayAdet) {
+          await supabase
+            .from('siparis_detaylari')
+            .update({ uretim_durumu: 'bekliyor' })
+            .eq('id', kayit.siparis_detay_id)
+        }
+        // Kısmi hurda ise detay durumu değişmez — tamamlanmış adetler korunur.
+        // (İleride: ayrı bir "hurda_adeti" kolonu ile takip edilebilir.)
       }
     }
 

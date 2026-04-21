@@ -8,6 +8,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import SevkiyatPlanlama from '@/components/sevkiyat/SevkiyatPlanlama'
+import { Skeleton, CardSkeleton } from '@/components/ui/Skeleton'
 
 /* ===================================================================
    Types
@@ -360,7 +361,24 @@ export default function Dashboard() {
      Render
   =================================================================== */
   if (yukleniyor) {
-    return <div className="flex items-center justify-center min-h-[60vh] text-gray-400">Yükleniyor...</div>
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <Skeleton className="h-7 w-32 mb-2" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+          <Skeleton className="h-10 w-44" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+          {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Skeleton className="h-96 lg:col-span-2 rounded-xl" />
+          <Skeleton className="h-96 rounded-xl" />
+        </div>
+      </div>
+    )
   }
 
   const kartlar = [
@@ -419,13 +437,13 @@ export default function Dashboard() {
             <Link
               key={k.baslik}
               to={k.link}
-              className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow"
+              className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-gray-300 hover:shadow-md hover:-translate-y-0.5 transition-all"
             >
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${k.renk}`}>
-                <Icon size={20} />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ring-1 ring-inset ring-white/50 ${k.renk}`}>
+                <Icon size={20} strokeWidth={2.1} />
               </div>
-              <p className="text-2xl font-bold text-gray-800">{k.deger}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{k.baslik}</p>
+              <p className="text-3xl font-bold text-gray-800 tabular-nums leading-none">{k.deger}</p>
+              <p className="text-xs text-gray-500 mt-1.5 font-medium">{k.baslik}</p>
             </Link>
           )
         })}
@@ -739,13 +757,18 @@ export default function Dashboard() {
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]">
             {yikamaYukleniyor ? (
-              <div className="flex items-center justify-center py-10 text-gray-400 text-xs">
-                Yükleniyor…
+              <div className="space-y-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 w-full rounded-xl" />
+                ))}
               </div>
             ) : yikamaBatchler.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-                <Droplets size={36} className="mb-2 opacity-40" />
-                <p className="text-xs">Yıkamada batch yok</p>
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-400 mb-3">
+                  <Droplets size={22} />
+                </div>
+                <p className="text-sm font-medium text-gray-600">Yıkamada batch yok</p>
+                <p className="text-xs text-gray-400 mt-0.5">Export edilen batch'ler burada görünür</p>
               </div>
             ) : (
               yikamaBatchler.map(batch => {

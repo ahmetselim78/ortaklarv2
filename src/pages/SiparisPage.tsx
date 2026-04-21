@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Plus, ClipboardList, FileUp, Wrench } from 'lucide-react'
 import Pagination from '@/components/ui/Pagination'
+import EmptyState from '@/components/ui/EmptyState'
 import { useSiparis } from '@/hooks/useSiparis'
 import { useCari } from '@/hooks/useCari'
 import { useStok } from '@/hooks/useStok'
@@ -171,11 +172,20 @@ export default function SiparisPage() {
       )}
 
       {!yukleniyor && siparisler.length === 0 && !hata ? (
-        <div className="text-center py-24 text-gray-400">
-          <ClipboardList size={48} className="mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">Henüz sipariş yok</p>
-          <p className="text-sm mt-1">Sağ üstteki "Yeni Sipariş" butonuyla ekleyin.</p>
-        </div>
+        <EmptyState
+          icon={ClipboardList}
+          baslik="Henüz sipariş yok"
+          aciklama={'Sağ üstteki "Yeni Sipariş" butonuyla ilk siparişinizi oluşturabilirsiniz.'}
+          aksiyon={
+            <button
+              onClick={() => setFormAcik(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus size={16} />
+              Yeni Sipariş
+            </button>
+          }
+        />
       ) : (
         <>
           <SiparisListesi

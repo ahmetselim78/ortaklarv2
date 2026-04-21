@@ -1,7 +1,8 @@
 import { Eye, Trash2, Download } from 'lucide-react'
-import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
-import { cn } from '@/lib/utils'
+import type { UretimEmri } from '@/types/uretim'
 import { formatDate } from '@/lib/utils'
+import StatusBadge from '@/components/ui/StatusBadge'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 
 interface Props {
   emirler: UretimEmri[]
@@ -11,28 +12,10 @@ interface Props {
   onSiparisAc: (siparisId: string) => void
 }
 
-const DURUM_STIL: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'bg-gray-100 text-gray-600',
-  onaylandi: 'bg-blue-50 text-blue-700',
-  export_edildi: 'bg-orange-50 text-orange-700',
-  yikamada: 'bg-cyan-50 text-cyan-700',
-  tamamlandi: 'bg-green-50 text-green-700',
-  eksik_var: 'bg-red-50 text-red-700',
-}
-
-const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'Hazırlanıyor',
-  onaylandi: 'Onaylandı',
-  export_edildi: 'Export Edildi',
-  yikamada: 'Yıkamada',
-  tamamlandi: 'Tamamlandı',
-  eksik_var: 'Eksik Var',
-}
-
 export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil, onSiparisAc }: Props) {
 
   if (yukleniyor) {
-    return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
+    return <TableSkeleton satir={5} kolon={6} />
   }
 
   if (emirler.length === 0) return null
@@ -60,9 +43,7 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil,
               <td className="px-4 py-3 font-mono font-semibold text-gray-800">{emir.batch_no}</td>
               <td className="px-4 py-3 text-gray-600">{formatDate(emir.olusturulma_tarihi)}</td>
               <td className="px-4 py-3">
-                <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[emir.durum])}>
-                  {DURUM_ETIKET[emir.durum]}
-                </span>
+                <StatusBadge durum={emir.durum} tip="uretim" />
               </td>
               <td className="px-4 py-3 text-gray-600">
                 {emir.export_tarihi ? (

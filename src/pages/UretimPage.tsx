@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Factory } from 'lucide-react'
 import { useUretim } from '@/hooks/useUretim'
 import { useStok } from '@/hooks/useStok'
 import { supabase } from '@/lib/supabase'
+import EmptyState from '@/components/ui/EmptyState'
 import UretimListesi from '@/components/uretim/UretimListesi'
 import UretimDetayModal from '@/components/uretim/UretimDetayModal'
 import YeniBatchModal from '@/components/uretim/YeniBatchModal'
@@ -78,13 +79,30 @@ export default function UretimPage() {
       )}
 
       {/* Tablo */}
-      <UretimListesi
-        emirler={emirler}
-        yukleniyor={yukleniyor}
-        onGoruntule={setSeciliEmir}
-        onSil={setSilinecek}
-        onSiparisAc={handleSiparisAc}
-      />
+      {!yukleniyor && emirler.length === 0 && !hata ? (
+        <EmptyState
+          icon={Factory}
+          baslik="Henüz üretim emri yok"
+          aciklama={'Siparişleri gruplandırarak yeni bir üretim batch’i oluşturun.'}
+          aksiyon={
+            <button
+              onClick={() => setModalAcik(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              <Plus size={16} />
+              Yeni Batch
+            </button>
+          }
+        />
+      ) : (
+        <UretimListesi
+          emirler={emirler}
+          yukleniyor={yukleniyor}
+          onGoruntule={setSeciliEmir}
+          onSil={setSilinecek}
+          onSiparisAc={handleSiparisAc}
+        />
+      )}
 
       {/* Detay Modalı */}
       {seciliEmir && (

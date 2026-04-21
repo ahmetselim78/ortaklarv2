@@ -15,7 +15,10 @@ const camSchema = z.object({
   genislik_mm: z.coerce.number().positive('Pozitif olmalı'),
   yukseklik_mm: z.coerce.number().positive('Pozitif olmalı'),
   adet: z.coerce.number().int().min(1, 'En az 1'),
-  ara_bosluk_mm: z.coerce.number().positive('Seçiniz').optional(),
+  ara_bosluk_mm: z.preprocess(
+    v => (v === '' || v === null || v === undefined ? undefined : v),
+    z.coerce.number().positive('Pozitif olmalı').optional()
+  ),
   cita_stok_id: z.string().optional(),
   kenar_islemi: z.string().optional(),
   notlar: z.string().optional(),

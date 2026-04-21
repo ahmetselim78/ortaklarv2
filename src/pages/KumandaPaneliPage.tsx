@@ -7,9 +7,9 @@ import type { TamireGonderCam } from '@/components/tamir/TamireGonderModal'
 
 /* ========== Yardımcılar ========== */
 
-function extractNihaiMusteri(notlar: string): string {
-  const m = notlar.match(/Nihai\s+M[\u00fc\u00dc][\u015f\u015e]teri:\s*(.+?)(?:\s*\/|$)/i)
-  return m?.[1]?.trim() ?? ''
+/** Cari adı + nihai müşteri → görüntü etiketi */
+function musteriEtiket(musteri: string, nihai: string): string {
+  return nihai ? `${musteri} \u2014 ${nihai}` : musteri
 }
 
 /* ========== Tipler ========== */
@@ -37,8 +37,18 @@ interface BatchCamKumanda {
   genislik_mm: number
   yukseklik_mm: number
   adet: number
+  taranan_adet: number
   stok_ad: string
   sira_no: number | null
+}
+
+/** "musteri||nihaiMusteri" bileşik anahtarını görüntü etiketine çevirir */
+function musteriKeyToLabel(key: string): string {
+  const sep = key.indexOf('||')
+  if (sep === -1) return key
+  const m = key.slice(0, sep)
+  const n = key.slice(sep + 2)
+  return musteriEtiket(m, n)
 }
 
 /* ========== Bileşen ========== */
@@ -72,7 +82,7 @@ export default function KumandaPaneliPage() {
         siparis_detaylari (
           cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet,
           stok!stok_id ( ad ),
-          siparisler ( siparis_no, notlar, cari ( ad ) )
+          siparisler ( siparis_no, alt_musteri, cari ( ad ) )
         )
       `)
       .eq('uretim_emri_id', loadBatchId)
@@ -81,28 +91,50 @@ export default function KumandaPaneliPage() {
       siparis_detay_id: d.siparis_detay_id,
       cam_kodu: d.siparis_detaylari.cam_kodu,
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
-      nihai_musteri: extractNihaiMusteri(d.siparis_detaylari.siparisler?.notlar ?? ''),
+      nihai_musteri: d.siparis_detaylari.siparisler?.alt_musteri ?? '',
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       genislik_mm: d.siparis_detaylari.genislik_mm,
       yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
       adet: d.siparis_detaylari.adet ?? 1,
+      taranan_adet: 0,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
       sira_no: d.sira_no ?? null,
     }))
+
+    // Yıkama log sayısı ile kısmi adet doldur
+    const detayIds = camlar.map(c => c.siparis_detay_id)
+    const logCountMap = new Map<string, number>()
+    if (detayIds.length > 0) {
+      const { data: loglar } = await supabase
+        .from('yikama_loglari')
+        .select('siparis_detay_id')
+        .in('siparis_detay_id', detayIds)
+      for (const log of loglar ?? []) {
+        const prev = logCountMap.get((log as any).siparis_detay_id) ?? 0
+        logCountMap.set((log as any).siparis_detay_id, prev + 1)
+      }
+    }
+    const camlarFinal = camlar.map(c => ({
+      ...c,
+      taranan_adet: c.uretim_durumu === 'yikandi'
+        ? c.adet
+        : Math.min(logCountMap.get(c.siparis_detay_id) ?? 0, c.adet),
+    }))
+
     setBatchId(loadBatchId)
     setBatchNo(batchNoStr)
-    setBatchCamlari(camlar)
+    setBatchCamlari(camlarFinal)
   }, [])
 
-  // On mount: aktif (yikamada) batch varsa yükle
+  // On mount: en son yıkamaya alınan batch'i yükle (Poz Giriş'ten broadcast gelene kadar)
   useEffect(() => {
     async function loadActiveBatch() {
       const { data } = await supabase
         .from('uretim_emirleri')
         .select('id, batch_no')
         .eq('durum', 'yikamada')
-        .order('olusturulma_tarihi', { ascending: false })
+        .order('export_tarihi', { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle()
       if (data) {
@@ -112,20 +144,22 @@ export default function KumandaPaneliPage() {
     loadActiveBatch()
   }, [batchYukle])
 
-  // Müşteri listesi: PozGiriş ile aynı format
+  // Müşteri listesi: PozGiriş ile aynı key formatı (musteri||nihai_musteri)
   const musteriListesi = useMemo(() => {
-    const map = new Map<string, { toplam: number; tamamlandi: number }>()
+    const map = new Map<string, { key: string; etiket: string; toplam: number; tamamlandi: number }>()
     for (const c of batchCamlari) {
-      const e = map.get(c.musteri) ?? { toplam: 0, tamamlandi: 0 }
-      e.toplam++
-      if (c.uretim_durumu === 'yikandi') e.tamamlandi++
-      map.set(c.musteri, e)
+      const key = `${c.musteri}||${c.nihai_musteri}`
+      const e = map.get(key) ?? { key, etiket: musteriEtiket(c.musteri, c.nihai_musteri), toplam: 0, tamamlandi: 0 }
+      e.toplam += c.adet
+      if (c.uretim_durumu === 'yikandi') e.tamamlandi += c.adet
+      else e.tamamlandi += c.taranan_adet
+      map.set(key, e)
     }
-    return Array.from(map.entries()).map(([musteri, d]) => ({ musteri, ...d }))
+    return Array.from(map.values())
   }, [batchCamlari])
 
   const aktifMusteriCamlari = useMemo(
-    () => aktifMusteri ? batchCamlari.filter(c => c.musteri === aktifMusteri) : [],
+    () => aktifMusteri ? batchCamlari.filter(c => `${c.musteri}||${c.nihai_musteri}` === aktifMusteri) : [],
     [aktifMusteri, batchCamlari]
   )
 
@@ -144,13 +178,20 @@ export default function KumandaPaneliPage() {
         setKartlar(prev => [yeniKart, ...prev].slice(0, 10))
         setFlash(true)
         setTimeout(() => setFlash(false), 600)
-        // Sol panelde sayıları güncelle + aktif müşteriyi seç
-        setBatchCamlari(prev => prev.map(c =>
-          c.cam_kodu === payload.cam_kodu
-            ? { ...c, uretim_durumu: 'yikandi' }
-            : c
-        ))
-        if (payload.musteri) setAktifMusteri(payload.musteri)
+        // Multi-adet destekli güncelleme: her taramada taranan_adet++, adet'e ulaşınca yikandi
+        setBatchCamlari(prev => prev.map(c => {
+          if (c.cam_kodu !== payload.cam_kodu) return c
+          if (c.uretim_durumu === 'yikandi') return c  // zaten tamam — tekrar taramada değişmez
+          const yeniTaranan = c.taranan_adet + 1
+          return yeniTaranan >= c.adet
+            ? { ...c, taranan_adet: c.adet, uretim_durumu: 'yikandi' }
+            : { ...c, taranan_adet: yeniTaranan }
+        }))
+        // Aktif müşteriyi seç — key formatında
+        if (payload.musteri) {
+          const nihai = payload.nihai_musteri ?? ''
+          setAktifMusteri(`${payload.musteri}||${nihai}`)
+        }
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
@@ -202,11 +243,11 @@ export default function KumandaPaneliPage() {
               musteriListesi.map(m => {
                 const pct = m.toplam > 0 ? Math.round((m.tamamlandi / m.toplam) * 100) : 0
                 const tamam = m.tamamlandi === m.toplam
-                const aktif = aktifMusteri === m.musteri
+                const aktif = aktifMusteri === m.key
                 return (
                   <button
-                    key={m.musteri}
-                    onClick={() => setAktifMusteri(m.musteri)}
+                    key={m.key}
+                    onClick={() => setAktifMusteri(m.key)}
                     className={`w-full text-left px-5 py-4 border-b border-gray-800 transition-colors ${
                       aktif
                         ? 'bg-blue-900/30 border-l-4 border-l-blue-400'
@@ -217,7 +258,7 @@ export default function KumandaPaneliPage() {
                       <span className={`text-base font-bold truncate max-w-[150px] ${
                         tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
                       }`}>
-                        {m.musteri || '—'}
+                        {m.etiket || '—'}
                       </span>
                       <span className={`text-sm font-bold tabular-nums shrink-0 ml-2 ${
                         tamam ? 'text-emerald-300' : aktif ? 'text-blue-300' : 'text-gray-400'
@@ -341,7 +382,7 @@ export default function KumandaPaneliPage() {
             {aktifMusteri ? (
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-0.5">Seçili Müşteri</p>
-                <p className="text-base font-bold text-white truncate">{aktifMusteri}</p>
+                <p className="text-base font-bold text-white truncate">{musteriKeyToLabel(aktifMusteri)}</p>
               </div>
             ) : (
               <p className="text-xs font-black uppercase tracking-widest text-gray-500">Müşteri seçilmedi</p>
@@ -360,6 +401,7 @@ export default function KumandaPaneliPage() {
               <div className="divide-y divide-gray-800">
                 {aktifMusteriCamlari.map(c => {
                   const girildi = c.uretim_durumu === 'yikandi'
+                  const kismi = !girildi && c.taranan_adet > 0 && c.adet > 1
                   return (
                     <div
                       key={c.cam_kodu}
@@ -368,9 +410,11 @@ export default function KumandaPaneliPage() {
                       <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${
                         girildi
                           ? 'bg-emerald-900/60 text-emerald-300'
+                          : kismi
+                          ? 'bg-amber-900/60 text-amber-300'
                           : 'bg-gray-700 text-gray-300'
                       }`}>
-                        {girildi ? 'Girildi' : 'Bekliyor'}
+                        {girildi ? 'Girildi' : kismi ? `${c.taranan_adet}/${c.adet}` : 'Bekliyor'}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className={`font-mono text-base font-bold leading-tight ${
@@ -378,7 +422,7 @@ export default function KumandaPaneliPage() {
                         }`}>{c.cam_kodu}</p>
                         <p className={`text-sm mt-0.5 ${
                           girildi ? 'text-gray-600' : 'text-gray-400'
-                        }`}>{c.genislik_mm} × {c.yukseklik_mm} mm</p>
+                        }`}>{c.genislik_mm} × {c.yukseklik_mm} mm{c.adet > 1 ? ` · ${c.adet} adet` : ''}</p>
                       </div>
                     </div>
                   )

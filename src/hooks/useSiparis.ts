@@ -62,32 +62,38 @@ export function useSiparis() {
 
     if (siparisHata) throw new Error(siparisHata.message)
 
-    // 3. Tüm cam parçaları için toplu GLS kodu üret
-    const kodlar = await generateCamKodulari(form.camlar.length)
+    try {
+      // 3. Tüm cam parçaları için toplu GLS kodu üret
+      const kodlar = await generateCamKodulari(form.camlar.length)
 
-    // 4. Cam parçalarını kaydet
-    const detaylar = form.camlar.map((cam, i) => ({
-      siparis_id: siparis.id,
-      stok_id: cam.stok_id || null,
-      cam_kodu: kodlar[i],
-      genislik_mm: Number(cam.genislik_mm),
-      yukseklik_mm: Number(cam.yukseklik_mm),
-      adet: Number(cam.adet),
-      ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
-      cita_stok_id: cam.cita_stok_id || null,
-      kenar_islemi: cam.kenar_islemi || null,
-      notlar: cam.notlar || null,
-      poz: cam.poz || null,
-    }))
+      // 4. Cam parçalarını kaydet
+      const detaylar = form.camlar.map((cam, i) => ({
+        siparis_id: siparis.id,
+        stok_id: cam.stok_id || null,
+        cam_kodu: kodlar[i],
+        genislik_mm: Number(cam.genislik_mm),
+        yukseklik_mm: Number(cam.yukseklik_mm),
+        adet: Number(cam.adet),
+        ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
+        cita_stok_id: cam.cita_stok_id || null,
+        kenar_islemi: cam.kenar_islemi || null,
+        notlar: cam.notlar || null,
+        poz: cam.poz || null,
+      }))
 
-    const { error: detayHata } = await supabase
-      .from('siparis_detaylari')
-      .insert(detaylar)
+      const { error: detayHata } = await supabase
+        .from('siparis_detaylari')
+        .insert(detaylar)
 
-    if (detayHata) throw new Error(detayHata.message)
+      if (detayHata) throw new Error(detayHata.message)
 
-    await getir()
-    return siparis.id as string
+      await getir()
+      return siparis.id as string
+    } catch (err) {
+      // Rollback: Detay insert başarısızsa orphan siparişi temizle
+      await supabase.from('siparisler').delete().eq('id', siparis.id)
+      throw err
+    }
   }
 
   const durumGuncelle = async (id: string, durum: SiparisDurum) => {

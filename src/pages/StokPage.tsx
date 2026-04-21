@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Package } from 'lucide-react'
 import { useStok } from '@/hooks/useStok'
 import { useCari } from '@/hooks/useCari'
+import EmptyState from '@/components/ui/EmptyState'
 import StokListesi from '@/components/stok/StokListesi'
 import StokForm from '@/components/stok/StokForm'
 import type { Stok, StokKategori } from '@/types/stok'
@@ -70,19 +71,30 @@ export default function StokPage() {
 
       {/* Kategori sekmeleri */}
       <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {SEKMELER.map((s) => (
-          <button
-            key={s.key}
-            onClick={() => setAktifSekme(s.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              aktifSekme === s.key
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+        {SEKMELER.map((s) => {
+          const count = stoklar.filter((x) => x.kategori === s.key).length
+          const aktif = aktifSekme === s.key
+          return (
+            <button
+              key={s.key}
+              onClick={() => setAktifSekme(s.key)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                aktif
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {s.label}
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums ${
+                  aktif ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {hata && (
@@ -92,11 +104,20 @@ export default function StokPage() {
       )}
 
       {!yukleniyor && stoklar.length === 0 && !hata ? (
-        <div className="text-center py-24 text-gray-400">
-          <Package size={48} className="mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">Henüz stok kaydı yok</p>
-          <p className="text-sm mt-1">Sağ üstteki "Yeni Stok" butonuyla ekleyin.</p>
-        </div>
+        <EmptyState
+          icon={Package}
+          baslik="Henüz stok kaydı yok"
+          aciklama={'Cam, çıta ve yan malzemelerinizi ekleyerek katalogları oluşturun.'}
+          aksiyon={
+            <button
+              onClick={() => setFormAcik(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus size={16} />
+              Yeni Stok
+            </button>
+          }
+        />
       ) : (
         <StokListesi
           stoklar={stoklar}

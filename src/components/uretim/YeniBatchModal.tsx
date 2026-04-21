@@ -41,11 +41,11 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
 
     if (!tumSiparisler) { setYukleniyor(false); return }
 
-    // 2. Her siparişin cam sayısını getir
+    // 2. Her siparişin cam sayısını getir (adet toplamı)
     const sipIds = tumSiparisler.map((s: any) => s.id)
     const { data: tumDetaylar } = await supabase
       .from('siparis_detaylari')
-      .select('id, siparis_id')
+      .select('id, siparis_id, adet')
       .in('siparis_id', sipIds)
 
     // 3. Zaten batch'te olan sipariş detaylarını bul
@@ -63,10 +63,11 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
       detayBatchMap.set(d.siparis_detay_id, (d as any).uretim_emirleri?.batch_no ?? '')
     }
 
-    // siparis_id → cam sayısı
+    // siparis_id → cam sayısı (adet toplamı)
     const camSayisiMap = new Map<string, number>()
     for (const d of tumDetaylar ?? []) {
-      camSayisiMap.set(d.siparis_id, (camSayisiMap.get(d.siparis_id) ?? 0) + 1)
+      const adet = (d as any).adet ?? 1
+      camSayisiMap.set(d.siparis_id, (camSayisiMap.get(d.siparis_id) ?? 0) + adet)
     }
 
     // siparis_id → batch'te mi (tüm cam parçaları batch'te ise)
@@ -167,7 +168,11 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
         {/* Liste */}
         <div className="flex-1 overflow-y-auto">
           {yukleniyor ? (
-            <div className="flex items-center justify-center py-16 text-gray-400">Yükleniyor...</div>
+            <div className="p-4 space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-14 bg-gray-100 animate-pulse rounded-lg" />
+              ))}
+            </div>
           ) : filtrelenmis.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Package size={32} className="mb-2" />

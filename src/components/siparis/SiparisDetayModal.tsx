@@ -398,7 +398,11 @@ export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncell
         {/* İçerik */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {yukleniyor ? (
-            <div className="text-center py-10 text-gray-400">Yükleniyor...</div>
+            <div className="py-6 space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
+              ))}
+            </div>
           ) : detaylar.length === 0 && siparis.durum !== 'beklemede' ? (
             <div className="text-center py-10 text-gray-400">Cam parçası bulunamadı.</div>
           ) : (

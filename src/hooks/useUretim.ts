@@ -27,6 +27,7 @@ export function useUretim() {
         *,
         uretim_emri_detaylari(
           siparis_detaylari(
+            adet,
             siparisler(id, siparis_no, cari(ad))
           )
         )
@@ -38,7 +39,8 @@ export function useUretim() {
     } else {
       const enriched = (data as any[]).map((emir) => {
         const detaylar: any[] = emir.uretim_emri_detaylari ?? []
-        const cam_sayisi = detaylar.length
+        // cam_sayisi = satır değil, adet toplamı
+        const cam_sayisi = detaylar.reduce((sum, d) => sum + (d.siparis_detaylari?.adet ?? 1), 0)
         const siparisMap = new Map<string, { id: string; siparis_no: string; musteri_ad: string }>()
         for (const d of detaylar) {
           const sip = d.siparis_detaylari?.siparisler

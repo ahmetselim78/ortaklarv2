@@ -2,6 +2,7 @@ import { Eye, Ban, Wrench } from 'lucide-react'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 
 interface Props {
   siparisler: Siparis[]
@@ -31,7 +32,7 @@ const DURUM_ETIKET: Record<SiparisDurum, string> = {
 
 export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisIds, onGoruntule, onIptal }: Props) {
   if (yukleniyor) {
-    return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
+    return <TableSkeleton satir={6} kolon={5} />
   }
 
   if (siparisler.length === 0) return null

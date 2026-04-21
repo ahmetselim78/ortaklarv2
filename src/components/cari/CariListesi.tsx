@@ -3,6 +3,7 @@ import { Pencil, Trash2, Phone, Mail } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import { cn } from '@/lib/utils'
 import Pagination from '@/components/ui/Pagination'
+import { TableSkeleton } from '@/components/ui/Skeleton'
 
 interface Props {
   cariler: Cari[]
@@ -33,11 +34,7 @@ export default function CariListesi({ cariler, yukleniyor, onDuzenle, onSil }: P
   useEffect(() => { setSayfa(1) }, [arama, filtre])
 
   if (yukleniyor) {
-    return (
-      <div className="flex items-center justify-center py-20 text-gray-400">
-        Yükleniyor...
-      </div>
-    )
+    return <TableSkeleton satir={6} kolon={5} />
   }
 
   return (

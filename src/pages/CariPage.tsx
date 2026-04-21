@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Users } from 'lucide-react'
 import { useCari } from '@/hooks/useCari'
+import EmptyState from '@/components/ui/EmptyState'
 import CariListesi from '@/components/cari/CariListesi'
 import CariForm from '@/components/cari/CariForm'
 import type { Cari } from '@/types/cari'
@@ -72,11 +73,20 @@ export default function CariPage() {
 
       {/* İçerik */}
       {!yukleniyor && cariler.length === 0 && !hata ? (
-        <div className="text-center py-24 text-gray-400">
-          <Users size={48} className="mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">Henüz cari kaydı yok</p>
-          <p className="text-sm mt-1">Sağ üstteki "Yeni Cari" butonuyla ekleyin.</p>
-        </div>
+        <EmptyState
+          icon={Users}
+          baslik="Henüz cari kaydı yok"
+          aciklama={'Müşteri ve tedarikçilerinizi ekleyerek başlayın.'}
+          aksiyon={
+            <button
+              onClick={() => setFormAcik(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus size={16} />
+              Yeni Cari
+            </button>
+          }
+        />
       ) : (
         <CariListesi
           cariler={cariler}

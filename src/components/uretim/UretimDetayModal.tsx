@@ -71,9 +71,11 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   const handleExport = async () => {
     setExportYapiliyor(true)
     try {
-      exportDetaylariCSV(detaylar, emir.batch_no)
       await exportTarihiGuncelle(emir.id)
+      exportDetaylariCSV(detaylar, emir.batch_no)
       onGuncellendi()
+    } catch (err: any) {
+      alert(err?.message ?? 'Export sırasında hata oluştu')
     } finally {
       setExportYapiliyor(false)
     }
@@ -193,7 +195,11 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
             </div>
 
             {yukleniyor ? (
-              <div className="text-center py-10 text-gray-400">Yükleniyor...</div>
+              <div className="py-6 space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
+                ))}
+              </div>
             ) : detaylar.length === 0 ? (
               <div className="text-center py-10 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
                 <p className="font-medium">Bu batch'te henüz cam bulunmuyor</p>
