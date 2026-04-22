@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Wifi, WifiOff, Wrench } from 'lucide-react'
@@ -7,9 +7,21 @@ import type { TamireGonderCam } from '@/components/tamir/TamireGonderModal'
 
 /* ========== Yardımcılar ========== */
 
-/** Cari adı + nihai müşteri → görüntü etiketi */
+function extractNihaiMusteri(notlar: string): string {
+  const m = notlar.match(/Nihai\s+M[\u00fc\u00dc][\u015f\u015e]teri:\s*(.+?)(?:\s*\/|$)/i)
+  return m?.[1]?.trim() ?? ''
+}
+
+/** Cari adı + nihai müşteri → görüntü etiketi: "NOVEL — AKYOL LOUNGE" */
 function musteriEtiket(musteri: string, nihai: string): string {
   return nihai ? `${musteri} \u2014 ${nihai}` : musteri
+}
+
+/** "musteri||nihaiMusteri" bileşik anahtarını görüntü etiketine çevirir */
+function musteriKeyToLabel(key: string): string {
+  const sep = key.indexOf('||')
+  if (sep === -1) return key
+  return musteriEtiket(key.slice(0, sep), key.slice(sep + 2))
 }
 
 /* ========== Tipler ========== */
@@ -40,15 +52,6 @@ interface BatchCamKumanda {
   taranan_adet: number
   stok_ad: string
   sira_no: number | null
-}
-
-/** "musteri||nihaiMusteri" bileşik anahtarını görüntü etiketine çevirir */
-function musteriKeyToLabel(key: string): string {
-  const sep = key.indexOf('||')
-  if (sep === -1) return key
-  const m = key.slice(0, sep)
-  const n = key.slice(sep + 2)
-  return musteriEtiket(m, n)
 }
 
 /* ========== Bileşen ========== */
@@ -82,7 +85,7 @@ export default function KumandaPaneliPage() {
         siparis_detaylari (
           cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet,
           stok!stok_id ( ad ),
-          siparisler ( siparis_no, alt_musteri, cari ( ad ) )
+          siparisler ( siparis_no, notlar, cari ( ad ) )
         )
       `)
       .eq('uretim_emri_id', loadBatchId)
@@ -91,7 +94,7 @@ export default function KumandaPaneliPage() {
       siparis_detay_id: d.siparis_detay_id,
       cam_kodu: d.siparis_detaylari.cam_kodu,
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
-      nihai_musteri: d.siparis_detaylari.siparisler?.alt_musteri ?? '',
+      nihai_musteri: extractNihaiMusteri(d.siparis_detaylari.siparisler?.notlar ?? ''),
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       genislik_mm: d.siparis_detaylari.genislik_mm,
@@ -102,7 +105,7 @@ export default function KumandaPaneliPage() {
       sira_no: d.sira_no ?? null,
     }))
 
-    // Yıkama log sayısı ile kısmi adet doldur
+    // Yıkama log sayısını çek (kısmi adet takibi)
     const detayIds = camlar.map(c => c.siparis_detay_id)
     const logCountMap = new Map<string, number>()
     if (detayIds.length > 0) {
@@ -115,26 +118,30 @@ export default function KumandaPaneliPage() {
         logCountMap.set((log as any).siparis_detay_id, prev + 1)
       }
     }
+
     const camlarFinal = camlar.map(c => ({
       ...c,
       taranan_adet: c.uretim_durumu === 'yikandi'
         ? c.adet
-        : Math.min(logCountMap.get(c.siparis_detay_id) ?? 0, c.adet),
+        : Math.min(logCountMap.get(c.siparis_detay_id) ?? 0, c.adet - 1),
     }))
 
     setBatchId(loadBatchId)
     setBatchNo(batchNoStr)
     setBatchCamlari(camlarFinal)
+    // İlk tamamlanmamış müşteriyi otomatik seç (composite key)
+    const ilkEksik = camlarFinal.find(c => c.uretim_durumu !== 'yikandi') ?? camlarFinal[0]
+    setAktifMusteri(ilkEksik ? `${ilkEksik.musteri}||${ilkEksik.nihai_musteri}` : null)
   }, [])
 
-  // On mount: en son yıkamaya alınan batch'i yükle (Poz Giriş'ten broadcast gelene kadar)
+  // On mount: aktif (yikamada) batch varsa yükle
   useEffect(() => {
     async function loadActiveBatch() {
       const { data } = await supabase
         .from('uretim_emirleri')
         .select('id, batch_no')
         .eq('durum', 'yikamada')
-        .order('export_tarihi', { ascending: false, nullsFirst: false })
+        .order('olusturulma_tarihi', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (data) {
@@ -144,24 +151,48 @@ export default function KumandaPaneliPage() {
     loadActiveBatch()
   }, [batchYukle])
 
-  // Müşteri listesi: PozGiriş ile aynı key formatı (musteri||nihai_musteri)
+  // batchCamlari ref — broadcast closure'ında güncel değere erişmek için
+  const batchCamlariRef = useRef<BatchCamKumanda[]>([])
+  useEffect(() => { batchCamlariRef.current = batchCamlari }, [batchCamlari])
+
+  // Müşteri listesi: composite key + etiket (PozGiriş ile aynı format)
   const musteriListesi = useMemo(() => {
     const map = new Map<string, { key: string; etiket: string; toplam: number; tamamlandi: number }>()
     for (const c of batchCamlari) {
       const key = `${c.musteri}||${c.nihai_musteri}`
+      const adet = c.adet ?? 1
       const e = map.get(key) ?? { key, etiket: musteriEtiket(c.musteri, c.nihai_musteri), toplam: 0, tamamlandi: 0 }
-      e.toplam += c.adet
-      if (c.uretim_durumu === 'yikandi') e.tamamlandi += c.adet
-      else e.tamamlandi += c.taranan_adet
+      e.toplam += adet
+      if (c.uretim_durumu === 'yikandi') e.tamamlandi += adet
       map.set(key, e)
     }
     return Array.from(map.values())
   }, [batchCamlari])
 
   const aktifMusteriCamlari = useMemo(
-    () => aktifMusteri ? batchCamlari.filter(c => `${c.musteri}||${c.nihai_musteri}` === aktifMusteri) : [],
+    () => aktifMusteri
+      ? batchCamlari.filter(c => `${c.musteri}||${c.nihai_musteri}` === aktifMusteri)
+      : [],
     [aktifMusteri, batchCamlari]
   )
+
+  // Sağ panel: scroll
+  const sagListeRef = useRef<HTMLDivElement>(null)
+  const [sonGelenKod, setSonGelenKod] = useState<string | null>(null)
+
+  // Gelen cam koduna scroll
+  useEffect(() => {
+    if (!sagListeRef.current || !sonGelenKod) return
+    const el = sagListeRef.current.querySelector(`[data-cam-kodu="${sonGelenKod}"]`) as HTMLElement | null
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [sonGelenKod, aktifMusteriCamlari])
+
+  // Müşteri değişince ilk bekleyene scroll
+  useEffect(() => {
+    if (!sagListeRef.current) return
+    const el = sagListeRef.current.querySelector('[data-pending]') as HTMLElement | null
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [aktifMusteri])
 
   useEffect(() => {
     const channel = supabase
@@ -171,27 +202,29 @@ export default function KumandaPaneliPage() {
         setKartlar([])
       })
       .on('broadcast', { event: 'yeni_cam' }, ({ payload }) => {
-        const yeniKart: CamKarti = {
-          ...(payload as Omit<CamKarti, 'etiket_durumu'>),
-          etiket_durumu: 'basildi',
+        // Tekrar girilen camlar kartlara eklenmez, sadece sayı güncellenir
+        if (!payload.tekrar) {
+          const yeniKart: CamKarti = {
+            ...(payload as Omit<CamKarti, 'etiket_durumu'>),
+            etiket_durumu: 'basildi',
+          }
+          setKartlar(prev => [yeniKart, ...prev].slice(0, 10))
+          setFlash(true)
+          setTimeout(() => setFlash(false), 600)
         }
-        setKartlar(prev => [yeniKart, ...prev].slice(0, 10))
-        setFlash(true)
-        setTimeout(() => setFlash(false), 600)
-        // Multi-adet destekli güncelleme: her taramada taranan_adet++, adet'e ulaşınca yikandi
+        // Sol panelde sayıları güncelle + aktif müşteriyi seç
         setBatchCamlari(prev => prev.map(c => {
           if (c.cam_kodu !== payload.cam_kodu) return c
-          if (c.uretim_durumu === 'yikandi') return c  // zaten tamam — tekrar taramada değişmez
           const yeniTaranan = c.taranan_adet + 1
-          return yeniTaranan >= c.adet
-            ? { ...c, taranan_adet: c.adet, uretim_durumu: 'yikandi' }
-            : { ...c, taranan_adet: yeniTaranan }
+          const tamam = yeniTaranan >= c.adet
+          return { ...c, taranan_adet: yeniTaranan, uretim_durumu: tamam ? 'yikandi' : c.uretim_durumu }
         }))
-        // Aktif müşteriyi seç — key formatında
         if (payload.musteri) {
-          const nihai = payload.nihai_musteri ?? ''
+          const cam = batchCamlariRef.current.find(c => c.cam_kodu === payload.cam_kodu)
+          const nihai = cam?.nihai_musteri ?? ''
           setAktifMusteri(`${payload.musteri}||${nihai}`)
         }
+        setSonGelenKod(payload.cam_kodu ?? null)
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
@@ -207,7 +240,7 @@ export default function KumandaPaneliPage() {
         </button>
         <div className="flex items-center gap-3">
           {batchNo && (
-            <span className="font-mono font-bold text-sm text-blue-400">{batchNo}</span>
+            <span className="font-mono font-black text-base text-blue-400 tracking-wide">{batchNo}</span>
           )}
           <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
             connected ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300' : 'bg-red-900/60 border border-red-700 text-red-300'
@@ -255,7 +288,7 @@ export default function KumandaPaneliPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className={`text-base font-bold truncate max-w-[150px] ${
+                      <span className={`text-base font-bold truncate flex-1 min-w-0 ${
                         tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
                       }`}>
                         {m.etiket || '—'}
@@ -285,36 +318,38 @@ export default function KumandaPaneliPage() {
         <div className="flex-1 flex flex-col px-6 py-3 overflow-y-auto gap-2">
           {kartlar.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center">
-              <div className="w-20 h-20 rounded-full bg-gray-900 flex items-center justify-center mb-4">
-                <Wifi size={32} className="text-gray-700" />
-              </div>
-              <p className="text-xl font-semibold text-gray-600">Cam bekleniyor...</p>
-              <p className="text-sm text-gray-700 mt-2">Poz Giriş'ten cam kodu girildiğinde burada görünecek</p>
+              {batchId === null ? (
+                <>
+                  <div className="w-20 h-20 rounded-full bg-yellow-900/30 border-2 border-yellow-700/50 flex items-center justify-center mb-4 animate-pulse">
+                    <WifiOff size={32} className="text-yellow-600" />
+                  </div>
+                  <p className="text-xl font-bold text-yellow-500 animate-pulse">Batch seçili değil</p>
+                  <p className="text-sm text-yellow-700 mt-2 animate-pulse">Poz Giriş ekranından bir batch seçin</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-20 h-20 rounded-full bg-gray-900 flex items-center justify-center mb-4">
+                    <Wifi size={32} className="text-gray-700" />
+                  </div>
+                  <p className="text-xl font-semibold text-gray-600">Cam bekleniyor...</p>
+                  <p className="text-sm text-gray-700 mt-2">Poz Giriş'ten cam kodu girildiğinde burada görünecek</p>
+                </>
+              )}
             </div>
           ) : (
-            kartlar.map((k, i) => {
-              const aktif = i === 0
+            kartlar.map((k) => {
               const batchCam = batchCamlari.find(c => c.cam_kodu === k.cam_kodu)
               return (
                 <div
                   key={`${k.cam_kodu}-${k.zaman}`}
-                  className={`rounded-xl border p-3 transition-all ${
-                    aktif
-                      ? 'bg-gray-900 border-blue-600 ring-1 ring-blue-600/30'
-                      : 'bg-gray-900/70 border-gray-800'
-                  }`}
+                  className="rounded-xl border p-3 bg-gray-900/70 border-gray-800"
                 >
                   {/* Üst satır: GLS kodu + Etiket durumu + Tamir butonu */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className={`font-mono font-black tracking-wider text-2xl ${aktif ? 'text-blue-300' : 'text-gray-300'}`}>
+                      <span className="font-mono font-black tracking-wider text-2xl text-gray-300">
                         {k.cam_kodu}
                       </span>
-                      {aktif && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900 text-blue-300 font-semibold">
-                          AKTİF
-                        </span>
-                      )}
                       <span className="flex items-center gap-1 text-xs text-green-400 font-medium">
                         <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
                         Etiket Basıldı
@@ -388,7 +423,7 @@ export default function KumandaPaneliPage() {
               <p className="text-xs font-black uppercase tracking-widest text-gray-500">Müşteri seçilmedi</p>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" ref={sagListeRef}>
             {aktifMusteriCamlari.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-5 py-8">
                 <p className="text-gray-500 text-sm leading-relaxed">
@@ -401,11 +436,20 @@ export default function KumandaPaneliPage() {
               <div className="divide-y divide-gray-800">
                 {aktifMusteriCamlari.map(c => {
                   const girildi = c.uretim_durumu === 'yikandi'
-                  const kismi = !girildi && c.taranan_adet > 0 && c.adet > 1
+                  const kismi = !girildi && c.taranan_adet > 0
+                  const aktifSatir = sonGelenKod === c.cam_kodu
                   return (
                     <div
                       key={c.cam_kodu}
-                      className={`px-4 py-3.5 flex items-center gap-3 ${girildi ? 'opacity-40' : ''}`}
+                      data-cam-kodu={c.cam_kodu}
+                      data-pending={!girildi ? '' : undefined}
+                      className={`px-5 py-3.5 flex items-center gap-3 transition-colors ${
+                        aktifSatir
+                          ? 'bg-green-950/60 border-l-4 border-l-green-400 animate-pulse'
+                          : girildi
+                          ? 'opacity-40'
+                          : ''
+                      }`}
                     >
                       <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${
                         girildi
@@ -414,15 +458,20 @@ export default function KumandaPaneliPage() {
                           ? 'bg-amber-900/60 text-amber-300'
                           : 'bg-gray-700 text-gray-300'
                       }`}>
-                        {girildi ? 'Girildi' : kismi ? `${c.taranan_adet}/${c.adet}` : 'Bekliyor'}
+                        {girildi ? `${c.adet}/${c.adet}` : `${c.taranan_adet}/${c.adet}`}
                       </span>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0">
                         <p className={`font-mono text-base font-bold leading-tight ${
                           girildi ? 'text-gray-500' : 'text-white'
                         }`}>{c.cam_kodu}</p>
                         <p className={`text-sm mt-0.5 ${
                           girildi ? 'text-gray-600' : 'text-gray-400'
                         }`}>{c.genislik_mm} × {c.yukseklik_mm} mm{c.adet > 1 ? ` · ${c.adet} adet` : ''}</p>
+                        {c.stok_ad && (
+                          <p className={`text-xs mt-0.5 truncate ${
+                            girildi ? 'text-gray-600' : 'text-gray-500'
+                          }`}>{c.stok_ad}</p>
+                        )}
                       </div>
                     </div>
                   )
@@ -443,7 +492,6 @@ export default function KumandaPaneliPage() {
       {/* Tamir Modal */}
       {tamirCam && (
         <TamireGonderModal
-          key={tamirCam.siparis_detay_id}
           cam={tamirCam}
           kaynak="kumanda"
           onClose={() => setTamirCam(null)}

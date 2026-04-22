@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import {
   ArrowLeft, Wrench, CheckCircle2, AlertTriangle,
-  Clock, Trash2, RefreshCw, XCircle,
+  Clock, Trash2, RefreshCw, XCircle, MapPin, X,
 } from 'lucide-react'
 import type { TamirDurum, TamirKayit } from '@/types/tamir'
 import {
@@ -64,6 +64,8 @@ export default function TamirIstasyonuPage() {
   const [yukleniyor, setYukleniyor] = useState(true)
   const [aktifTab, setAktifTab] = useState<TamirDurum | 'hepsi'>('bekliyor')
   const [guncellenenId, setGuncellenenId] = useState<string | null>(null)
+  const [tamamlanmaModal, setTamamlanmaModal] = useState<{ id: string } | null>(null)
+  const [tamamlaNotu, setTamamlaNotu] = useState('')
 
   // Saat
   useEffect(() => {
@@ -98,11 +100,14 @@ export default function TamirIstasyonuPage() {
     return () => { supabase.removeChannel(channel) }
   }, [kayitlariGetir])
 
-  const durumGuncelle = async (id: string, yeniDurum: TamirDurum) => {
+  const durumGuncelle = async (id: string, yeniDurum: TamirDurum, notu?: string) => {
     setGuncellenenId(id)
     const patch: Record<string, unknown> = { durum: yeniDurum }
     if (yeniDurum === 'tamamlandi' || yeniDurum === 'hurda') {
       patch.tamamlanma_tarihi = new Date().toISOString()
+    }
+    if (notu) {
+      patch.tamamlanma_notu = notu
     }
     await supabase.from('tamir_kayitlari').update(patch).eq('id', id)
 
@@ -131,7 +136,7 @@ export default function TamirIstasyonuPage() {
     // optimistic update
     setKayitlar(prev => prev.map(k =>
       k.id === id
-        ? { ...k, durum: yeniDurum, tamamlanma_tarihi: patch.tamamlanma_tarihi as string ?? k.tamamlanma_tarihi }
+        ? { ...k, durum: yeniDurum, tamamlanma_tarihi: patch.tamamlanma_tarihi as string ?? k.tamamlanma_tarihi, tamamlanma_notu: notu ?? k.tamamlanma_notu }
         : k,
     ))
     setGuncellenenId(null)
@@ -239,6 +244,7 @@ export default function TamirIstasyonuPage() {
                 kayit={k}
                 guncelleniyor={guncellenenId === k.id}
                 onDurumGuncelle={durumGuncelle}
+                onTamamlandiAc={(id) => { setTamamlaNotu(''); setTamamlanmaModal({ id }) }}
                 onSil={kayitSil}
               />
             ))}
@@ -254,6 +260,91 @@ export default function TamirIstasyonuPage() {
         <span className="font-mono tabular-nums">{saat.toLocaleTimeString('tr-TR')}</span>
       </div>
 
+      {/* ===== TAMAMLANMA NOT MODALI ===== */}
+      {tamamlanmaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-emerald-800 rounded-2xl shadow-2xl w-full max-w-md mx-4">
+            {/* Başlık */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-900/60 border border-emerald-700 flex items-center justify-center">
+                  <MapPin size={18} className="text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-white font-bold text-base">Cam Nereye Konuldu?</h2>
+                  <p className="text-gray-500 text-xs">Tamamlanmadan önce konum bilgisi girilmesi zorunludur</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setTamamlanmaModal(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              {/* Hazır cevaplar */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Hızlı Seçim</p>
+                <div className="flex flex-col gap-2">
+                  {['Tamir masasına konuldu', 'Bekleyen camların yanına konuldu'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setTamamlaNotu(preset)}
+                      className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                        tamamlaNotu === preset
+                          ? 'bg-emerald-900/50 border-emerald-600 text-emerald-200'
+                          : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Serbest metin */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Veya Kendi Açıklamanı Yaz</p>
+                <textarea
+                  value={tamamlaNotu}
+                  onChange={(e) => setTamamlaNotu(e.target.value)}
+                  placeholder="Cam nereye konuldu?"
+                  rows={2}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/30 resize-none"
+                />
+              </div>
+
+              {/* Butonlar */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setTamamlanmaModal(null)}
+                  className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl text-gray-300 font-medium text-sm transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  type="button"
+                  disabled={!tamamlaNotu.trim()}
+                  onClick={async () => {
+                    await durumGuncelle(tamamlanmaModal.id, 'tamamlandi', tamamlaNotu.trim())
+                    setTamamlanmaModal(null)
+                    setTamamlaNotu('')
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={15} />
+                  Tamamlandı Olarak İşaretle
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -264,10 +355,11 @@ interface TamirKartiProps {
   kayit: TamirKayit
   guncelleniyor: boolean
   onDurumGuncelle: (id: string, durum: TamirDurum) => void
+  onTamamlandiAc: (id: string) => void
   onSil: (id: string) => void
 }
 
-function TamirKarti({ kayit: k, guncelleniyor, onDurumGuncelle, onSil }: TamirKartiProps) {
+function TamirKarti({ kayit: k, guncelleniyor, onDurumGuncelle, onTamamlandiAc, onSil }: TamirKartiProps) {
   const [silOnay, setSilOnay] = useState(false)
 
   const gecisler = GECIS_BUTONLARI[k.durum]
@@ -357,6 +449,14 @@ function TamirKarti({ kayit: k, guncelleniyor, onDurumGuncelle, onSil }: TamirKa
           </div>
         )}
 
+        {/* Tamamlanma Notu */}
+        {k.tamamlanma_notu && (
+          <div className="mt-2 bg-emerald-950/40 border border-emerald-800/50 rounded-lg px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mb-0.5">KONUM</p>
+            <p className="text-emerald-300 text-sm">{k.tamamlanma_notu}</p>
+          </div>
+        )}
+
         {/* Tarihler */}
         <div className="mt-3 flex items-center justify-between text-xs text-gray-600 tabular-nums">
           <span>Giriş: {new Date(k.created_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
@@ -372,7 +472,7 @@ function TamirKarti({ kayit: k, guncelleniyor, onDurumGuncelle, onSil }: TamirKa
           {gecisler.map((g) => (
             <button
               key={g.durum}
-              onClick={() => onDurumGuncelle(k.id, g.durum)}
+              onClick={() => g.durum === 'tamamlandi' ? onTamamlandiAc(k.id) : onDurumGuncelle(k.id, g.durum)}
               disabled={guncelleniyor}
               className={`flex-1 px-3 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 ${g.renk}`}
             >

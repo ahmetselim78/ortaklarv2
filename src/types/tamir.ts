@@ -22,6 +22,7 @@ export interface TamirKayit {
   stok_ad: string
   created_at: string
   tamamlanma_tarihi: string | null
+  tamamlanma_notu: string | null
 }
 
 export type YeniTamirKayit = Omit<TamirKayit, 'id' | 'created_at'>

@@ -3,12 +3,11 @@ import { Link } from 'react-router-dom'
 import {
   ClipboardList, Factory, Package, Users, TrendingUp, Clock,
   ChevronLeft, ChevronRight, Droplets, X, Save, StickyNote,
-  CalendarDays, CalendarRange, Truck,
+  CalendarDays, CalendarRange, Truck, ChevronDown,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import SevkiyatPlanlama from '@/components/sevkiyat/SevkiyatPlanlama'
-import { Skeleton, CardSkeleton } from '@/components/ui/Skeleton'
 
 /* ===================================================================
    Types
@@ -35,6 +34,8 @@ interface TakvimSiparis {
   id: string
   siparis_no: string
   musteri: string
+  alt_musteri: string | null
+  toplam_adet: number
   teslim_tarihi: string
   durum: string
 }
@@ -121,13 +122,14 @@ const DURUM_STIL: Record<string, string> = {
   iptal: 'bg-red-50 text-red-600',
 }
 
-const DURUM_DOT: Record<string, string> = {
-  beklemede: 'bg-gray-400',
-  batchte: 'bg-blue-500',
-  yikamada: 'bg-cyan-500',
-  tamamlandi: 'bg-green-500',
-  eksik_var: 'bg-red-500',
-  iptal: 'bg-red-400',
+// Google Calendar tarzı event pill renkleri
+const DURUM_EVENT: Record<string, string> = {
+  beklemede: 'bg-gray-100 text-gray-700 border-gray-300',
+  batchte:   'bg-blue-100 text-blue-800 border-blue-300',
+  yikamada:  'bg-cyan-100 text-cyan-800 border-cyan-300',
+  tamamlandi:'bg-green-100 text-green-800 border-green-300',
+  eksik_var: 'bg-red-100 text-red-800 border-red-300',
+  iptal:     'bg-red-50 text-red-400 border-red-200',
 }
 
 const HAFTA_GUNLERI = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
@@ -146,6 +148,9 @@ export default function Dashboard() {
   /* ---------- sevkiyat planlama modal ---------- */
   const [sevkiyatAcik, setSevkiyatAcik] = useState(false)
 
+  /* ---------- kpi kartları görünürlük ---------- */
+  const [kartlarAcik, setKartlarAcik] = useState(false)
+
   /* ---------- calendar ---------- */
   const [takvimGorunum, setTakvimGorunum] = useState<'aylik' | 'haftalik'>('aylik')
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
@@ -157,6 +162,14 @@ export default function Dashboard() {
   const [takvimNotlari, setTakvimNotlari] = useState<TakvimNotu[]>([])
   const [notDuzenle, setNotDuzenle] = useState('')
   const [notKaydiyor, setNotKaydiyor] = useState(false)
+
+  /* ---------- bugünün notu (sağ panel) ---------- */
+  const [bugunNot, setBugunNot] = useState('')
+  const [bugunNotKaydiyor, setBugunNotKaydiyor] = useState(false)
+
+  /* ---------- drag & drop (takvim) ---------- */
+  const [dragSiparis, setDragSiparis] = useState<TakvimSiparis | null>(null)
+  const [overDate, setOverDate] = useState<string | null>(null)
 
   /* ---------- yıkamada ---------- */
   const [yikamaBatchler, setYikamaBatchler] = useState<YikamaBatch[]>([])
@@ -220,7 +233,7 @@ export default function Dashboard() {
       const [{ data: sipVerisi }, { data: notVerisi }] = await Promise.all([
         supabase
           .from('siparisler')
-          .select('id, siparis_no, teslim_tarihi, durum, cari(ad)')
+          .select('id, siparis_no, teslim_tarihi, durum, alt_musteri, cari(ad), siparis_detaylari(adet)')
           .gte('teslim_tarihi', baslangic)
           .lte('teslim_tarihi', bitis)
           .neq('durum', 'iptal')
@@ -237,6 +250,8 @@ export default function Dashboard() {
           id: s.id,
           siparis_no: s.siparis_no,
           musteri: s.cari?.ad ?? '—',
+          alt_musteri: s.alt_musteri ?? null,
+          toplam_adet: (s.siparis_detaylari ?? []).reduce((acc: number, d: any) => acc + (d.adet ?? 0), 0),
           teslim_tarihi: s.teslim_tarihi,
           durum: s.durum,
         }))
@@ -253,6 +268,11 @@ export default function Dashboard() {
     if (!selectedDate) { setNotDuzenle(''); return }
     setNotDuzenle(takvimNotlari.find(n => n.tarih === selectedDate)?.not_metni ?? '')
   }, [selectedDate, takvimNotlari])
+
+  /* Sync bugünün notu */
+  useEffect(() => {
+    setBugunNot(takvimNotlari.find(n => n.tarih === today)?.not_metni ?? '')
+  }, [takvimNotlari])
 
   /* ===================================================================
      Data: yıkamada (30s polling)
@@ -308,6 +328,35 @@ export default function Dashboard() {
   }, [])
 
   /* ===================================================================
+     Bugünün notu kaydet
+  =================================================================== */
+  async function bugunNotiKaydet() {
+    setBugunNotKaydiyor(true)
+    try {
+      const mevcut = takvimNotlari.find(n => n.tarih === today)
+      if (bugunNot.trim() === '') {
+        if (mevcut) {
+          await supabase.from('takvim_notlari').delete().eq('id', mevcut.id)
+          setTakvimNotlari(prev => prev.filter(n => n.id !== mevcut.id))
+        }
+      } else if (mevcut) {
+        await supabase.from('takvim_notlari')
+          .update({ not_metni: bugunNot, guncelleme: new Date().toISOString() })
+          .eq('id', mevcut.id)
+        setTakvimNotlari(prev => prev.map(n => n.id === mevcut.id ? { ...n, not_metni: bugunNot } : n))
+      } else {
+        const { data } = await supabase.from('takvim_notlari')
+          .insert({ tarih: today, not_metni: bugunNot })
+          .select('id, tarih, not_metni')
+          .single()
+        if (data) setTakvimNotlari(prev => [...prev, data as TakvimNotu])
+      }
+    } finally {
+      setBugunNotKaydiyor(false)
+    }
+  }
+
+  /* ===================================================================
      Note save / delete
   =================================================================== */
   async function notiKaydet() {
@@ -338,6 +387,18 @@ export default function Dashboard() {
   }
 
   /* ===================================================================
+     Drag & Drop: teslim tarihi güncelleme
+  =================================================================== */
+  async function teslimTarihiGuncelle(siparis: TakvimSiparis, yeniTarih: string) {
+    if (siparis.teslim_tarihi === yeniTarih) return
+    // Optimistik güncelleme
+    setTakvimSiparisler(prev =>
+      prev.map(s => s.id === siparis.id ? { ...s, teslim_tarihi: yeniTarih } : s)
+    )
+    await supabase.from('siparisler').update({ teslim_tarihi: yeniTarih }).eq('id', siparis.id)
+  }
+
+  /* ===================================================================
      Calendar grid builders
   =================================================================== */
   function buildMonthGrid(): (Date | null)[] {
@@ -361,24 +422,7 @@ export default function Dashboard() {
      Render
   =================================================================== */
   if (yukleniyor) {
-    return (
-      <div className="p-6 max-w-7xl mx-auto">
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <Skeleton className="h-7 w-32 mb-2" />
-            <Skeleton className="h-3 w-40" />
-          </div>
-          <Skeleton className="h-10 w-44" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Skeleton className="h-96 lg:col-span-2 rounded-xl" />
-          <Skeleton className="h-96 rounded-xl" />
-        </div>
-      </div>
-    )
+    return <div className="flex items-center justify-center min-h-[60vh] text-gray-400">Yükleniyor...</div>
   }
 
   const kartlar = [
@@ -407,18 +451,21 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-start justify-between mb-6">
-        <div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
           <h1 className="text-2xl font-semibold text-gray-800">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Genel üretim özeti</p>
+          <button
+            onClick={() => setKartlarAcik(v => !v)}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors group"
+          >
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${kartlarAcik ? 'rotate-0' : '-rotate-90'}`}
+            />
+            <span className="group-hover:underline">{kartlarAcik ? 'İstatistikleri Gizle' : 'İstatistikleri Göster'}</span>
+          </button>
         </div>
-        <button
-          onClick={() => setSevkiyatAcik(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Truck size={16} />
-          Sevkiyat Planlaması
-        </button>
+        <p className="text-sm text-gray-500">Genel üretim özeti</p>
       </div>
 
       {/* Sevkiyat Planlama Modal */}
@@ -430,30 +477,34 @@ export default function Dashboard() {
       )}
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        {kartlar.map((k) => {
-          const Icon = k.icon
-          return (
-            <Link
-              key={k.baslik}
-              to={k.link}
-              className="group bg-white rounded-xl border border-gray-200 p-4 hover:border-gray-300 hover:shadow-md hover:-translate-y-0.5 transition-all"
-            >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ring-1 ring-inset ring-white/50 ${k.renk}`}>
-                <Icon size={20} strokeWidth={2.1} />
-              </div>
-              <p className="text-3xl font-bold text-gray-800 tabular-nums leading-none">{k.deger}</p>
-              <p className="text-xs text-gray-500 mt-1.5 font-medium">{k.baslik}</p>
-            </Link>
-          )
-        })}
+      <div className="mb-6">
+        {kartlarAcik && (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {kartlar.map((k) => {
+              const Icon = k.icon
+              return (
+                <Link
+                  key={k.baslik}
+                  to={k.link}
+                  className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow"
+                >
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${k.renk}`}>
+                    <Icon size={20} />
+                  </div>
+                  <p className="text-2xl font-bold text-gray-800">{k.deger}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{k.baslik}</p>
+                </Link>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Takvim + Yıkamada ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
 
         {/* === Takvim (2/3 width) === */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
 
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
@@ -537,73 +588,130 @@ export default function Dashboard() {
 
           {/* ── Monthly grid ── */}
           {takvimGorunum === 'aylik' && (
-            <div className="p-3">
-              <div className="grid grid-cols-7 mb-1">
+            <div className="p-2">
+              {/* Day headers */}
+              <div className="grid grid-cols-7 border-b border-gray-100 mb-0">
                 {HAFTA_GUNLERI.map(g => (
-                  <div key={g} className="text-center text-xs font-medium text-gray-400 py-1">{g}</div>
+                  <div key={g} className="text-center text-[11px] font-semibold text-gray-400 py-1.5 uppercase tracking-wide">{g}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-0.5">
+              {/* Cells */}
+              <div className="grid grid-cols-7 divide-x divide-y divide-gray-100 overflow-visible">
                 {monthGrid.map((day, idx) => {
-                  if (!day) return <div key={`pad-${idx}`} className="min-h-[56px]" />
+                  if (!day) return (
+                    <div key={`pad-${idx}`} className="min-h-[110px] bg-gray-50/40" />
+                  )
                   const dateStr = toDateStr(day)
                   const sipList = siparisMap.get(dateStr) ?? []
                   const hasNote = notMap.has(dateStr)
                   const isToday = dateStr === today
                   const isSelected = dateStr === selectedDate
+                  const isDragOver = overDate === dateStr
+                  const MAX_VISIBLE = 3
 
                   return (
-                    <button
+                    <div
                       key={dateStr}
                       onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                      className={`relative p-1.5 rounded-xl text-left transition-all min-h-[56px] ${
-                        isSelected
-                          ? 'bg-blue-500 shadow-md'
-                          : isToday
-                          ? 'bg-blue-50 ring-1 ring-blue-200'
+                      onDragOver={e => { e.preventDefault(); setOverDate(dateStr) }}
+                      onDragLeave={e => {
+                        if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+                          setOverDate(null)
+                        }
+                      }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        setOverDate(null)
+                        if (dragSiparis) teslimTarihiGuncelle(dragSiparis, dateStr)
+                        setDragSiparis(null)
+                      }}
+                      className={`relative min-h-[110px] p-1.5 cursor-pointer transition-colors ${
+                        isDragOver
+                          ? 'bg-blue-50 ring-2 ring-inset ring-blue-400'
+                          : isSelected
+                          ? 'bg-blue-50/70'
                           : 'hover:bg-gray-50'
                       }`}
                     >
-                      <span className={`text-xs font-semibold ${
-                        isSelected ? 'text-white' : isToday ? 'text-blue-600' : 'text-gray-700'
-                      }`}>
-                        {day.getDate()}
-                      </span>
-
-                      {sipList.length > 0 && (
-                        <div className="mt-0.5 flex flex-wrap gap-0.5 items-center">
-                          {sipList.slice(0, 4).map(s => (
-                            <span
-                              key={s.id}
-                              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                isSelected ? 'bg-blue-200' : (DURUM_DOT[s.durum] ?? 'bg-gray-400')
-                              }`}
-                            />
-                          ))}
-                          {sipList.length > 4 && (
-                            <span className={`text-[9px] font-bold leading-none ${
-                              isSelected ? 'text-blue-200' : 'text-gray-400'
-                            }`}>
-                              +{sipList.length - 4}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {sipList.length > 0 && (
-                        <div className={`text-[10px] font-medium leading-tight mt-0.5 ${
-                          isSelected ? 'text-blue-100' : 'text-gray-400'
+                      {/* Day number */}
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold transition-colors ${
+                          isToday
+                            ? 'bg-blue-600 text-white'
+                            : isSelected
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'text-gray-600 hover:bg-gray-200'
                         }`}>
-                          {sipList.length} sip.
+                          {day.getDate()}
+                        </span>
+                        {hasNote && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
+                        )}
+                      </div>
+
+                      {/* Event pills */}
+                      <div className="space-y-0.5">
+                        {sipList.slice(0, MAX_VISIBLE).map(s => (
+                          <div key={s.id} className="relative group/pill">
+                            {/* Compact pill */}
+                            <div
+                              draggable
+                              onClick={e => e.stopPropagation()}
+                              onDragStart={e => {
+                                e.stopPropagation()
+                                setDragSiparis(s)
+                                e.dataTransfer.effectAllowed = 'move'
+                              }}
+                              onDragEnd={() => { setDragSiparis(null); setOverDate(null) }}
+                              className={`flex flex-col px-1.5 py-0.5 rounded text-[11px] leading-tight border cursor-grab active:cursor-grabbing select-none transition-opacity ${
+                                DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-700 border-gray-200'
+                              } ${dragSiparis?.id === s.id ? 'opacity-40' : ''}`}
+                            >
+                              <span className="font-semibold truncate">{s.siparis_no}</span>
+                              <span className="truncate opacity-80 text-[10px]">{s.musteri}</span>
+                            </div>
+                            {/* Hover popover - son 2 satırda yukarı, diğerlerinde aşağı açılır */}
+                            <div className={`absolute left-0 z-50 hidden group-hover/pill:block pointer-events-none w-52 ${
+                              idx >= monthGrid.length - 14 ? 'bottom-full mb-0.5' : 'top-full mt-0.5'
+                            }`}>
+                              <div className={`rounded-lg border shadow-lg p-2.5 text-xs ${
+                                DURUM_EVENT[s.durum] ?? 'bg-white border-gray-200'
+                              } bg-white border-gray-200`}>
+                                <div className="font-bold text-gray-800">{s.siparis_no}</div>
+                                <div className="text-gray-700 mt-0.5 font-medium">{s.musteri}</div>
+                                {s.alt_musteri && (
+                                  <div className="text-gray-500 text-[10px] mt-0.5">› {s.alt_musteri}</div>
+                                )}
+                                {s.toplam_adet > 0 && (
+                                  <div className="text-gray-500 text-[10px] mt-0.5 font-semibold">{s.toplam_adet} adet cam</div>
+                                )}
+                                <div className="mt-1.5">
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${
+                                    DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {DURUM_ETIKET[s.durum] ?? s.durum}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {sipList.length > MAX_VISIBLE && (
+                          <div className="text-[10px] text-gray-400 font-medium pl-1">
+                            +{sipList.length - MAX_VISIBLE} daha
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Drop hint */}
+                      {isDragOver && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-[10px] font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 shadow-sm">
+                            Buraya taşı
+                          </span>
                         </div>
                       )}
-
-                      {hasNote && (
-                        <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${
-                          isSelected ? 'bg-yellow-300' : 'bg-yellow-400'
-                        }`} />
-                      )}
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -612,90 +720,232 @@ export default function Dashboard() {
 
           {/* ── Weekly view ── */}
           {takvimGorunum === 'haftalik' && (
-            <div className="p-4">
-              <div className="grid grid-cols-7 gap-2">
-                {weekDays.map((day, i) => {
-                  const dateStr = toDateStr(day)
-                  const sipList = siparisMap.get(dateStr) ?? []
-                  const hasNote = notMap.has(dateStr)
-                  const isToday = dateStr === today
-                  const isSelected = dateStr === selectedDate
+            <div className="flex divide-x divide-gray-100 h-full min-h-[360px]">
+              {weekDays.map((day, i) => {
+                const dateStr = toDateStr(day)
+                const sipList = siparisMap.get(dateStr) ?? []
+                const hasNote = notMap.has(dateStr)
+                const isToday = dateStr === today
+                const isSelected = dateStr === selectedDate
+                const isDragOver = overDate === dateStr
 
-                  return (
+                return (
+                  <div
+                    key={dateStr}
+                    className={`flex-1 flex flex-col transition-colors ${
+                      isDragOver ? 'bg-blue-50 ring-2 ring-inset ring-blue-400' : ''
+                    }`}
+                    onDragOver={e => { e.preventDefault(); setOverDate(dateStr) }}
+                    onDragLeave={e => {
+                      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+                        setOverDate(null)
+                      }
+                    }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      setOverDate(null)
+                      if (dragSiparis) teslimTarihiGuncelle(dragSiparis, dateStr)
+                      setDragSiparis(null)
+                    }}
+                  >
+                    {/* Day header */}
                     <button
-                      key={dateStr}
                       onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                      className={`flex flex-col items-center py-3 px-1 rounded-xl transition-all border ${
-                        isSelected
-                          ? 'bg-blue-500 border-blue-400 shadow-md'
-                          : isToday
-                          ? 'bg-blue-50 border-blue-200'
-                          : 'border-gray-100 hover:bg-gray-50 hover:border-gray-200'
+                      className={`flex flex-col items-center py-2.5 border-b transition-colors ${
+                        isSelected ? 'bg-blue-50 border-blue-200' : 'border-gray-100 hover:bg-gray-50'
                       }`}
                     >
-                      <span className={`text-xs font-medium mb-1 ${
-                        isSelected ? 'text-blue-100' : 'text-gray-400'
+                      <span className={`text-[11px] font-semibold uppercase tracking-wide mb-0.5 ${
+                        isToday ? 'text-blue-600' : 'text-gray-400'
                       }`}>
                         {HAFTA_GUNLERI[i]}
                       </span>
-                      <span className={`text-xl font-bold mb-1.5 ${
-                        isSelected ? 'text-white' : isToday ? 'text-blue-600' : 'text-gray-800'
+                      <span className={`flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
+                        isToday ? 'bg-blue-600 text-white' : isSelected ? 'bg-blue-100 text-blue-700' : 'text-gray-700'
                       }`}>
                         {day.getDate()}
                       </span>
-                      {sipList.length > 0 ? (
-                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${
-                          isSelected ? 'bg-blue-400 text-white' : 'bg-blue-50 text-blue-600'
-                        }`}>
-                          {sipList.length} sip.
-                        </span>
-                      ) : (
-                        <span className="h-5" />
-                      )}
-                      {hasNote && (
-                        <span className={`mt-1.5 w-1.5 h-1.5 rounded-full ${
-                          isSelected ? 'bg-yellow-300' : 'bg-yellow-400'
-                        }`} />
-                      )}
+                      {hasNote && <span className="w-1 h-1 rounded-full bg-yellow-400 mt-0.5" />}
                     </button>
-                  )
-                })}
-              </div>
+
+                    {/* Events */}
+                    <div className="flex-1 p-1.5 space-y-1 overflow-y-auto">
+                      {sipList.map(s => (
+                        <div
+                          key={s.id}
+                          draggable
+                          onDragStart={e => {
+                            setDragSiparis(s)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onDragEnd={() => { setDragSiparis(null); setOverDate(null) }}
+                          className={`px-2 py-2 rounded-lg border text-xs cursor-grab active:cursor-grabbing select-none transition-all ${
+                            DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-700 border-gray-200'
+                          } ${dragSiparis?.id === s.id ? 'opacity-40' : 'hover:shadow-md hover:brightness-95'}`}
+                        >
+                          <div className="font-bold">{s.siparis_no}</div>
+                          <div className="font-medium text-[11px] mt-0.5">{s.musteri}</div>
+                          {s.alt_musteri && (
+                            <div className="opacity-60 text-[10px] mt-0.5">› {s.alt_musteri}</div>
+                          )}
+                          {s.toplam_adet > 0 && (
+                            <div className="text-[10px] font-semibold opacity-70 mt-0.5">{s.toplam_adet} adet cam</div>
+                          )}
+                          <div className="mt-1.5">
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/60">
+                              {DURUM_ETIKET[s.durum] ?? s.durum}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      {sipList.length === 0 && !isDragOver && (
+                        <div className="h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                          <span className="text-[10px] text-gray-300">Boş</span>
+                        </div>
+                      )}
+                      {isDragOver && (
+                        <div className="flex items-center justify-center py-3">
+                          <span className="text-[10px] font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                            Buraya taşı
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
+        </div>
 
-          {/* ── Selected date detail panel ── */}
-          {selectedDate && (
-            <div className="border-t border-gray-100 bg-gray-50/60 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-700">
-                  {formatDate(selectedDate)}
-                  {selectedSiparisler.length > 0 && (
-                    <span className="ml-2 text-xs font-normal text-gray-400">
-                      — {selectedSiparisler.length} sipariş teslim edilecek
+        {/* === Sağ kolon: Yıkamada + Sevkiyat === */}
+        <div className="flex flex-col gap-6">
+
+          {/* Yıkamada panel — dönen border animasyonu */}
+          <div className="relative rounded-xl p-[2px] overflow-hidden">
+            {/* Dönen çizgi — aktifse cyan, boşsa mavi/soluk */}
+            <div
+              className="absolute -inset-[100%] pointer-events-none"
+              style={{
+                animation: yikamaBatchler.length > 0
+                  ? 'spin 6s linear infinite'
+                  : 'spin 10s linear infinite',
+                background: yikamaBatchler.length > 0
+                  ? 'conic-gradient(transparent 0deg, transparent 300deg, #22d3ee 330deg, #67e8f9 345deg, transparent 360deg)'
+                  : 'conic-gradient(transparent 0deg, transparent 320deg, #93c5fd 345deg, #bfdbfe 355deg, transparent 360deg)',
+              }}
+            />
+            <div className="relative bg-white rounded-[10px] flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {yikamaBatchler.length > 0
+                  ? <Droplets size={15} className="text-cyan-500" />
+                  : <Droplets size={15} className="text-gray-300" />
+                }
+                <h2 className="text-sm font-semibold text-gray-700">Yıkamada</h2>
+                {yikamaBatchler.length > 0 && (
+                  <span className="relative flex items-center">
+                    <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-cyan-400 opacity-60" />
+                    <span className="relative inline-flex items-center justify-center h-4 w-4 rounded-full bg-cyan-500 text-white text-[9px] font-bold">
+                      {yikamaBatchler.length}
                     </span>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5" title="30 saniyede bir güncellenir">
+                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                <span className="text-[10px] text-gray-400">
+                  {sonGuncelleme.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 space-y-2">
+              {yikamaYukleniyor ? (
+                <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
+                  Yükleniyor…
+                </div>
+              ) : yikamaBatchler.length === 0 ? (
+                <div className="flex items-center gap-2 py-4 px-2 text-gray-300">
+                  <Droplets size={16} className="opacity-40 shrink-0" />
+                  <p className="text-xs">Şu an yıkamada batch yok</p>
+                </div>
+              ) : (
+                yikamaBatchler.map(batch => {
+                  const toplamCam = batch.siparisler.reduce((a, s) => a + s.cam_adet, 0)
+                  return (
+                    <div key={batch.id} className="rounded-lg border border-cyan-200 bg-gradient-to-r from-cyan-50 to-white p-2.5 shadow-sm">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+                          </span>
+                          <span className="font-mono text-xs font-bold text-cyan-800">{batch.batch_no}</span>
+                        </div>
+                        <span className="text-[10px] text-cyan-600 bg-cyan-100 px-1.5 py-0.5 rounded-full font-semibold">
+                          {toplamCam} cam
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {batch.siparisler.map(s => (
+                          <div key={s.siparis_id} className="flex items-center justify-between text-[11px]">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className="font-mono text-gray-400 shrink-0">{s.siparis_no}</span>
+                              <span className="text-gray-500 truncate">{s.musteri}</span>
+                            </div>
+                            <span className="text-cyan-700 font-semibold shrink-0 ml-1">{s.cam_adet}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+            </div>
+          </div>
+
+          {/* Sevkiyat Planlaması kartı */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-center">
+            <button
+              onClick={() => setSevkiyatAcik(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Truck size={16} />
+              Sevkiyat Planlaması
+            </button>
+          </div>
+
+          {/* Seçili gün / Bugünün Notu */}
+          {selectedDate ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <span className="text-sm font-semibold text-gray-700">{formatDate(selectedDate)}</span>
+                  {selectedSiparisler.length > 0 && (
+                    <span className="ml-2 text-[11px] text-gray-400">— {selectedSiparisler.length} sipariş</span>
                   )}
-                </h3>
+                </div>
                 <button
                   onClick={() => setSelectedDate(null)}
                   className="p-0.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  <X size={15} />
+                  <X size={14} />
                 </button>
               </div>
 
               {selectedSiparisler.length > 0 ? (
-                <div className="space-y-1.5 mb-4">
+                <div className="space-y-1.5 mb-3">
                   {selectedSiparisler.map(s => (
-                    <div
-                      key={s.id}
-                      className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-100"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-mono text-xs font-semibold text-gray-700 shrink-0">{s.siparis_no}</span>
-                        <span className="text-xs text-gray-500 truncate">{s.musteri}</span>
+                    <div key={s.id} className="flex items-center justify-between px-2.5 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-mono text-[11px] font-semibold text-gray-700">{s.siparis_no}</span>
+                        <span className="text-[10px] text-gray-500 truncate">{s.musteri}</span>
+                        {s.alt_musteri && <span className="text-[10px] text-gray-400 truncate">› {s.alt_musteri}</span>}
+                        {s.toplam_adet > 0 && <span className="text-[10px] text-gray-400">{s.toplam_adet} adet cam</span>}
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ml-2 ${
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ml-2 ${
                         DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
                       }`}>
                         {DURUM_ETIKET[s.durum] ?? s.durum}
@@ -704,99 +954,58 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-gray-400 mb-4 italic">Bu gün için teslim siparişi yok.</p>
+                <p className="text-[11px] text-gray-400 mb-3 italic">Bu gün için teslim siparişi yok.</p>
               )}
 
-              {/* Note editor */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <StickyNote size={13} className="text-yellow-500" />
-                  <span className="text-xs font-medium text-gray-600">Günlük Not</span>
-                </div>
-                <textarea
-                  value={notDuzenle}
-                  onChange={e => setNotDuzenle(e.target.value)}
-                  placeholder="Bu gün için not ekle..."
-                  rows={2}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 bg-white"
-                />
-                <div className="flex justify-end mt-1.5">
-                  <button
-                    onClick={notiKaydet}
-                    disabled={notKaydiyor}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                  >
-                    <Save size={12} />
-                    {notKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
-                  </button>
-                </div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <StickyNote size={12} className="text-yellow-500" />
+                <span className="text-[11px] font-medium text-gray-600">Günlük Not</span>
+              </div>
+              <textarea
+                value={notDuzenle}
+                onChange={e => setNotDuzenle(e.target.value)}
+                placeholder="Bu gün için not ekle..."
+                rows={2}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 bg-white"
+              />
+              <div className="flex justify-end mt-1.5">
+                <button
+                  onClick={notiKaydet}
+                  disabled={notKaydiyor}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  <Save size={11} />
+                  {notKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-1.5 mb-2">
+                <StickyNote size={13} className="text-yellow-500" />
+                <span className="text-xs font-semibold text-gray-600">Bugünün Notu</span>
+                <span className="text-[10px] text-gray-300 ml-1">{today}</span>
+              </div>
+              <textarea
+                value={bugunNot}
+                onChange={e => setBugunNot(e.target.value)}
+                placeholder="Bugün için not ekle..."
+                rows={3}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-yellow-200 focus:border-yellow-300 bg-white"
+              />
+              <div className="flex justify-end mt-1.5">
+                <button
+                  onClick={bugunNotiKaydet}
+                  disabled={bugunNotKaydiyor}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-xs font-medium hover:bg-yellow-600 disabled:opacity-50 transition-colors"
+                >
+                  <Save size={11} />
+                  {bugunNotKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
+                </button>
               </div>
             </div>
           )}
-        </div>
 
-        {/* === Yıkamada panel (1/3 width) === */}
-        <div className="bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Droplets size={15} className="text-cyan-500" />
-              <h2 className="text-sm font-semibold text-gray-700">Yıkamada</h2>
-              {yikamaBatchler.length > 0 && (
-                <span className="bg-cyan-100 text-cyan-700 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                  {yikamaBatchler.length}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5" title="30 saniyede bir güncellenir">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              <span className="text-xs text-gray-400">
-                {sonGuncelleme.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]">
-            {yikamaYukleniyor ? (
-              <div className="space-y-3">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 w-full rounded-xl" />
-                ))}
-              </div>
-            ) : yikamaBatchler.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-400 mb-3">
-                  <Droplets size={22} />
-                </div>
-                <p className="text-sm font-medium text-gray-600">Yıkamada batch yok</p>
-                <p className="text-xs text-gray-400 mt-0.5">Export edilen batch'ler burada görünür</p>
-              </div>
-            ) : (
-              yikamaBatchler.map(batch => {
-                const toplamCam = batch.siparisler.reduce((a, s) => a + s.cam_adet, 0)
-                return (
-                  <div key={batch.id} className="bg-cyan-50 rounded-xl border border-cyan-100 p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-cyan-800">{batch.batch_no}</span>
-                      <span className="text-xs text-cyan-600 bg-cyan-100 px-2 py-0.5 rounded-full font-medium">
-                        {toplamCam} cam
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {batch.siparisler.map(s => (
-                        <div key={s.siparis_id} className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-mono text-gray-500 shrink-0">{s.siparis_no}</span>
-                            <span className="text-gray-500 truncate">{s.musteri}</span>
-                          </div>
-                          <span className="text-cyan-700 font-semibold shrink-0 ml-2">{s.cam_adet}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
         </div>
       </div>
 

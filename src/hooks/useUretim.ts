@@ -5,12 +5,12 @@ import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/ureti
 
 /* ===== Durum geçiş matrisi ===== */
 const GECERLI_GECISLER: Record<UretimEmriDurum, UretimEmriDurum[]> = {
-  hazirlaniyor: ['onaylandi'],
-  onaylandi: ['export_edildi', 'hazirlaniyor'],
+  hazirlaniyor: ['export_edildi', 'iptal'],
   export_edildi: ['yikamada', 'hazirlaniyor'],
   yikamada: ['tamamlandi', 'eksik_var'],
   tamamlandi: [],
   eksik_var: ['yikamada', 'export_edildi'],
+  iptal: [],
 }
 
 export function useUretim() {
@@ -28,7 +28,7 @@ export function useUretim() {
         uretim_emri_detaylari(
           siparis_detaylari(
             adet,
-            siparisler(id, siparis_no, cari(ad))
+            siparisler(id, siparis_no, alt_musteri, notlar, cari(ad))
           )
         )
       `)
@@ -41,14 +41,17 @@ export function useUretim() {
         const detaylar: any[] = emir.uretim_emri_detaylari ?? []
         // cam_sayisi = satır değil, adet toplamı
         const cam_sayisi = detaylar.reduce((sum, d) => sum + (d.siparis_detaylari?.adet ?? 1), 0)
-        const siparisMap = new Map<string, { id: string; siparis_no: string; musteri_ad: string }>()
+        const siparisMap = new Map<string, { id: string; siparis_no: string; musteri_ad: string; alt_musteri: string | null; ref_no: string | null }>()
         for (const d of detaylar) {
           const sip = d.siparis_detaylari?.siparisler
           if (sip && !siparisMap.has(sip.id)) {
+            const refMatch = (sip.notlar as string | null)?.match(/Sipari\u015f No:\s*([^\s/]+)/)
             siparisMap.set(sip.id, {
               id: sip.id,
               siparis_no: sip.siparis_no,
               musteri_ad: sip.cari?.ad ?? '—',
+              alt_musteri: sip.alt_musteri ?? null,
+              ref_no: refMatch ? refMatch[1] : null,
             })
           }
         }
@@ -181,7 +184,41 @@ export function useUretim() {
     await getir()
   }
 
-  return { emirler, yukleniyor, hata, yeniBatch, durumGuncelle, sil, yenile: getir }
+  const iptalEt = async (id: string) => {
+    // 1. Batch'teki sipariş ID'lerini bul
+    const { data: batchDetaylar } = await supabase
+      .from('uretim_emri_detaylari')
+      .select('siparis_detay_id')
+      .eq('uretim_emri_id', id)
+
+    const detayIds = (batchDetaylar ?? []).map(d => d.siparis_detay_id)
+
+    let siparisIds: string[] = []
+    if (detayIds.length > 0) {
+      const { data: sipDetaylar } = await supabase
+        .from('siparis_detaylari')
+        .select('siparis_id')
+        .in('id', detayIds)
+      siparisIds = [...new Set((sipDetaylar ?? []).map(d => d.siparis_id))]
+    }
+
+    // 2. Batch durumunu 'iptal' yap
+    const { error } = await supabase.from('uretim_emirleri').update({ durum: 'iptal' }).eq('id', id)
+    if (error) throw new Error(error.message)
+
+    // 3. Siparişleri 'beklemede'ye döndür
+    if (siparisIds.length > 0) {
+      await supabase
+        .from('siparisler')
+        .update({ durum: 'beklemede' })
+        .in('id', siparisIds)
+        .eq('durum', 'batchte')
+    }
+
+    await getir()
+  }
+
+  return { emirler, yukleniyor, hata, yeniBatch, durumGuncelle, sil, iptalEt, yenile: getir }
 }
 
 /** Bir batch'in detaylarını (cam listesi) getirir */

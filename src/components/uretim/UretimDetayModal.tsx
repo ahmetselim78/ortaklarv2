@@ -21,29 +21,27 @@ interface Props {
 
 const DURUM_STIL: Record<UretimEmriDurum, string> = {
   hazirlaniyor: 'bg-gray-100 text-gray-600',
-  onaylandi: 'bg-blue-50 text-blue-700',
   export_edildi: 'bg-orange-50 text-orange-700',
   yikamada: 'bg-cyan-50 text-cyan-700',
   tamamlandi: 'bg-green-50 text-green-700',
   eksik_var: 'bg-red-50 text-red-700',
+  iptal: 'bg-gray-100 text-gray-400',
 }
 
 const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
   hazirlaniyor: 'Hazırlanıyor',
-  onaylandi: 'Onaylandı',
   export_edildi: 'Export Edildi',
   yikamada: 'Yıkamada',
   tamamlandi: 'Tamamlandı',
   eksik_var: 'Eksik Var',
+  iptal: 'İptal',
 }
 
 export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGuncellendi }: Props) {
   const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)
-  const [onayDialogAcik, setOnayDialogAcik] = useState(false)
   const [exportDialogAcik, setExportDialogAcik] = useState(false)
-  const [onayYapiliyor, setOnayYapiliyor] = useState(false)
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [secilenSiparis, setSecilenSiparis] = useState<Siparis | null>(null)
   const { stoklar } = useStok()
@@ -142,20 +140,10 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
             <p className="text-sm text-gray-500">{detaylar.length} cam parçası</p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Durum badge — sadece hazirlaniyor iken tıklanabilir (onaylandi'ya geçer) */}
-            <button
-              onClick={() => emir.durum === 'hazirlaniyor' && setOnayDialogAcik(true)}
-              disabled={emir.durum !== 'hazirlaniyor'}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                DURUM_STIL[emir.durum],
-                emir.durum === 'hazirlaniyor' && 'cursor-pointer hover:bg-blue-100 hover:text-blue-700 ring-1 ring-blue-300',
-                emir.durum !== 'hazirlaniyor' && 'cursor-default'
-              )}
-              title={emir.durum === 'hazirlaniyor' ? 'Tıklayarak Onayla' : DURUM_ETIKET[emir.durum]}
-            >
+            {/* Durum badge */}
+            <span className={cn('rounded-lg px-3 py-1.5 text-sm font-medium', DURUM_STIL[emir.durum])}>
               {DURUM_ETIKET[emir.durum]}
-            </button>
+            </span>
 
             {/* Export Butonu */}
             <button
@@ -286,26 +274,6 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
             )}
           </div>
         </div>
-
-        {/* Onay diyalogu */}
-        <ConfirmDialog
-          acik={onayDialogAcik}
-          baslik="Batch Onaylama"
-          mesaj={`"${emir.batch_no}" batch'ini onaylamak istediğinize emin misiniz? Onaylanan batch'e yeni cam eklenemez.`}
-          onayButon="Onayla"
-          onayRenk="blue"
-          yukleniyor={onayYapiliyor}
-          onOnayla={async () => {
-            setOnayYapiliyor(true)
-            try {
-              await onDurumDegisti(emir.id, 'onaylandi')
-              setOnayDialogAcik(false)
-            } finally {
-              setOnayYapiliyor(false)
-            }
-          }}
-          onKapat={() => setOnayDialogAcik(false)}
-        />
 
         {/* Export diyalogu */}
         <ConfirmDialog

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2 } from 'lucide-react'
+import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2, Truck, PackageCheck } from 'lucide-react'
 import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
 import type { PDFParseResult } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { getDocument } from 'pdfjs-dist'
 import { generateCariKod } from '@/lib/idGenerator'
+import { useAraclar, sevkiyatKaydet } from '@/hooks/useSevkiyat'
 
 /* ===== PDF Sayfa Görüntüleyici ===== */
 function PDFPageViewer({
@@ -112,11 +113,11 @@ interface Props {
     alt_musteri?: string
     notlar?: string
     camlar: CamFormSatiri[]
-  }) => Promise<string>
+  }) => Promise<{ id: string; siparis_no: string; teslim_tarihi: string | null }>
   onKapat: () => void
 }
 
-type Adim = 'yukleme' | 'eslestirme' | 'onizleme'
+type Adim = 'yukleme' | 'eslestirme' | 'onizleme' | 'sevkiyat'
 
 export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }: Props) {
   const [adim, setAdim] = useState<Adim>('yukleme')
@@ -147,6 +148,15 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
 
   // Import
   const [iceAktariliyor, setIceAktariliyor] = useState(false)
+
+  // Adım 4: Sevkiyat state
+  const [savedSiparis, setSavedSiparis] = useState<{ id: string; siparis_no: string } | null>(null)
+  const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat'>('teslim_alacak')
+  const [aracId, setAracId] = useState('')
+  const [sevkiyatTarih, setSevkiyatTarih] = useState('')
+  const [sevkiyatNot, setSevkiyatNot] = useState('')
+  const [sevkiyatKaydediliyor, setSevkiyatKaydediliyor] = useState(false)
+  const { araclar, yukleniyor: araclarYukleniyor } = useAraclar()
 
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -298,12 +308,13 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         yukseklik_mm: s.yukseklik_mm,
         adet: s.adet,
         ara_bosluk_mm: s.ara_bosluk_mm ?? '',
+        cita_stok_id: s.ara_bosluk_mm != null ? (citaSecimler[s.ara_bosluk_mm] || undefined) : undefined,
         kenar_islemi: '',
         poz: s.pozNo || '',
         notlar: '',
       }))
 
-      await onIceAktar({
+      const result = await onIceAktar({
         cari_id: secilenCariId,
         tarih,
         teslim_tarihi: teslimTarihi,
@@ -311,13 +322,30 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Tedarikçi: ${header.tedarikciUnvan}`,
         camlar,
       })
-
-      onKapat()
+      setSavedSiparis({ id: result.id, siparis_no: result.siparis_no })
+      setAdim('sevkiyat')
     } catch (err: any) {
       setHata(`İçe aktarma başarısız: ${err.message ?? 'Bilinmeyen hata'}`)
     } finally {
       setIceAktariliyor(false)
     }
+  }
+
+  /* ===== Adım 4: Sevkiyat ===== */
+  const handleSevkiyatTamamla = async () => {
+    if (teslimatTipi === 'sevkiyat' && savedSiparis) {
+      if (!aracId || !sevkiyatTarih) return
+      setSevkiyatKaydediliyor(true)
+      try {
+        await sevkiyatKaydet(savedSiparis.id, aracId, sevkiyatTarih, sevkiyatNot || undefined)
+      } catch (e: unknown) {
+        setHata(e instanceof Error ? e.message : 'Sevkiyat kaydedilemedi')
+        setSevkiyatKaydediliyor(false)
+        return
+      }
+      setSevkiyatKaydediliyor(false)
+    }
+    onKapat()
   }
 
   /* ===== RENDER ===== */
@@ -326,6 +354,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
     { key: 'yukleme', label: 'PDF Yükle' },
     { key: 'eslestirme', label: 'Eşleştirme' },
     { key: 'onizleme', label: 'Önizleme' },
+    { key: 'sevkiyat', label: 'Sevkiyat' },
   ]
 
   return (
@@ -703,7 +732,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                           </td>
                           <td className="px-3 py-2 text-xs text-gray-600">
                             {s.ara_bosluk_mm && citaSecimler[s.ara_bosluk_mm]
-                              ? stoklar.find((st) => st.id === citaSecimler[s.ara_bosluk_mm!])?.ad ?? '—'
+                              ? (() => { const ad = stoklar.find((st) => st.id === citaSecimler[s.ara_bosluk_mm!])?.ad ?? '—'; return ad.match(/\d+\s*mm/i)?.[0] ?? ad })() 
                               : '—'}
                           </td>
                           <td className="px-3 py-2 text-gray-500 text-xs">{s.pozNo || '—'}</td>
@@ -856,6 +885,102 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
             </div>
             )
           })()}
+
+          {/* ===== ADIM 4: SEVKİYAT ===== */}
+          {adim === 'sevkiyat' && (
+            <div className="space-y-5 max-w-sm mx-auto py-2">
+              <p className="text-sm text-gray-500">Bu sipariş nasıl teslim edilecek?</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTeslimatTipi('teslim_alacak')}
+                  className={cn(
+                    'flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all',
+                    teslimatTipi === 'teslim_alacak'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  )}
+                >
+                  <PackageCheck size={30} className={teslimatTipi === 'teslim_alacak' ? 'text-blue-600' : 'text-gray-400'} />
+                  <div className="text-center">
+                    <div className={cn('text-sm font-semibold', teslimatTipi === 'teslim_alacak' ? 'text-blue-700' : 'text-gray-600')}>
+                      Teslim Alacak
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">Müşteri gelip alacak</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTeslimatTipi('sevkiyat')}
+                  className={cn(
+                    'flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all',
+                    teslimatTipi === 'sevkiyat'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  )}
+                >
+                  <Truck size={30} className={teslimatTipi === 'sevkiyat' ? 'text-blue-600' : 'text-gray-400'} />
+                  <div className="text-center">
+                    <div className={cn('text-sm font-semibold', teslimatTipi === 'sevkiyat' ? 'text-blue-700' : 'text-gray-600')}>
+                      Sevkiyat
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">Araçla teslim edilecek</div>
+                  </div>
+                </button>
+              </div>
+
+              {teslimatTipi === 'sevkiyat' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Araç *</label>
+                    {araclarYukleniyor ? (
+                      <div className="h-9 bg-gray-100 rounded-lg animate-pulse" />
+                    ) : (
+                      <select
+                        value={aracId}
+                        onChange={e => setAracId(e.target.value)}
+                        className={cn(
+                          'w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
+                          !aracId ? 'border-red-300' : 'border-gray-200'
+                        )}
+                      >
+                        <option value="">Araç seçin…</option>
+                        {araclar.map(a => (
+                          <option key={a.id} value={a.id}>{a.ad} — {a.plaka}</option>
+                        ))}
+                      </select>
+                    )}
+                    {!aracId && <p className="mt-1 text-xs text-red-500">Araç seçiniz</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Sevkiyat Tarihi *</label>
+                    <input
+                      type="date"
+                      value={sevkiyatTarih}
+                      onChange={e => setSevkiyatTarih(e.target.value)}
+                      className={cn(
+                        'w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
+                        !sevkiyatTarih ? 'border-red-300' : 'border-gray-200'
+                      )}
+                    />
+                    {!sevkiyatTarih && <p className="mt-1 text-xs text-red-500">Tarih giriniz</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Not (isteğe bağlı)</label>
+                    <input
+                      type="text"
+                      value={sevkiyatNot}
+                      onChange={e => setSevkiyatNot(e.target.value)}
+                      placeholder="Sevkiyat notu…"
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Alt bar */}
@@ -864,9 +989,10 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
             {adim === 'yukleme' && 'Cam sipariş listesi PDF dosyası seçin'}
             {adim === 'eslestirme' && 'Cari ve stok bilgilerini doğrulayın'}
             {adim === 'onizleme' && 'Verileri kontrol edip içe aktarın'}
+            {adim === 'sevkiyat' && 'Sipariş kaydedildi. Teslimat tipini seçin.'}
           </div>
           <div className="flex gap-3">
-            {adim !== 'yukleme' && (
+            {adim !== 'yukleme' && adim !== 'sevkiyat' && (
               <button
                 onClick={() => setAdim(adim === 'onizleme' ? 'eslestirme' : 'yukleme')}
                 className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors"
@@ -889,6 +1015,15 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
                 {iceAktariliyor ? 'İçe Aktarılıyor...' : `${parseResult?.satirlar.reduce((s, r) => s + r.adet, 0)} Adet (${parseResult?.satirlar.length} Satır) İçe Aktar`}
+              </button>
+            )}
+            {adim === 'sevkiyat' && (
+              <button
+                onClick={handleSevkiyatTamamla}
+                disabled={sevkiyatKaydediliyor || (teslimatTipi === 'sevkiyat' && (!aracId || !sevkiyatTarih))}
+                className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {sevkiyatKaydediliyor ? 'Kaydediliyor...' : 'Tamamla'}
               </button>
             )}
           </div>

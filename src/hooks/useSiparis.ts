@@ -19,6 +19,7 @@ interface YeniSiparisForm {
   teslim_tarihi?: string
   notlar?: string
   alt_musteri?: string
+  teslimat_tipi?: string
   camlar: CamFormSatiri[]
 }
 
@@ -32,7 +33,7 @@ export function useSiparis() {
     setHata(null)
     const { data, error } = await supabase
       .from('siparisler')
-      .select('*, cari(ad, kod)')
+      .select('*, cari(ad, kod), siparis_detaylari(count), sevkiyat_planlari(id, tarih)')
       .order('created_at', { ascending: false })
 
     if (error) setHata(error.message)
@@ -56,44 +57,39 @@ export function useSiparis() {
         teslim_tarihi: form.teslim_tarihi || null,
         notlar: form.notlar || null,
         alt_musteri: form.alt_musteri || null,
+        teslimat_tipi: form.teslimat_tipi || 'teslim_alacak',
       })
       .select()
       .single()
 
     if (siparisHata) throw new Error(siparisHata.message)
 
-    try {
-      // 3. Tüm cam parçaları için toplu GLS kodu üret
-      const kodlar = await generateCamKodulari(form.camlar.length)
+    // 3. Tüm cam parçaları için toplu GLS kodu üret
+    const kodlar = await generateCamKodulari(form.camlar.length)
 
-      // 4. Cam parçalarını kaydet
-      const detaylar = form.camlar.map((cam, i) => ({
-        siparis_id: siparis.id,
-        stok_id: cam.stok_id || null,
-        cam_kodu: kodlar[i],
-        genislik_mm: Number(cam.genislik_mm),
-        yukseklik_mm: Number(cam.yukseklik_mm),
-        adet: Number(cam.adet),
-        ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
-        cita_stok_id: cam.cita_stok_id || null,
-        kenar_islemi: cam.kenar_islemi || null,
-        notlar: cam.notlar || null,
-        poz: cam.poz || null,
-      }))
+    // 4. Cam parçalarını kaydet
+    const detaylar = form.camlar.map((cam, i) => ({
+      siparis_id: siparis.id,
+      stok_id: cam.stok_id || null,
+      cam_kodu: kodlar[i],
+      genislik_mm: Number(cam.genislik_mm),
+      yukseklik_mm: Number(cam.yukseklik_mm),
+      adet: Number(cam.adet),
+      ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
+      cita_stok_id: cam.cita_stok_id || null,
+      kenar_islemi: cam.kenar_islemi || null,
+      notlar: cam.notlar || null,
+      poz: cam.poz || null,
+    }))
 
-      const { error: detayHata } = await supabase
-        .from('siparis_detaylari')
-        .insert(detaylar)
+    const { error: detayHata } = await supabase
+      .from('siparis_detaylari')
+      .insert(detaylar)
 
-      if (detayHata) throw new Error(detayHata.message)
+    if (detayHata) throw new Error(detayHata.message)
 
-      await getir()
-      return siparis.id as string
-    } catch (err) {
-      // Rollback: Detay insert başarısızsa orphan siparişi temizle
-      await supabase.from('siparisler').delete().eq('id', siparis.id)
-      throw err
-    }
+    await getir()
+    return { id: siparis.id as string, siparis_no: siparis.siparis_no as string, teslim_tarihi: siparis.teslim_tarihi as string | null }
   }
 
   const durumGuncelle = async (id: string, durum: SiparisDurum) => {
@@ -105,7 +101,9 @@ export function useSiparis() {
         throw new Error(`Geçersiz durum geçişi: ${mevcut.durum} → ${durum}`)
       }
     }
-    const { error } = await supabase.from('siparisler').update({ durum }).eq('id', id)
+    const updatePayload: Record<string, unknown> = { durum }
+    if (durum === 'tamamlandi') updatePayload.tamamlandi_tarihi = new Date().toISOString()
+    const { error } = await supabase.from('siparisler').update(updatePayload).eq('id', id)
     if (error) throw new Error(error.message)
     await getir()
   }

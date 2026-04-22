@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { X, Pencil, Wrench, Plus, Trash2 } from 'lucide-react'
 import type { Siparis, SiparisDetay, SiparisDurum, UretimDurumu } from '@/types/siparis'
+import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { getSiparisDetaylari } from '@/hooks/useSiparis'
 import { supabase } from '@/lib/supabase'
 import { generateCamKodulari } from '@/lib/idGenerator'
 import { cn, formatDate } from '@/lib/utils'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
+import SiparisEditModal from './SiparisEditModal'
 
 interface Props {
   siparis: Siparis
   stoklar: Stok[]
+  cariler: Cari[]
   onKapat: () => void
   onGuncelle?: (id: string, form: { tarih?: string; teslim_tarihi?: string | null; alt_musteri?: string | null; notlar?: string | null }) => Promise<void>
 }
@@ -86,15 +89,10 @@ interface DetayWithBatch extends SiparisDetay {
   aktif_tamir?: TamirBilgi | null
 }
 
-export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncelle }: Props) {
+export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }: Props) {
   const [detaylar, setDetaylar] = useState<DetayWithBatch[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
-  const [duzenleAcik, setDuzenleAcik] = useState(false)
-  const [editTarih, setEditTarih] = useState(siparis.tarih)
-  const [editTeslim, setEditTeslim] = useState(siparis.teslim_tarihi ?? '')
-  const [editAltMusteri, setEditAltMusteri] = useState(siparis.alt_musteri ?? '')
-  const [editNotlar, setEditNotlar] = useState(siparis.notlar ?? '')
-  const [kaydediyor, setKaydediyor] = useState(false)
+  const [editModalAcik, setEditModalAcik] = useState(false)
 
   // Beklemede satır düzenleme durumu
   const [editingDetayId, setEditingDetayId] = useState<string | null>(null)
@@ -156,21 +154,6 @@ export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncell
   const yikanmis = detaylar.reduce((sum, d) => sum + (d.uretim_durumu === 'yikandi' ? (d.adet ?? 1) : 0), 0)
   const toplam = detaylar.reduce((sum, d) => sum + (d.adet ?? 1), 0)
 
-  const handleDuzenleKaydet = async () => {
-    if (!onGuncelle) return
-    setKaydediyor(true)
-    try {
-      await onGuncelle(siparis.id, {
-        tarih: editTarih,
-        teslim_tarihi: editTeslim || null,
-        alt_musteri: editAltMusteri || null,
-        notlar: editNotlar || null,
-      })
-      setDuzenleAcik(false)
-    } finally {
-      setKaydediyor(false)
-    }
-  }
 
   const startEditRow = (d: DetayWithBatch) => {
     setEditingDetayId(d.id)
@@ -262,7 +245,7 @@ export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncell
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className={cn(
         'w-full bg-white rounded-2xl shadow-xl flex flex-col max-h-[90vh] transition-all duration-300 ease-out',
-        duzenleAcik ? 'max-w-5xl' : 'max-w-4xl'
+        'max-w-4xl'
       )}>
         {/* Başlık */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
@@ -277,25 +260,32 @@ export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncell
               {siparis.teslim_tarihi && ` · Teslim: ${formatDate(siparis.teslim_tarihi)}`}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-start gap-3">
             {/* Düzenle butonu */}
-            {onGuncelle && !duzenleAcik && (
-              <button
-                onClick={() => setDuzenleAcik(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                <Pencil size={14} />
-                Düzenle
-              </button>
-            )}
+            <button
+              onClick={() => setEditModalAcik(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <Pencil size={14} />
+              Düzenle
+            </button>
             {/* Durum badge (readonly) */}
-            <span className={cn(
-              'rounded-lg px-3 py-1.5 text-sm font-medium',
-              SIPARIS_DURUM_STIL[siparis.durum]
-            )}>
-              {SIPARIS_DURUM_ETIKET[siparis.durum]}
-            </span>
-            <button onClick={onKapat} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100">
+            <div className="flex flex-col items-end gap-0.5">
+              <span className={cn(
+                'rounded-lg px-3 py-1.5 text-sm font-medium',
+                SIPARIS_DURUM_STIL[siparis.durum]
+              )}>
+                {SIPARIS_DURUM_ETIKET[siparis.durum]}
+              </span>
+              {siparis.durum === 'tamamlandi' && (
+                <span className="text-xs font-medium text-gray-700 pr-1">
+                  {siparis.tamamlandi_tarihi
+                    ? formatDate(siparis.tamamlandi_tarihi)
+                    : formatDate(siparis.created_at)}
+                </span>
+              )}
+            </div>
+            <button onClick={onKapat} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 mt-0.5">
               <X size={18} />
             </button>
           </div>
@@ -322,78 +312,20 @@ export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncell
           </div>
         )}
 
-        {/* Düzenleme formu */}
-        <div className={cn(
-          'shrink-0 overflow-hidden border-b border-gray-100 transition-all duration-300 ease-out',
-          duzenleAcik ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0 border-b-0'
-        )}>
-          <div className={cn(
-            'px-6 pb-4 pt-4 transition-all duration-300 ease-out',
-            duzenleAcik ? 'translate-y-0' : '-translate-y-2'
-          )}>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Tarih</label>
-                <input
-                  type="date"
-                  value={editTarih}
-                  onChange={(e) => setEditTarih(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Teslim Tarihi</label>
-                <input
-                  type="date"
-                  value={editTeslim}
-                  onChange={(e) => setEditTeslim(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Alt Müşteri</label>
-                <input
-                  type="text"
-                  value={editAltMusteri}
-                  onChange={(e) => setEditAltMusteri(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Nihai müşteri / proje"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Notlar</label>
-                <input
-                  type="text"
-                  value={editNotlar}
-                  onChange={(e) => setEditNotlar(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Sipariş notu..."
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                onClick={() => {
-                  setEditTarih(siparis.tarih)
-                  setEditTeslim(siparis.teslim_tarihi ?? '')
-                  setEditAltMusteri(siparis.alt_musteri ?? '')
-                  setEditNotlar(siparis.notlar ?? '')
-                  setDuzenleAcik(false)
-                }}
-                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-              >
-                İptal
-              </button>
-              <button
-                onClick={handleDuzenleKaydet}
-                disabled={kaydediyor}
-                className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                {kaydediyor ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* ── Düzenleme modalı ── */}
+        {editModalAcik && (
+          <SiparisEditModal
+            siparis={siparis}
+            detaylar={detaylar}
+            cariler={cariler}
+            stoklar={stoklar}
+            onKapat={() => setEditModalAcik(false)}
+            onKaydet={async () => {
+              setEditModalAcik(false)
+              await yukleDetaylar()
+            }}
+          />
+        )}
 
         {/* İçerik */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -525,7 +457,7 @@ export default function SiparisDetayModal({ siparis, stoklar, onKapat, onGuncell
                           {d.poz || <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2.5 text-gray-700">{d.stok?.ad ?? '—'}</td>
-                        <td className="px-3 py-2.5 text-gray-500 text-xs">{d.cita_stok?.ad ?? <span className="text-gray-300">—</span>}</td>
+                        <td className="px-3 py-2.5 text-gray-500 text-xs">{d.cita_stok?.ad ? (d.cita_stok.ad.match(/\d+\s*mm/i)?.[0] ?? d.cita_stok.ad) : <span className="text-gray-300">—</span>}</td>
                         <td className="px-3 py-2.5 text-gray-600">
                           {d.genislik_mm} × {d.yukseklik_mm}
                         </td>

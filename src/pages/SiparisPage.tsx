@@ -11,6 +11,7 @@ import SiparisListesi from '@/components/siparis/SiparisListesi'
 import SiparisForm from '@/components/siparis/SiparisForm'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 import PDFImportModal from '@/components/siparis/PDFImportModal'
+import SevkiyatPlanModal from '@/components/siparis/SevkiyatPlanModal'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +29,7 @@ const DURUM_FILTRELER: { deger: DurumFiltre; etiket: string }[] = [
 ]
 
 export default function SiparisPage() {
-  const { siparisler, yukleniyor, hata, ekle, guncelle, durumGuncelle, yenile } = useSiparis()
+  const { siparisler, yukleniyor, hata, ekle, guncelle, durumGuncelle, sil, yenile } = useSiparis()
   const { cariler } = useCari()
   const { stoklar } = useStok()
   const location = useLocation()
@@ -38,6 +39,9 @@ export default function SiparisPage() {
   const [gorunenSiparis, setGorunenSiparis] = useState<Siparis | null>(null)
   const [iptalEdilecek, setIptalEdilecek] = useState<Siparis | null>(null)
   const [iptalEdiliyor, setIptalEdiliyor] = useState(false)
+  const [silEdilecek, setSilEdilecek] = useState<Siparis | null>(null)
+  const [silEdiliyor, setSilEdiliyor] = useState(false)
+  const [pendingSevkiyat, setPendingSevkiyat] = useState<{ siparis_id: string; siparis_no: string; teslim_tarihi: string | null } | null>(null)
   const [durumFiltre, setDurumFiltre] = useState<DurumFiltre>('hepsi')
   const [sayfa, setSayfa] = useState(1)
   const SAYFA_BOYUTU = 20
@@ -106,6 +110,18 @@ export default function SiparisPage() {
     }
   }
 
+  const handleSilOnayla = async () => {
+    if (!silEdilecek) return
+    setSilEdiliyor(true)
+    try {
+      await sil(silEdilecek.id)
+      yenile()
+    } finally {
+      setSilEdiliyor(false)
+      setSilEdilecek(null)
+    }
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Üst başlık */}
@@ -136,28 +152,57 @@ export default function SiparisPage() {
       <div className="flex gap-2 mb-5 flex-wrap">
         {DURUM_FILTRELER.map(({ deger, etiket }) => {
           const isTamir = deger === 'tamirde'
-          const count = isTamir ? tamirdeSiparisIds.size : null
+          const count = isTamir
+            ? tamirdeSiparisIds.size
+            : deger === 'hepsi'
+              ? siparisler.length
+              : siparisler.filter(s => s.durum === deger).length
+          const aktif = durumFiltre === deger
+          const hasCount = count > 0
+
+          const NOKTA_RENK: Partial<Record<DurumFiltre, string>> = {
+            beklemede: 'bg-gray-400',
+            batchte:   'bg-blue-500',
+            yikamada:  'bg-cyan-500',
+            tamamlandi:'bg-green-500',
+            eksik_var: 'bg-orange-500',
+            iptal:     'bg-red-500',
+            tamirde:   'bg-red-600',
+          }
+
           return (
             <button
               key={deger}
               onClick={() => setDurumFiltre(deger)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
-                durumFiltre === deger
+                aktif
                   ? isTamir
                     ? 'bg-red-600 text-white border-red-600'
                     : 'bg-blue-600 text-white border-blue-600'
-                  : isTamir && count && count > 0
+                  : isTamir && hasCount
                     ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
               )}
             >
               {isTamir && <Wrench size={11} />}
+              {deger !== 'hepsi' && hasCount && (
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className={cn(
+                    'animate-ping absolute inline-flex h-full w-full rounded-full opacity-60',
+                    aktif ? 'bg-white' : NOKTA_RENK[deger] ?? 'bg-gray-400'
+                  )} />
+                  <span className={cn(
+                    'relative inline-flex rounded-full h-1.5 w-1.5',
+                    aktif ? 'bg-white' : NOKTA_RENK[deger] ?? 'bg-gray-400'
+                  )} />
+                </span>
+              )}
               {etiket}
-              {isTamir && count !== null && count > 0 && (
+              {isTamir && hasCount && (
                 <span className={cn(
                   'px-1.5 py-0.5 rounded-full text-xs font-bold leading-none',
-                  durumFiltre === 'tamirde' ? 'bg-white/30 text-white' : 'bg-red-200 text-red-700'
+                  aktif ? 'bg-white/30 text-white' : 'bg-red-200 text-red-700'
                 )}>
                   {count}
                 </span>
@@ -194,6 +239,8 @@ export default function SiparisPage() {
             tamirdeSiparisIds={tamirdeSiparisIds}
             onGoruntule={setGorunenSiparis}
             onIptal={setIptalEdilecek}
+            onSil={setSilEdilecek}
+            silGoster={durumFiltre === 'iptal'}
           />
           <Pagination
             toplamKayit={filtrelenmis.length}
@@ -219,6 +266,7 @@ export default function SiparisPage() {
         <SiparisDetayModal
           siparis={gorunenSiparis}
           stoklar={stoklar}
+          cariler={cariler}
           onGuncelle={guncelle}
           onKapat={() => { setGorunenSiparis(null); yenile() }}
         />
@@ -229,7 +277,11 @@ export default function SiparisPage() {
         <PDFImportModal
           cariler={cariler.filter((c) => c.tipi === 'musteri')}
           stoklar={stoklar}
-          onIceAktar={async (form) => { await ekle(form); yenile(); return '' }}
+          onIceAktar={async (form) => {
+            const result = await ekle(form)
+            yenile()
+            return result
+          }}
           onKapat={() => { setPdfModalAcik(false); yenile() }}
         />
       )}
@@ -256,6 +308,44 @@ export default function SiparisPage() {
                 className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
               >
                 {iptalEdiliyor ? 'İptal ediliyor...' : 'İptal Et'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sevkiyat Planlama */}
+      {pendingSevkiyat && (
+        <SevkiyatPlanModal
+          siparisId={pendingSevkiyat.siparis_id}
+          siparisNo={pendingSevkiyat.siparis_no}
+          teslimTarihi={pendingSevkiyat.teslim_tarihi}
+          onKapat={() => setPendingSevkiyat(null)}
+        />
+      )}
+
+      {/* Kalıcı Silme Onayı */}
+      {silEdilecek && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Sipariş Kalıcı Silinsin mi?</h3>
+            <p className="text-sm text-gray-500 mb-5">
+              <span className="font-medium text-gray-700">{silEdilecek.siparis_no}</span> siparişi ve
+              tüm detayları kalıcı olarak silinecek. Bu işlem <span className="font-semibold text-red-600">geri alınamaz</span>.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setSilEdilecek(null)}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleSilOnayla}
+                disabled={silEdiliyor}
+                className="px-4 py-2 text-sm rounded-lg bg-red-700 text-white font-medium hover:bg-red-800 disabled:opacity-50"
+              >
+                {silEdiliyor ? 'Siliniyor...' : 'Evet, Sil'}
               </button>
             </div>
           </div>

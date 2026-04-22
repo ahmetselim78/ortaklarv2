@@ -1,24 +1,47 @@
-import { Eye, Trash2, Download } from 'lucide-react'
-import type { UretimEmri } from '@/types/uretim'
+import { Eye, Trash2, Download, Ban } from 'lucide-react'
+import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
+import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
-import StatusBadge from '@/components/ui/StatusBadge'
-import { TableSkeleton } from '@/components/ui/Skeleton'
 
 interface Props {
   emirler: UretimEmri[]
   yukleniyor: boolean
+  aktifFiltre: string
   onGoruntule: (emir: UretimEmri) => void
   onSil: (emir: UretimEmri) => void
+  onIptal: (emir: UretimEmri) => void
   onSiparisAc: (siparisId: string) => void
 }
 
-export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil, onSiparisAc }: Props) {
+const DURUM_STIL: Record<UretimEmriDurum, string> = {
+  hazirlaniyor: 'bg-gray-100 text-gray-600',
+  export_edildi: 'bg-orange-50 text-orange-700',
+  yikamada: 'bg-cyan-50 text-cyan-700',
+  tamamlandi: 'bg-green-50 text-green-700',
+  eksik_var: 'bg-red-50 text-red-700',
+  iptal: 'bg-gray-100 text-gray-400 line-through',
+}
+
+const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
+  hazirlaniyor: 'Hazırlanıyor',
+  export_edildi: 'Export Edildi',
+  yikamada: 'Yıkamada',
+  tamamlandi: 'Tamamlandı',
+  eksik_var: 'Eksik Var',
+  iptal: 'İptal',
+}
+
+export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoruntule, onSil, onIptal, onSiparisAc }: Props) {
 
   if (yukleniyor) {
-    return <TableSkeleton satir={5} kolon={6} />
+    return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
   }
 
-  if (emirler.length === 0) return null
+  if (emirler.length === 0) return (
+    <div className="flex items-center justify-center py-20 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+      Bu filtrede kayıt yok
+    </div>
+  )
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -43,7 +66,9 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil,
               <td className="px-4 py-3 font-mono font-semibold text-gray-800">{emir.batch_no}</td>
               <td className="px-4 py-3 text-gray-600">{formatDate(emir.olusturulma_tarihi)}</td>
               <td className="px-4 py-3">
-                <StatusBadge durum={emir.durum} tip="uretim" />
+                <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[emir.durum])}>
+                  {DURUM_ETIKET[emir.durum]}
+                </span>
               </td>
               <td className="px-4 py-3 text-gray-600">
                 {emir.export_tarihi ? (
@@ -69,6 +94,12 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil,
                     >
                       <span className="font-mono text-xs font-semibold text-gray-700 group-hover:text-blue-700">{sip.siparis_no}</span>
                       <span className="text-xs text-gray-400 group-hover:text-blue-500 leading-tight">{sip.musteri_ad}</span>
+                      {sip.alt_musteri && (
+                        <span className="text-xs text-blue-600 group-hover:text-blue-700 leading-tight font-medium">{sip.alt_musteri}</span>
+                      )}
+                      {sip.ref_no && (
+                        <span className="font-mono text-xs text-gray-500 group-hover:text-blue-500 leading-tight bg-gray-100 group-hover:bg-blue-100 px-1 rounded mt-0.5">{sip.ref_no}</span>
+                      )}
                     </button>
                   ))}
                   {(emir.siparis_listesi ?? []).length === 0 && <span className="text-gray-400">—</span>}
@@ -83,13 +114,24 @@ export default function UretimListesi({ emirler, yukleniyor, onGoruntule, onSil,
                   >
                     <Eye size={15} />
                   </button>
-                  <button
-                    onClick={() => onSil(emir)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    title="Sil"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {emir.durum === 'hazirlaniyor' && (
+                    <button
+                      onClick={() => onIptal(emir)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                      title="Batch'i İptal Et"
+                    >
+                      <Ban size={15} />
+                    </button>
+                  )}
+                  {aktifFiltre === 'iptal' && (
+                    <button
+                      onClick={() => onSil(emir)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Sil"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>

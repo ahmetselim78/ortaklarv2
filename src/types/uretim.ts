@@ -1,9 +1,11 @@
-export type UretimEmriDurum = 'hazirlaniyor' | 'onaylandi' | 'export_edildi' | 'yikamada' | 'tamamlandi' | 'eksik_var'
+export type UretimEmriDurum = 'hazirlaniyor' | 'export_edildi' | 'yikamada' | 'tamamlandi' | 'eksik_var' | 'iptal'
 
 export interface UretimEmriSiparisOzet {
   id: string
   siparis_no: string
   musteri_ad: string
+  alt_musteri: string | null
+  ref_no: string | null
 }
 
 export interface UretimEmri {

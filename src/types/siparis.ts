@@ -12,6 +12,10 @@ export interface Siparis {
   alt_musteri: string | null
   created_at: string
   cari?: { ad: string; kod: string }
+  siparis_detaylari?: { count: number }[]
+  sevkiyat_planlari?: { id: string; tarih: string }[]
+  teslimat_tipi?: string
+  tamamlandi_tarihi?: string | null
 }
 
 export interface SiparisDetay {
