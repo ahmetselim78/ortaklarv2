@@ -2,9 +2,12 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   Save, Printer, Wifi, RefreshCw, ChevronDown, ChevronUp,
   Info, Tag, LayoutTemplate, Settings2, X, ZoomIn,
+  Send, CheckCircle2, AlertCircle, FlaskConical,
 } from 'lucide-react'
 import type { EtiketAyarlari, EtiketVeri } from '@/types/ayarlar'
 import { dplUret } from '@/types/ayarlar'
+
+const KOPRU_PORT = 9876
 
 interface Props {
   ayarlar: EtiketAyarlari
@@ -214,13 +217,95 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
     icerik: true,
     yazdirma: true,
     gelismis: false,
+    test: true,
   })
+
+  const [testGonderiyor, setTestGonderiyor] = useState(false)
+  const [testSonucu, setTestSonucu] = useState<{ basarili: boolean; mesaj: string } | null>(null)
+  const [basarili, setBasarili] = useState(false)
+
+  const [yazicilarYukleniyor, setYazicilarYukleniyor] = useState(false)
+  const [yaziciListesi, setYaziciListesi] = useState<Array<{ Name: string; PortName: string; Tip?: string }> | null>(null)
+  const [yaziciListeHata, setYaziciListeHata] = useState<string | null>(null)
+
+  async function handleYaziciListele() {
+    if (!form.yazici.kopru_adresi.trim()) {
+      setYaziciListeHata('Önce köprü sunucu adresini girin.')
+      return
+    }
+    setYazicilarYukleniyor(true)
+    setYaziciListesi(null)
+    setYaziciListeHata(null)
+    try {
+      const url = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazicilar`
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+      const data = await res.json()
+      if (!Array.isArray(data?.yazicilar)) throw new Error('Geçersiz yanıt.')
+      if (data.yazicilar.length === 0) {
+        const debugMsg = data.ham ? ` (PS çıktısı: ${String(data.ham).slice(0, 200)})` : ''
+        setYaziciListeHata(`Hiç yazıcı/USB portu bulunamadı.${debugMsg}`)
+      } else setYaziciListesi(data.yazicilar)
+    } catch (e) {
+      setYaziciListeHata(e instanceof Error ? e.message : 'Listelenemiyor.')
+    } finally {
+      setYazicilarYukleniyor(false)
+    }
+  }
+
+  async function handleTestBaski() {
+    if (!form.yazici.kopru_adresi.trim()) {
+      setTestSonucu({ basarili: false, mesaj: 'Köprü sunucu adresini girin.' })
+      return
+    }
+    const usb = form.yazici.yazici_adi.trim()
+    if (!usb && !form.yazici.ip_adresi.trim()) {
+      setTestSonucu({ basarili: false, mesaj: 'Windows Yazıcı Adı veya Yazıcı IP giriniz.' })
+      return
+    }
+    const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazdir`
+    setTestGonderiyor(true)
+    setTestSonucu(null)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
+    try {
+      const body: Record<string, unknown> = { dpl: dplCiktisi }
+      if (usb) {
+        body.yazici_adi = usb
+      } else {
+        body.ip   = form.yazici.ip_adresi.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+        body.port = form.yazici.port
+      }
+      const res = await fetch(kopruUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      const data = await res.json()
+      if (data?.hata) throw new Error(data.hata)
+      setTestSonucu({ basarili: true, mesaj: data?.mesaj ?? 'Test etiketi başarıyla gönderildi.' })
+    } catch (e) {
+      const mesaj = e instanceof Error ? e.message : 'Bağlantı hatası.'
+      const zaman_asimi = mesaj.includes('abort') || mesaj.includes('AbortError')
+      const kopruHatasi = zaman_asimi || mesaj.includes('fetch') || mesaj.includes('Failed')
+      setTestSonucu({
+        basarili: false,
+        mesaj: zaman_asimi
+          ? `Bağlantı zaman aşımı (10s) — ${form.yazici.kopru_adresi}:${KOPRU_PORT} adresine ulaşılamıyor. Köprü servisi çalışıyor mu?`
+          : kopruHatasi
+          ? 'Köprü servisi bulunamadı. Yazıcı bilgisayarında yazici-kopru.exe çalışıyor mu?'
+          : mesaj,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+      setTestGonderiyor(false)
+    }
+  }
 
   // Canlı form değişikliklerini üst bileşene bildir
   useEffect(() => {
     onFormChange?.(form)
   }, [form, onFormChange])
-  const [basarili, setBasarili] = useState(false)
 
   function toggle(b: keyof typeof bolumler) {
     setBolumler(prev => ({ ...prev, [b]: !prev[b] }))
@@ -256,14 +341,94 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex gap-2 text-xs text-blue-700">
             <Info size={14} className="shrink-0 mt-0.5" />
             <span>
-              Datamax M-Serisi yazıcınızın ağ IP adresini girin. Yazdırma işlemi için
-              bilgisayarda <strong>QZ Tray</strong> veya benzeri bir yerel baskı köprüsü
-              çalışıyor olmalıdır.
+              Yazıcının bağlı olduğu bilgisayara <strong>yazici-kopru.exe</strong>'yi kopyalayıp çalıştırın.<br />
+              • <strong>USB yazıcı:</strong> Köprü Sunucu Adresi + Windows Yazıcı Adı yeterli.<br />
+              • <strong>Ağ yazıcısı:</strong> Köprü Sunucu Adresi + Yazıcı IP + Port kullanın.
             </span>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Köprü Sunucu Adresi
+              <span className="ml-1 font-normal text-gray-400">(yazici-kopru.exe hangi bilgisayarda?)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="192.168.3.7 veya localhost"
+              value={form.yazici.kopru_adresi}
+              onChange={e => setYazici('kopru_adresi', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Windows Yazıcı Adı
+              <span className="ml-1 font-normal text-gray-400">(USB bağlı — önerilen)</span>
+            </label>
+            <input
+              type="text"
+              placeholder='Örn: USB001  veya  Kuyruk adı (aşağıdan listeleyin)'
+              value={form.yazici.yazici_adi}
+              onChange={e => setYazici('yazici_adi', e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleYaziciListele}
+                disabled={yazicilarYukleniyor}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw size={11} className={yazicilarYukleniyor ? 'animate-spin' : ''} />
+                {yazicilarYukleniyor ? 'Yükleniyor…' : 'Yazıcıları Listele'}
+              </button>
+              <span className="text-xs text-gray-400">Köprüdeki yazıcı kuyrukları ve açık USB portları listelenir</span>
+            </div>
+            {yaziciListeHata && (
+              <p className="mt-1 text-xs text-red-600">{yaziciListeHata}</p>
+            )}
+            {yaziciListesi && yaziciListesi.length > 0 && (
+              <div className="mt-2 border border-gray-200 rounded-md overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Ad / Port</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600 w-16">Tür</th>
+                      <th className="w-8" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yaziciListesi.map((y, i) => (
+                      <tr key={i} className="border-t border-gray-100 hover:bg-blue-50">
+                        <td className="px-2 py-1.5 text-gray-800">{y.Name}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${'Tip' in y && y.Tip === 'USB' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {'Tip' in y ? y.Tip : 'Kuyruk'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => { setYazici('yazici_adi', y.Name); setYaziciListesi(null) }}
+                            className="text-blue-600 hover:underline font-medium"
+                          >
+                            Seç
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="mt-1 text-xs text-gray-400">USB port (USB001 vb.) veya print queue adı girin — TCP/IP gerekmez.</p>
+          </div>
+          {!form.yazici.yazici_adi.trim() && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">IP Adresi</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Yazıcı IP
+                <span className="ml-1 font-normal text-gray-400">(köprüden görülen)</span>
+              </label>
               <input
                 type="text"
                 placeholder="192.168.1.100"
@@ -284,6 +449,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
               />
             </div>
           </div>
+          )}
         </div>
       </Bolum>
 
@@ -374,8 +540,8 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
             </span>
           </div>
           <textarea
-            rows={6}
-            placeholder={"Özel DPL şablonu (boş = otomatik)"}
+            rows={8}
+            placeholder={"Örnek (Datamax M-4206):\n\\x02L\\r\\nD11\\r\\n1A11100500030{cam_kodu}\\r\\n1A11100900030{musteri}\\r\\n1Bj20080014000030{cam_kodu}\\r\\nE\\r\\n"}
             value={form.dpl_sablonu}
             onChange={e => setForm(f => ({ ...f, dpl_sablonu: e.target.value }))}
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -383,6 +549,82 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
           <details className="group">
             <summary className="text-xs text-blue-600 cursor-pointer hover:underline flex items-center gap-1">
               <RefreshCw size={12} /> Otomatik üretilen DPL çıktısını göster
+            </summary>
+            <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto whitespace-pre-wrap">
+              {dplCiktisi
+                .replace(/\x02/g, '<STX>')
+                .replace(/\r\n/g, '↵\n')
+              }
+            </pre>
+          </details>
+        </div>
+      </Bolum>
+
+      {/* Test Baskısı */}
+      <Bolum icon={FlaskConical} baslik="Test Baskısı" acik={bolumler.test} onToggle={() => toggle('test')}>
+        <div className="space-y-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex gap-2 text-xs text-blue-700">
+            <Info size={14} className="shrink-0 mt-0.5" />
+            <span>
+              Mevcut ayarlarla test etiketi gönderir. Yazıcının bağlı olduğu bilgisayarda
+              {' '}<strong>yazici-kopru.exe</strong> servisinin çalışıyor olması gerekir.
+              Köprü: <strong>{form.yazici.kopru_adresi || '—'}:{KOPRU_PORT}</strong>
+              {' → '}
+              Yazıcı: <strong>{form.yazici.yazici_adi || form.yazici.ip_adresi || '—'}</strong>
+            </span>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleTestBaski}
+              disabled={testGonderiyor}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {testGonderiyor
+                ? <RefreshCw size={15} className="animate-spin" />
+                : <Send size={15} />}
+              {testGonderiyor ? 'Gönderiliyor…' : 'Test Etiketi Gönder'}
+            </button>
+            <button
+              type="button"
+              disabled={testGonderiyor}
+              onClick={async () => {
+                if (!form.yazici.kopru_adresi.trim()) return
+                const usb = form.yazici.yazici_adi.trim()
+                const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazdir`
+                // Minimal DPL: sadece metin, barkod yok, en sade format
+                const minimalDpl = "\x02L\r\nD15\r\n1A11100500030KOPRU TEST OK\r\n1A11101000030GLS-TEST-001\r\nE\r\n"
+                const body = usb ? { yazici_adi: usb, dpl: minimalDpl } : { ip: form.yazici.ip_adresi, port: form.yazici.port, dpl: minimalDpl }
+                try {
+                  const res = await fetch(kopruUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) })
+                  const data = await res.json()
+                  setTestSonucu({ basarili: !data?.hata, mesaj: data?.hata ?? data?.mesaj ?? 'Minimal test gönderildi' })
+                } catch (e) { setTestSonucu({ basarili: false, mesaj: e instanceof Error ? e.message : 'Hata' }) }
+              }}
+              className="flex items-center gap-2 px-3 py-2 border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              <FlaskConical size={13} />
+              Minimal Test (sadece metin)
+            </button>
+          </div>
+
+          {testSonucu && (
+            <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm border ${
+              testSonucu.basarili
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              {testSonucu.basarili
+                ? <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                : <AlertCircle size={16} className="shrink-0 mt-0.5" />}
+              <span>{testSonucu.mesaj}</span>
+            </div>
+          )}
+
+          <details className="group">
+            <summary className="text-xs text-blue-600 cursor-pointer hover:underline flex items-center gap-1">
+              <RefreshCw size={12} /> Gönderilecek DPL komutunu göster
             </summary>
             <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto whitespace-pre-wrap">
               {dplCiktisi

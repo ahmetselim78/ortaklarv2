@@ -8,6 +8,9 @@ import {
 } from 'lucide-react'
 import type { UretimEmriDurum } from '@/types/uretim'
 import TamireGonderModal from '@/components/tamir/TamireGonderModal'
+import { useAyarlar } from '@/hooks/useAyarlar'
+import { dplUret } from '@/types/ayarlar'
+import type { EtiketVeri } from '@/types/ayarlar'
 
 /* ========== Tipler ========== */
 
@@ -88,6 +91,7 @@ export default function PozGirisPage() {
   const navigate = useNavigate()
   const [saat, setSaat] = useState(new Date())
   const [connected, setConnected] = useState(false)
+  const { etiketAyarlari } = useAyarlar()
 
   // Batch seçimi
   const [batchler, setBatchler] = useState<BatchSatir[]>([])
@@ -397,7 +401,33 @@ export default function PozGirisPage() {
 
     const tekrar = cam.uretim_durumu === 'yikandi'
 
-    // Yıkama logu
+    // Etiket bas (tekrar taramalarda da bas — her cam geçişinde etiket gerekir)
+    if (etiketAyarlari.yazici.kopru_adresi && etiketAyarlari.yazdirma_kosulu === 'otomatik') {
+      const veri: EtiketVeri = {
+        cam_kodu: cam.cam_kodu,
+        musteri: musteriEtiket(cam.musteri, cam.nihai_musteri),
+        genislik_mm: cam.genislik_mm,
+        yukseklik_mm: cam.yukseklik_mm,
+        sira_no: cam.sira_no ?? 0,
+        siparis_no: cam.siparis_no,
+      }
+      const dpl = dplUret(etiketAyarlari, veri)
+      const kopruUrl = `http://${etiketAyarlari.yazici.kopru_adresi.trim()}:9876/yazdir`
+      const usb = etiketAyarlari.yazici.yazici_adi?.trim()
+      const fetchBody = usb
+        ? { yazici_adi: usb, dpl }
+        : {
+            ip: (etiketAyarlari.yazici.ip_adresi.trim()
+              .replace(/^https?:\/\//i, '').replace(/\/+$/, '') || 'localhost'),
+            port: etiketAyarlari.yazici.port,
+            dpl,
+          }
+      fetch(kopruUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fetchBody),
+      }).catch(() => { /* sessiz hata — tarama akışını bozma */ })
+    }
     await supabase.from('yikama_loglari').insert({
       cam_kodu: cam.cam_kodu,
       siparis_detay_id: cam.siparis_detay_id,

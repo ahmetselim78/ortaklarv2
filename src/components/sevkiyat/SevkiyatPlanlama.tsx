@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import {
   X, Maximize2, Minimize2, Plus, Truck, Trash2, ChevronLeft,
   ChevronRight, GripVertical, AlertCircle, Settings, Save, Check,
@@ -111,12 +111,13 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
 
   const yukleAllSevkiyat = useCallback(async () => {
     setListYukleniyor(true)
-    const { data } = await supabase.from('siparisler')
+    const { data, error } = await supabase.from('siparisler')
       .select('id, siparis_no, teslim_tarihi, durum, notlar, cari(ad), siparis_detaylari(id, adet)')
       .eq('teslimat_tipi', 'sevkiyat').order('teslim_tarihi')
+    if (error) console.error('[Sevkiyat] sipariş listesi yüklenemedi:', error)
     const cam = (det: any[]) => (det ?? []).reduce((s: number, d: any) => s + (d.adet ?? 1), 0)
     setTumSevkiyatlar((data ?? []).map((s: any) => ({
-      id: s.id, siparis_no: s.siparis_no, musteri: s.cari?.ad ?? '\u2014',
+      id: s.id, siparis_no: s.siparis_no, musteri: s.cari?.ad ?? '—',
       teslim_tarihi: s.teslim_tarihi, durum: s.durum,
       cam_adedi: cam(s.siparis_detaylari), notlar: s.notlar ?? null,
     })))
@@ -145,12 +146,13 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
 
   const yukleGun = useCallback(async (tarih: string) => {
     const cam = (det: any[]) => (det ?? []).reduce((s: number, d: any) => s + (d.adet ?? 1), 0)
-    const { data: planData } = await supabase.from('sevkiyat_planlari')
+    const { data: planData, error } = await supabase.from('sevkiyat_planlari')
       .select('id, siparis_id, arac_id, tarih, notlar, siparisler(siparis_no, teslim_tarihi, durum, notlar, cari(ad), siparis_detaylari(id, adet))')
       .eq('tarih', tarih)
+    if (error) console.error('[Sevkiyat] günlük planlar yüklenemedi:', error)
     setPlanlar((planData ?? []).map((p: any) => ({
       plan_id: p.id, siparis_id: p.siparis_id, arac_id: p.arac_id, tarih: p.tarih,
-      siparis_no: p.siparisler?.siparis_no ?? '\u2014', musteri: p.siparisler?.cari?.ad ?? '\u2014',
+      siparis_no: p.siparisler?.siparis_no ?? '—', musteri: p.siparisler?.cari?.ad ?? '—',
       teslim_tarihi: p.siparisler?.teslim_tarihi ?? tarih, durum: p.siparisler?.durum ?? '',
       cam_adedi: cam(p.siparisler?.siparis_detaylari), notlar: p.siparisler?.notlar ?? null, plan_notlar: p.notlar ?? null,
     })))
@@ -160,7 +162,8 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
 
   async function durumDegistir(siparisId: string, yeniDurum: string) {
     setDurumDegistiriyorId(siparisId)
-    await supabase.from('siparisler').update({ durum: yeniDurum }).eq('id', siparisId)
+    const { error } = await supabase.from('siparisler').update({ durum: yeniDurum }).eq('id', siparisId)
+    if (error) { console.error('[Sevkiyat] durum güncellenemedi:', error); setDurumDegistiriyorId(null); return }
     setTumSevkiyatlar(prev => prev.map(s => s.id === siparisId ? { ...s, durum: yeniDurum } : s))
     setPlanlar(prev => prev.map(p => p.siparis_id === siparisId ? { ...p, durum: yeniDurum } : p))
     setDurumDegistiriyorId(null); setExpandedCardId(null)
@@ -184,17 +187,17 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
     if (!payload) return
     const siparis_id = payload.siparis_id
     if (payload.kind === 'plan' && payload.from_arac_id === arac_id) return
-    if (payload.kind === 'plan') await supabase.from('sevkiyat_planlari').delete().eq('id', payload.plan_id)
+    // Upsert alone moves the row thanks to unique(siparis_id, tarih). No delete needed.
     const { data, error } = await supabase.from('sevkiyat_planlari')
       .upsert({ siparis_id, arac_id, tarih: selectedDate }, { onConflict: 'siparis_id,tarih' })
       .select('id, siparis_id, arac_id, tarih, notlar, siparisler(siparis_no, teslim_tarihi, durum, notlar, cari(ad), siparis_detaylari(id, adet))')
       .single()
-    if (error || !data) return
+    if (error || !data) { console.error('[Sevkiyat] araç ataması yapılamadı:', error); return }
     const p = data as any
     const cam = ((p.siparisler?.siparis_detaylari) ?? []).reduce((s: number, d: any) => s + (d.adet ?? 1), 0)
     const yeniPlan: PlanliSiparis = {
       plan_id: p.id, siparis_id: p.siparis_id, arac_id: p.arac_id, tarih: p.tarih,
-      siparis_no: p.siparisler?.siparis_no ?? '\u2014', musteri: p.siparisler?.cari?.ad ?? '\u2014',
+      siparis_no: p.siparisler?.siparis_no ?? '—', musteri: p.siparisler?.cari?.ad ?? '—',
       teslim_tarihi: p.siparisler?.teslim_tarihi ?? selectedDate, durum: p.siparisler?.durum ?? '',
       cam_adedi: cam, notlar: p.siparisler?.notlar ?? null, plan_notlar: p.notlar ?? null,
     }
@@ -205,12 +208,14 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
     e.preventDefault(); setOverZone(null)
     const payload = decodeDrag(e.dataTransfer.getData('text/plain'))
     if (!payload || payload.kind !== 'plan') return
-    await supabase.from('sevkiyat_planlari').delete().eq('id', payload.plan_id)
+    const { error } = await supabase.from('sevkiyat_planlari').delete().eq('id', payload.plan_id)
+    if (error) { console.error('[Sevkiyat] plan silinemedi:', error); return }
     setPlanlar(prev => prev.filter(p => p.plan_id !== payload.plan_id))
   }
 
   async function planKaldir(plan: PlanliSiparis) {
-    await supabase.from('sevkiyat_planlari').delete().eq('id', plan.plan_id)
+    const { error } = await supabase.from('sevkiyat_planlari').delete().eq('id', plan.plan_id)
+    if (error) { console.error('[Sevkiyat] plan kaldırılamadı:', error); return }
     setPlanlar(prev => prev.filter(p => p.plan_id !== plan.plan_id))
   }
 
@@ -245,11 +250,13 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
     : tumSevkiyatlar
   const bugunPlanMap = new Map(planlar.map(p => [p.siparis_id, p]))
 
-  function SiparisKartiComp({ siparis, cardId, isDragging, onDragStartFn, onDragEndFn, onRemove, assignedPlan }: {
+  // NOTE: intentionally a render function (not a component) invoked via {renderSiparisKarti(...)},
+  // so it does NOT create a new component boundary each render (which would unmount/remount cards).
+  const renderSiparisKarti = ({ siparis, cardId, isDragging, onDragStartFn, onDragEndFn, onRemove, assignedPlan }: {
     siparis: HavuzSiparis | PlanliSiparis; cardId: string; isDragging: boolean
     onDragStartFn: (e: React.DragEvent) => void; onDragEndFn: () => void
     onRemove?: () => void; assignedPlan?: PlanliSiparis
-  }) {
+  }) => {
     const s = siparis as any
     const planNotlar: string | null = s.plan_notlar ?? null
     const gecerliGecisler = GECERLI_GECISLER[s.durum] ?? []
@@ -310,18 +317,16 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
     )
   }
 
-  function DropZoneComp({ isOver, onDragOverFn, onDragLeaveFn, onDropFn, children, className }: {
+  const renderDropZone = ({ isOver, onDragOverFn, onDragLeaveFn, onDropFn, children, className }: {
     isOver: boolean; onDragOverFn: (e: React.DragEvent) => void
     onDragLeaveFn: (e: React.DragEvent) => void; onDropFn: (e: React.DragEvent) => void
     children: React.ReactNode; className?: string
-  }) {
-    return (
-      <div onDragOver={onDragOverFn} onDragLeave={onDragLeaveFn} onDrop={onDropFn}
-        className={`transition-all ${isOver ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/50 rounded-xl' : ''} ${className ?? ''}`}>
-        {children}
-      </div>
-    )
-  }
+  }) => (
+    <div onDragOver={onDragOverFn} onDragLeave={onDragLeaveFn} onDrop={onDropFn}
+      className={`transition-all ${isOver ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/50 rounded-xl' : ''} ${className ?? ''}`}>
+      {children}
+    </div>
+  )
 
   return (
     <div className={modalCls}>
@@ -546,7 +551,7 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
               <div>
                 <h3 className="text-xs font-bold text-gray-800">Sevkiyat Listesi</h3>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  {listYukleniyor ? 'Y\u00fckleniyor\u2026' : `${filtreliSiparisler.length} sipari\u015f`}
+                  {listYukleniyor ? 'Yükleniyor…' : `${filtreliSiparisler.length} sipariş`}
                 </p>
               </div>
               <span className="text-[9px] text-gray-400 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg font-medium text-center leading-tight whitespace-nowrap">
@@ -556,6 +561,7 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
               <input
+                type="search"
                 value={aramaMetni}
                 onChange={e => setAramaMetni(e.target.value)}
                 placeholder="Sipariş no veya müşteri ara…"
@@ -564,42 +570,48 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
             </div>
           </div>
 
-          <DropZoneComp
-            isOver={overZone === 'list'}
-            onDragOverFn={e => onDragOver(e, 'list')}
-            onDragLeaveFn={onDragLeave}
-            onDropFn={onDropToList}
-            className="flex-1 overflow-y-auto px-3 py-2.5 space-y-2 min-h-0"
-          >
-            {listYukleniyor ? (
-              <div className="flex flex-col items-center justify-center py-14 text-gray-300">
-                <div className="w-7 h-7 rounded-full border-2 border-gray-200 border-t-blue-400 animate-spin mb-2" />
-                <p className="text-[10px]">Yükleniyor…</p>
-              </div>
-            ) : filtreliSiparisler.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-14 text-gray-300">
-                <Check size={28} className="mb-2 opacity-40" />
-                <p className="text-[10px] text-center font-medium">
-                  {aramaMetni ? 'Sonu\u00e7 bulunamad\u0131' : 'Sevkiyat sipari\u015fi yok'}
-                </p>
-                <p className="text-[9px] text-center mt-0.5 opacity-60">
-                  {aramaMetni ? 'Farkl\u0131 bir arama deneyin' : 'S\u0131rapi\u015f\'te sevkiyat se\u00e7iniz'}
-                </p>
-              </div>
-            ) : (
-              filtreliSiparisler.map(s => (
-                <SiparisKartiComp
-                  key={s.id}
-                  siparis={s}
-                  cardId={s.id}
-                  isDragging={draggingId === s.id}
-                  onDragStartFn={e => onSiparisDragStart(e, { kind: 'havuz', siparis_id: s.id }, s.id)}
-                  onDragEndFn={onDragEnd}
-                  assignedPlan={bugunPlanMap.get(s.id)}
-                />
-              ))
-            )}
-          </DropZoneComp>
+          {renderDropZone({
+            isOver: overZone === 'list',
+            onDragOverFn: e => onDragOver(e, 'list'),
+            onDragLeaveFn: onDragLeave,
+            onDropFn: onDropToList,
+            className: 'flex-1 overflow-y-auto px-3 py-2.5 space-y-2 min-h-0',
+            children: (
+            <>
+              {listYukleniyor ? (
+                <div className="flex flex-col items-center justify-center py-14 text-gray-300">
+                  <div className="w-7 h-7 rounded-full border-2 border-gray-200 border-t-blue-400 animate-spin mb-2" />
+                  <p className="text-[10px]">Yükleniyor…</p>
+                </div>
+              ) : filtreliSiparisler.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 text-gray-300">
+                  <Check size={28} className="mb-2 opacity-40" />
+                  <p className="text-[10px] text-center font-medium">
+                    {aramaMetni ? 'Sonuç bulunamadı' : 'Sevkiyat siparişi yok'}
+                  </p>
+                  <p className="text-[9px] text-center mt-0.5 opacity-60">
+                    {aramaMetni ? 'Farklı bir arama deneyin' : 'Sipariş\'te sevkiyat seçiniz'}
+                  </p>
+                </div>
+              ) : (
+                <Fragment>
+                  {filtreliSiparisler.map(s => (
+                    <Fragment key={s.id}>
+                      {renderSiparisKarti({
+                        siparis: s,
+                        cardId: s.id,
+                        isDragging: draggingId === s.id,
+                        onDragStartFn: e => onSiparisDragStart(e, { kind: 'havuz', siparis_id: s.id }, s.id),
+                        onDragEndFn: onDragEnd,
+                        assignedPlan: bugunPlanMap.get(s.id),
+                      })}
+                    </Fragment>
+                  ))}
+                </Fragment>
+              )}
+            </>
+            ),
+          })}
         </div>
 
         {/* COL 3: Arac kolonlari */}
@@ -636,31 +648,35 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
                         {toplamCam > 0 && <span className="text-[9px] text-gray-400 mt-0.5">{toplamCam} cam</span>}
                       </div>
                     </div>
-                    <DropZoneComp
-                      isOver={isOver}
-                      onDragOverFn={e => onDragOver(e, arac.id)}
-                      onDragLeaveFn={onDragLeave}
-                      onDropFn={e => onDropToArac(e, arac.id)}
-                      className={`flex-1 overflow-y-auto p-2 space-y-2 rounded-b-xl border-x border-b ${isOver ? 'border-blue-300' : 'border-gray-200'}`}
-                    >
-                      {aracPlanlar.length === 0 && !isOver && (
-                        <div className="flex flex-col items-center justify-center py-8 text-gray-300">
-                          <Truck size={22} className="mb-1 opacity-30" />
-                          <p className="text-[10px] text-center">Sipariş bırakın</p>
-                        </div>
-                      )}
-                      {aracPlanlar.map(plan => (
-                        <SiparisKartiComp
-                          key={plan.plan_id}
-                          siparis={plan}
-                          cardId={plan.plan_id}
-                          isDragging={draggingId === plan.plan_id}
-                          onDragStartFn={e => onSiparisDragStart(e, { kind: 'plan', plan_id: plan.plan_id, siparis_id: plan.siparis_id, from_arac_id: plan.arac_id }, plan.plan_id)}
-                          onDragEndFn={onDragEnd}
-                          onRemove={() => planKaldir(plan)}
-                        />
-                      ))}
-                    </DropZoneComp>
+                    {renderDropZone({
+                      isOver,
+                      onDragOverFn: e => onDragOver(e, arac.id),
+                      onDragLeaveFn: onDragLeave,
+                      onDropFn: e => onDropToArac(e, arac.id),
+                      className: `flex-1 overflow-y-auto p-2 space-y-2 rounded-b-xl border-x border-b ${isOver ? 'border-blue-300' : 'border-gray-200'}`,
+                      children: (
+                        <>
+                          {aracPlanlar.length === 0 && !isOver && (
+                            <div className="flex flex-col items-center justify-center py-8 text-gray-300">
+                              <Truck size={22} className="mb-1 opacity-30" />
+                              <p className="text-[10px] text-center">Sipariş bırakın</p>
+                            </div>
+                          )}
+                          {aracPlanlar.map(plan => (
+                            <Fragment key={plan.plan_id}>
+                              {renderSiparisKarti({
+                                siparis: plan,
+                                cardId: plan.plan_id,
+                                isDragging: draggingId === plan.plan_id,
+                                onDragStartFn: e => onSiparisDragStart(e, { kind: 'plan', plan_id: plan.plan_id, siparis_id: plan.siparis_id, from_arac_id: plan.arac_id }, plan.plan_id),
+                                onDragEndFn: onDragEnd,
+                                onRemove: () => planKaldir(plan),
+                              })}
+                            </Fragment>
+                          ))}
+                        </>
+                      ),
+                    })}
                   </div>
                 )
               })}

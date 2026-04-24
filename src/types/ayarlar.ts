@@ -11,8 +11,10 @@ export interface EtiketIcerik {
 
 /** Yazıcı bağlantı bilgileri */
 export interface YaziciBaglanti {
-  ip_adresi: string       // Yazıcının ağ IP adresi
-  port: number            // Ham yazıcı portu (varsayılan 9100)
+  kopru_adresi: string    // yazici-kopru.exe'nin çalıştığı bilgisayarın IP'si (varsayılan localhost)
+  yazici_adi: string      // Windows yazıcı adı (örn. "Datamax M-4206") — USB mod, boşsa TCP kullanılır
+  ip_adresi: string       // TCP mod: köprüden görülen yazıcı IP'si
+  port: number            // TCP mod: ham yazıcı portu (varsayılan 9100)
 }
 
 /** Etiket kağıt boyutu */
@@ -42,6 +44,8 @@ export interface AyarlarRow {
 
 export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
   yazici: {
+    kopru_adresi: 'localhost',
+    yazici_adi: '',
     ip_adresi: '',
     port: 9100,
   },
@@ -74,94 +78,107 @@ export interface EtiketVeri {
   siparis_no: string
 }
 
+/** Türkçe karakterleri ASCII karşılıklarına çevirir (DPL ASCII akışını bozmamak için) */
+function ascii(str: string): string {
+  return str
+    .replace(/[şŞ]/g, s => s === 'ş' ? 's' : 'S')
+    .replace(/[ğĞ]/g, g => g === 'ğ' ? 'g' : 'G')
+    .replace(/[üÜ]/g, u => u === 'ü' ? 'u' : 'U')
+    .replace(/[öÖ]/g, o => o === 'ö' ? 'o' : 'O')
+    .replace(/[ıİ]/g, i => i === 'ı' ? 'i' : 'I')
+    .replace(/[çÇ]/g, c => c === 'ç' ? 'c' : 'C')
+    .replace(/[^\x20-\x7E]/g, '?')
+}
+
 /**
- * Verilen ayarlara ve etiket verisine göre DPL komutu üretir.
- * Datamax M-Serisi (203 DPI = ~8 dot/mm) için optimizedir.
+ * Datamax M-4206 (203 DPI) için DPL komutu üretir.
  *
- * DPL temel yapısı:
- *   \x02L          → Etiket başlangıcı
- *   1A...          → Metin alanı (1=0°, A=font, hMult, wMult, row, col, data)
- *   1B...          → Barkod alanı (1=0°, B=barcode, tip, dar, geniş, yükseklik, row, col, data)
- *   E              → Etiket bitişi / yazdır
+ * Alan formatları (Datamax M-Class DPL Programming Reference):
+ *   Metin : <dir>A<font><hmult><wmult><row4><col4><data>\r\n
+ *   Barkod: <dir>B<id><narrow><height4><row4><col4><data>\r\n
+ *     id=j → Code128 Auto (narrow sadece 1 char, wide parametresi YOK)
+ *   dir=1 (0°), font=1-9, mult=1-9, row/col dot cinsinden 4 hane
+ *
+ * Header:
+ *   \x02L\r\n   ← label başlangıcı
+ *   D<h><s>\r\n ← heat(1-30), speed(1-3)  örn: D15  → orta yoğunluk
+ *   Q1\r\n      ← adet = 1
  */
 export function dplUret(ayarlar: EtiketAyarlari, veri: EtiketVeri): string {
   if (ayarlar.dpl_sablonu.trim()) {
-    // Özel şablon varsa değişkenleri yerleştir
     return dplSablonuUygula(ayarlar.dpl_sablonu, veri)
   }
 
-  const dotsPerMm = 8 // 203 DPI ≈ 8 dot/mm
-  const W = ayarlar.boyut.genislik_mm * dotsPerMm   // örn. 100mm → 800 dot
-  const H = ayarlar.boyut.yukseklik_mm * dotsPerMm  // örn. 50mm  → 400 dot
   const ic = ayarlar.icerik
+  const r  = (n: number) => n.toString().padStart(4, '0')
 
-  // Satır konumları (üstten itibaren, dot)
-  const margin   = 16   // sol kenar boşluğu
-  const rowStart = 20   // ilk satır
-  const rowStep  = 36   // satırlar arası mesafe
-
-  let satir = rowStart
+  const col     = 30    // sol kenar (dot)
+  let   satir   = 25   // ilk satır (dot)
   const satirlar: string[] = []
 
-  // Barkod — üstte geniş alan (Code 128, yükseklik 60 dot)
+  // Barkod — Code 128 Auto
+  // Format: <dir>Bj<narrow1><height4><row4><col4><data>
+  // NOT: Code128 için wide parametresi yok, sadece narrow
   if (ic.barkod) {
-    satirlar.push(`1b2${margin.toString().padStart(4,'0')}${satir.toString().padStart(4,'0')}${veri.cam_kodu}\r\n`)
-    satir += 80
+    satirlar.push(`1Bj2${r(80)}${r(satir)}${r(col)}${ascii(veri.cam_kodu)}\r\n`)
+    satir += 105
   }
 
-  // Cam Kodu metni (büyük font)
+  // Cam Kodu — font=1, hmult=2, wmult=2
   if (ic.cam_kodu) {
-    satirlar.push(`1A1200${satir.toString().padStart(4,'0')}${margin.toString().padStart(4,'0')}${veri.cam_kodu}\r\n`)
-    satir += rowStep
+    satirlar.push(`1A122${r(satir)}${r(col)}${ascii(veri.cam_kodu)}\r\n`)
+    satir += 40
   }
 
-  // Boyut
+  // Boyut — font=1, hmult=1, wmult=1
   if (ic.boyut) {
-    const boyutStr = `${veri.genislik_mm} x ${veri.yukseklik_mm} mm`
-    satirlar.push(`1A1100${satir.toString().padStart(4,'0')}${margin.toString().padStart(4,'0')}${boyutStr}\r\n`)
-    satir += rowStep
+    satirlar.push(`1A111${r(satir)}${r(col)}${veri.genislik_mm}x${veri.yukseklik_mm}mm\r\n`)
+    satir += 30
   }
 
   // Müşteri adı
   if (ic.musteri_adi) {
-    satirlar.push(`1A1100${satir.toString().padStart(4,'0')}${margin.toString().padStart(4,'0')}${veri.musteri}\r\n`)
-    satir += rowStep
+    satirlar.push(`1A111${r(satir)}${r(col)}${ascii(veri.musteri)}\r\n`)
+    satir += 30
   }
 
   // Sıra no
   if (ic.sira_no && veri.sira_no !== null) {
-    satirlar.push(`1A1100${satir.toString().padStart(4,'0')}${margin.toString().padStart(4,'0')}SIRA: ${veri.sira_no}\r\n`)
-    satir += rowStep
+    satirlar.push(`1A111${r(satir)}${r(col)}SIRA: ${veri.sira_no}\r\n`)
+    satir += 30
   }
 
   // Sipariş no
   if (ic.siparis_no) {
-    satirlar.push(`1A1100${satir.toString().padStart(4,'0')}${margin.toString().padStart(4,'0')}${veri.siparis_no}\r\n`)
-    satir += rowStep
+    satirlar.push(`1A111${r(satir)}${r(col)}${ascii(veri.siparis_no)}\r\n`)
+    satir += 30
   }
 
   // Tarih
   if (ic.tarih) {
-    const bugun = new Date().toLocaleDateString('tr-TR')
-    satirlar.push(`1A1100${satir.toString().padStart(4,'0')}${margin.toString().padStart(4,'0')}${bugun}\r\n`)
+    const tarih = new Date().toLocaleDateString('tr-TR')
+    satirlar.push(`1A111${r(satir)}${r(col)}${tarih}\r\n`)
   }
 
-  // W ve H kullanılmıştır — etiket boyut parametrelerini DPL'e yazabilirsiniz
-  void W; void H
-
-  return `\x02L\r\n${satirlar.join('')}E\r\n`
+  return `\x02L\r\nD15\r\n${satirlar.join('')}E\r\n`
 }
 
 /** Değişkenleri DPL şablonuna yerleştirir ({cam_kodu}, {musteri} vb.) */
 export function dplSablonuUygula(sablon: string, veri: EtiketVeri): string {
   const bugun = new Date().toLocaleDateString('tr-TR')
-  return sablon
+  const icerik = sablon
     .replace(/\{cam_kodu\}/g, veri.cam_kodu)
-    .replace(/\{musteri\}/g, veri.musteri)
+    .replace(/\{musteri\}/g, ascii(veri.musteri))
     .replace(/\{genislik_mm\}/g, String(veri.genislik_mm))
     .replace(/\{yukseklik_mm\}/g, String(veri.yukseklik_mm))
-    .replace(/\{boyut\}/g, `${veri.genislik_mm} x ${veri.yukseklik_mm} mm`)
+    .replace(/\{boyut\}/g, `${veri.genislik_mm}x${veri.yukseklik_mm}mm`)
     .replace(/\{sira_no\}/g, String(veri.sira_no ?? ''))
     .replace(/\{siparis_no\}/g, veri.siparis_no)
     .replace(/\{tarih\}/g, bugun)
+  // Escape dizilerini gerçek karakterlere çevir (template alanından girilen \x02, \r\n vb.)
+  return icerik
+    .replace(/\\x02/g, '\x02')
+    .replace(/\\r\\n/g, '\r\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\n/g, '\n')
 }
