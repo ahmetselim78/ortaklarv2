@@ -107,20 +107,46 @@ try {
   if ($p) { $portName = $p.PortName }
 } catch {}
 
+Write-Host "Port: $portName"
+
+$directDone = $false
+
+# Yontem 1: CreateFile ile direkt USB/COM portuna yaz (surucu bypass)
 if ($portName -and ($portName -match '^USB' -or $portName -match '^COM' -or $portName -match '^LPT')) {
-  # Surucu bypass: direkt USB/COM portuna yaz
-  $devPath = '\\\\.\\\' + $portName
-  $stream = New-Object System.IO.FileStream($devPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
   try {
-    $stream.Write($bytes, 0, $bytes.Length)
-    $stream.Flush()
-  } finally {
-    $stream.Close()
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public class DeviceWriter {
+    [DllImport("kernel32.dll", CharSet=CharSet.Auto, SetLastError=true)]
+    public static extern SafeFileHandle CreateFile(
+        string lpFileName, uint dwDesiredAccess, uint dwShareMode,
+        IntPtr lpSecurityAttributes, uint dwCreationDisposition,
+        uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+    public static void Write(string path, byte[] data) {
+        var h = CreateFile(path, 0x40000000u, 0x3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);
+        if (h.IsInvalid) throw new Exception("CreateFile hatasi: " + Marshal.GetLastWin32Error());
+        using (var fs = new FileStream(h, FileAccess.Write)) {
+            fs.Write(data, 0, data.Length);
+            fs.Flush();
+        }
+    }
+}
+'@ -ErrorAction SilentlyContinue
+    $devPath = '\\\\.' + '\\' + $portName
+    [DeviceWriter]::Write($devPath, $bytes)
+    $directDone = $true
+    Write-Host "Direkt port: $portName ($($bytes.Length) byte)"
+  } catch {
+    Write-Host "Direkt yazma basarisiz: $($_.Exception.Message) --- WinSpool deneniyor"
   }
-  Write-Host "Direkt port: $portName ($($bytes.Length) byte)"
-} else {
-  # WinSpool fallback (ag yazicilar icin)
-  Add-Type -TypeDefinition @"
+}
+
+# Yontem 2: WinSpool RAW (network yazicilar veya direkt basarisiz USB)
+if (-not $directDone) {
+  Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public class WinSpool {
@@ -141,7 +167,7 @@ public class WinSpool {
         [MarshalAs(UnmanagedType.LPTStr)] public string pDataType;
     }
 }
-"@
+'@
   $h = [IntPtr]::Zero
   if (-not [WinSpool]::OpenPrinter('${escapedAdi}', [ref]$h, [IntPtr]::Zero)) {
       throw "Yazici acilamadi: ${escapedAdi} (port: $portName)"
@@ -155,7 +181,7 @@ public class WinSpool {
   [WinSpool]::WritePrinter($h, $bytes, $bytes.Length, [ref]$w) | Out-Null
   [WinSpool]::EndDocPrinter($h) | Out-Null
   [WinSpool]::ClosePrinter($h) | Out-Null
-  Write-Host "WinSpool: $w byte yazildi"
+  Write-Host "WinSpool RAW: $w byte yazildi (port: $portName)"
 }`.trim()
     }
 

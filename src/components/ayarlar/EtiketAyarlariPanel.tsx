@@ -21,6 +21,7 @@ interface Props {
 
 export const ORNEK_VERI: EtiketVeri = {
   cam_kodu: 'GLS-0042',
+  cam_tipi: '4+16+4 Temp Isıcam',
   musteri: 'NOVEL — AKYOL LOUNGE',
   genislik_mm: 600,
   yukseklik_mm: 400,
@@ -101,6 +102,11 @@ function EtiketIcerik({ ic, veri, scale }: {
       {ic.cam_kodu && (
         <div className="font-bold leading-tight truncate" style={{ fontSize: Math.max(scale * 2.2, 8) }}>
           {veri.cam_kodu}
+        </div>
+      )}
+      {ic.cam_tipi && veri.cam_tipi && (
+        <div className="leading-tight truncate text-gray-700 font-medium">
+          {veri.cam_tipi}
         </div>
       )}
       {ic.boyut && (
@@ -489,6 +495,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
         <div className="space-y-0.5">
           <IcerikSatiri label="Barkod (Code 128 — cam kodu)" kontrol={form.icerik.barkod} onChange={v => setIcerik('barkod', v)} />
           <IcerikSatiri label="Cam Kodu (GLS-XXXX)" kontrol={form.icerik.cam_kodu} onChange={v => setIcerik('cam_kodu', v)} />
+          <IcerikSatiri label="Cam Tipi (örn. 4+16+4 Temp Isıcam)" kontrol={form.icerik.cam_tipi} onChange={v => setIcerik('cam_tipi', v)} />
           <IcerikSatiri label="Boyut (Genişlik × Yükseklik mm)" kontrol={form.icerik.boyut} onChange={v => setIcerik('boyut', v)} />
           <IcerikSatiri label="Müşteri Adı" kontrol={form.icerik.musteri_adi} onChange={v => setIcerik('musteri_adi', v)} />
           <IcerikSatiri label="Sıra Numarası" kontrol={form.icerik.sira_no} onChange={v => setIcerik('sira_no', v)} />
@@ -593,8 +600,8 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
                 if (!form.yazici.kopru_adresi.trim()) return
                 const usb = form.yazici.yazici_adi.trim()
                 const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazdir`
-                // Minimal DPL: sadece metin, barkod yok, en sade format
-                const minimalDpl = "\x02L\r\nD15\r\n1A11100500030KOPRU TEST OK\r\n1A11101000030GLS-TEST-001\r\nE\r\n"
+                // Minimal DPL: Datamax M-Class, heat 15, dot size 1x1, en sade field format
+                const minimalDpl = "\x02H15\r\n\x02L\r\nD11\r\n1A11100500030KOPRU TEST OK\r\n1A11101000030GLS-TEST-001\r\nE\r\n"
                 const body = usb ? { yazici_adi: usb, dpl: minimalDpl } : { ip: form.yazici.ip_adresi, port: form.yazici.port, dpl: minimalDpl }
                 try {
                   const res = await fetch(kopruUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) })

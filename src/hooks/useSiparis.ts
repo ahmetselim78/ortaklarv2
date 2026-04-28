@@ -20,6 +20,7 @@ interface YeniSiparisForm {
   notlar?: string
   alt_musteri?: string
   teslimat_tipi?: string
+  kaynak?: 'pdf' | 'manuel'
   camlar: CamFormSatiri[]
 }
 
@@ -58,6 +59,7 @@ export function useSiparis() {
         notlar: form.notlar || null,
         alt_musteri: form.alt_musteri || null,
         teslimat_tipi: form.teslimat_tipi || 'teslim_alacak',
+        kaynak: form.kaynak || 'manuel',
       })
       .select()
       .single()
@@ -80,6 +82,9 @@ export function useSiparis() {
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,
       poz: cam.poz || null,
+      dis_kalinlik_mm: cam.dis_kalinlik_mm ? Number(cam.dis_kalinlik_mm) : null,
+      menfez_cap_mm: cam.menfez_cap_mm ? Number(cam.menfez_cap_mm) : null,
+      kucuk_cam: cam.kucuk_cam ?? false,
     }))
 
     const { error: detayHata } = await supabase
@@ -132,9 +137,15 @@ export function useSiparis() {
 export async function getSiparisDetaylari(siparisId: string): Promise<SiparisDetay[]> {
   const { data, error } = await supabase
     .from('siparis_detaylari')
-    .select('*, stok:stok!stok_id(ad), cita_stok:stok!cita_stok_id(ad)')
+    .select('*, stok:stok!stok_id(ad, kalinlik_mm), cita_stok:stok!cita_stok_id(ad)')
     .eq('siparis_id', siparisId)
-    .order('created_at')
+    // İki seviyeli sıralama: önce created_at, sonra cam_kodu (tie-break).
+    // PDF import gibi toplu insert'lerde aynı created_at'e sahip satırlar olabilir;
+    // tek kolonlu order'da Postgres deterministik sıra garanti etmez ve update
+    // sonrası satırların yeri "karışık" görünür.
+    .order('created_at', { ascending: true })
+    .order('cam_kodu', { ascending: true, nullsFirst: false })
+    .order('id', { ascending: true })
 
   if (error) throw new Error(error.message)
   return data as SiparisDetay[]

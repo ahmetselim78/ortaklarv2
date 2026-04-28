@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ClipboardList, Factory, Package, Users, TrendingUp, Clock,
@@ -8,6 +8,10 @@ import {
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import SevkiyatPlanlama from '@/components/sevkiyat/SevkiyatPlanlama'
+import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
+import { useStok } from '@/hooks/useStok'
+import { useCari } from '@/hooks/useCari'
+import type { Siparis } from '@/types/siparis'
 
 /* ===================================================================
    Types
@@ -124,12 +128,12 @@ const DURUM_STIL: Record<string, string> = {
 
 // Google Calendar tarzı event pill renkleri
 const DURUM_EVENT: Record<string, string> = {
-  beklemede: 'bg-gray-100 text-gray-700 border-gray-300',
-  batchte:   'bg-blue-100 text-blue-800 border-blue-300',
-  yikamada:  'bg-cyan-100 text-cyan-800 border-cyan-300',
-  tamamlandi:'bg-green-100 text-green-800 border-green-300',
-  eksik_var: 'bg-red-100 text-red-800 border-red-300',
-  iptal:     'bg-red-50 text-red-400 border-red-200',
+  beklemede:  'bg-gray-100 text-gray-800 border-gray-300',
+  batchte:    'bg-blue-100 text-blue-900 border-blue-400',
+  yikamada:   'bg-cyan-100 text-cyan-900 border-cyan-400',
+  tamamlandi: 'bg-green-100 text-green-900 border-green-400',
+  eksik_var:  'bg-red-100 text-red-900 border-red-400',
+  iptal:      'bg-red-50 text-red-500 border-red-300',
 }
 
 const HAFTA_GUNLERI = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
@@ -147,6 +151,23 @@ export default function Dashboard() {
 
   /* ---------- sevkiyat planlama modal ---------- */
   const [sevkiyatAcik, setSevkiyatAcik] = useState(false)
+
+  /* ---------- takvim sipariş detay modal ---------- */
+  const [takvimDetaySiparis, setTakvimDetaySiparis] = useState<Siparis | null>(null)
+  const [takvimDetayYukleniyor, setTakvimDetayYukleniyor] = useState(false)
+  const { stoklar } = useStok()
+  const { cariler } = useCari()
+
+  const takvimSiparisAc = useCallback(async (id: string) => {
+    setTakvimDetayYukleniyor(true)
+    const { data } = await supabase
+      .from('siparisler')
+      .select('*, cari(ad, kod), siparis_detaylari(count), sevkiyat_planlari(id, tarih)')
+      .eq('id', id)
+      .single()
+    setTakvimDetayYukleniyor(false)
+    if (data) setTakvimDetaySiparis(data as unknown as Siparis)
+  }, [])
 
   /* ---------- kpi kartları görünürlük ---------- */
   const [kartlarAcik, setKartlarAcik] = useState(false)
@@ -476,6 +497,27 @@ export default function Dashboard() {
         </>
       )}
 
+      {/* Takvim Sipariş Detay Modal */}
+      {takvimDetaySiparis && (
+        <SiparisDetayModal
+          siparis={takvimDetaySiparis}
+          stoklar={stoklar}
+          cariler={cariler}
+          onKapat={() => setTakvimDetaySiparis(null)}
+        />
+      )}
+      {takvimDetayYukleniyor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 pointer-events-none">
+          <div className="bg-white rounded-xl shadow-lg px-5 py-3 text-sm text-gray-600 flex items-center gap-2">
+            <svg className="animate-spin w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            Yükleniyor…
+          </div>
+        </div>
+      )}
+
       {/* ── KPI Cards ── */}
       <div className="mb-6">
         {kartlarAcik && (
@@ -592,7 +634,7 @@ export default function Dashboard() {
               {/* Day headers */}
               <div className="grid grid-cols-7 border-b border-gray-100 mb-0">
                 {HAFTA_GUNLERI.map(g => (
-                  <div key={g} className="text-center text-[11px] font-semibold text-gray-400 py-1.5 uppercase tracking-wide">{g}</div>
+                  <div key={g} className="text-center text-[11px] font-semibold text-gray-500 py-1.5 uppercase tracking-wide">{g}</div>
                 ))}
               </div>
               {/* Cells */}
@@ -640,7 +682,7 @@ export default function Dashboard() {
                             ? 'bg-blue-600 text-white'
                             : isSelected
                             ? 'bg-blue-100 text-blue-700'
-                            : 'text-gray-600 hover:bg-gray-200'
+                            : 'text-gray-700 hover:bg-gray-200'
                         }`}>
                           {day.getDate()}
                         </span>
@@ -663,27 +705,29 @@ export default function Dashboard() {
                                 e.dataTransfer.effectAllowed = 'move'
                               }}
                               onDragEnd={() => { setDragSiparis(null); setOverDate(null) }}
-                              className={`flex flex-col px-1.5 py-0.5 rounded text-[11px] leading-tight border cursor-grab active:cursor-grabbing select-none transition-opacity ${
-                                DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-700 border-gray-200'
+                              className={`flex flex-col px-1.5 py-0.5 rounded-md text-[11px] leading-tight border cursor-grab active:cursor-grabbing select-none transition-opacity ${
+                                DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-800 border-gray-200'
                               } ${dragSiparis?.id === s.id ? 'opacity-40' : ''}`}
+                              onClick={e => { e.stopPropagation(); takvimSiparisAc(s.id) }}
                             >
-                              <span className="font-semibold truncate">{s.siparis_no}</span>
-                              <span className="truncate opacity-80 text-[10px]">{s.musteri}</span>
+                              <span className="font-bold truncate">{s.siparis_no}</span>
+                              <span className="truncate text-[10px] opacity-75">{s.musteri}</span>
+                              {s.alt_musteri && (
+                                <span className="truncate text-[10px] opacity-55">› {s.alt_musteri}</span>
+                              )}
                             </div>
                             {/* Hover popover - son 2 satırda yukarı, diğerlerinde aşağı açılır */}
                             <div className={`absolute left-0 z-50 hidden group-hover/pill:block pointer-events-none w-52 ${
                               idx >= monthGrid.length - 14 ? 'bottom-full mb-0.5' : 'top-full mt-0.5'
                             }`}>
-                              <div className={`rounded-lg border shadow-lg p-2.5 text-xs ${
-                                DURUM_EVENT[s.durum] ?? 'bg-white border-gray-200'
-                              } bg-white border-gray-200`}>
-                                <div className="font-bold text-gray-800">{s.siparis_no}</div>
-                                <div className="text-gray-700 mt-0.5 font-medium">{s.musteri}</div>
+                              <div className={`rounded-xl border shadow-lg p-3 text-xs bg-white border-gray-200`}>
+                                <div className="font-bold text-gray-900 text-[12px]">{s.siparis_no}</div>
+                                <div className="text-gray-700 mt-0.5 font-medium text-[11px]">{s.musteri}</div>
                                 {s.alt_musteri && (
                                   <div className="text-gray-500 text-[10px] mt-0.5">› {s.alt_musteri}</div>
                                 )}
                                 {s.toplam_adet > 0 && (
-                                  <div className="text-gray-500 text-[10px] mt-0.5 font-semibold">{s.toplam_adet} adet cam</div>
+                                  <div className="text-gray-500 text-[10px] mt-1">{s.toplam_adet} adet cam</div>
                                 )}
                                 <div className="mt-1.5">
                                   <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${
@@ -779,6 +823,7 @@ export default function Dashboard() {
                             e.dataTransfer.effectAllowed = 'move'
                           }}
                           onDragEnd={() => { setDragSiparis(null); setOverDate(null) }}
+                          onClick={e => { e.stopPropagation(); takvimSiparisAc(s.id) }}
                           className={`px-2 py-2 rounded-lg border text-xs cursor-grab active:cursor-grabbing select-none transition-all ${
                             DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-700 border-gray-200'
                           } ${dragSiparis?.id === s.id ? 'opacity-40' : 'hover:shadow-md hover:brightness-95'}`}

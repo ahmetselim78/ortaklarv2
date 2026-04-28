@@ -24,7 +24,6 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
       (s) =>
         s.ad.toLowerCase().includes(arama.toLowerCase()) ||
         s.kod.toLowerCase().includes(arama.toLowerCase()) ||
-        (s.marka ?? '').toLowerCase().includes(arama.toLowerCase()) ||
         (s.tedarikci_ad ?? '').toLowerCase().includes(arama.toLowerCase())
     )
 
@@ -60,7 +59,6 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
                 {kategori === 'cam' && <th className="px-4 py-3">Tip</th>}
                 <th className="px-4 py-3">{kategori === 'cita' ? 'Boyut' : 'Kalınlık'}</th>
                 {kategori === 'cam' && <th className="px-4 py-3">Renk</th>}
-                <th className="px-4 py-3">Marka</th>
                 <th className="px-4 py-3">Tedarikçi</th>
                 <th className="px-4 py-3">Birim Fiyat</th>
                 <th className="px-4 py-3 text-right">İşlem</th>
@@ -83,7 +81,6 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
                   {kategori === 'cam' && (
                     <td className="px-4 py-3 text-gray-600">{stok.renk ?? '—'}</td>
                   )}
-                  <td className="px-4 py-3 text-gray-600">{stok.marka ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{stok.tedarikci_ad ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">
                     {stok.birim_fiyat

@@ -66,7 +66,18 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
               key={s.id}
               className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
             >
-              <td className="px-4 py-3 font-mono font-medium text-gray-800">{s.siparis_no}</td>
+              <td className="px-4 py-3 font-mono font-medium text-gray-800">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'inline-block w-2 h-2 rounded-full shrink-0',
+                      s.kaynak === 'pdf' ? 'bg-green-500' : 'bg-blue-500'
+                    )}
+                    title={s.kaynak === 'pdf' ? 'PDF\'den içe aktarıldı' : 'Manuel girildi'}
+                  />
+                  {s.siparis_no}
+                </div>
+              </td>
               <td className="px-4 py-3 text-gray-700">
                 <div className="font-medium">{s.cari?.ad ?? '—'}</div>
                 {s.alt_musteri && (

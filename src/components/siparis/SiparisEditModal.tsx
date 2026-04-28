@@ -436,6 +436,10 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                             <span className="w-3.5 h-3.5 rounded-full bg-gray-200 text-gray-500 text-[9px] font-bold flex items-center justify-center leading-none">?</span>
                             <span className="absolute left-0 top-5 z-20 hidden group-hover:block w-52 bg-gray-800 text-white text-[10px] rounded-lg px-2.5 py-1.5 shadow-lg leading-relaxed">
                               Pozisyon numarası. Tüm ölçüler girildikten sonra toplu girilmesi tavsiye edilir.
+                              <br />
+                              <span className="text-gray-300">Poz seçiliyken </span>
+                              <kbd className="px-1 py-0.5 bg-gray-700 rounded text-[9px] font-mono">Enter</kbd>
+                              <span className="text-gray-300"> ile bir sonraki satırın Poz alanına geçilir.</span>
                             </span>
                           </span>
                         </th>

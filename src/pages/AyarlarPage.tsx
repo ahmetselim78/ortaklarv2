@@ -1,12 +1,13 @@
 import { useState, useCallback } from 'react'
-import { Printer, ChevronRight, ArrowLeft } from 'lucide-react'
+import { Printer, ChevronRight, ArrowLeft, Truck } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import EtiketAyarlariPanel, { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
+import AraclarPanel from '@/components/ayarlar/AraclarPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
-/* ── Kategori tanımları ──────────────────────────────────────────────────── */
+/* ── Kategori tanımları ──────────────────────────────────────── */
 
-type AyarKategori = 'etiket'
+type AyarKategori = 'etiket' | 'araclar'
 
 interface Kategori {
   id: AyarKategori
@@ -25,6 +26,14 @@ const kategoriler: Kategori[] = [
     icon: Printer,
     renk: 'bg-blue-50 hover:bg-blue-100 border-blue-200',
     ikonRenk: 'text-blue-600 bg-blue-100',
+  },
+  {
+    id: 'araclar',
+    label: 'Araçlar',
+    aciklama: 'Sevkiyat planlamada kullanılan şirket araçlarını ekle, düzenle veya pasife al.',
+    icon: Truck,
+    renk: 'bg-orange-50 hover:bg-orange-100 border-orange-200',
+    ikonRenk: 'text-orange-600 bg-orange-100',
   },
 ]
 
@@ -82,7 +91,7 @@ export default function AyarlarPage() {
   }
 
   /* Etiket Basım ayarları — 2 kolon */
-  return (
+  if (aktifKategori === 'etiket') return (
     <div className="flex flex-col h-full">
       {/* Başlık barı */}
       <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
@@ -130,5 +139,31 @@ export default function AyarlarPage() {
       </div>
     </div>
   )
+
+  /* Araçlar ayarları */
+  if (aktifKategori === 'araclar') return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <Truck size={16} className="text-orange-600" />
+          <span className="text-sm font-semibold text-gray-900">Araçlar</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <AraclarPanel />
+      </div>
+    </div>
+  )
+
+  return null
 }
 

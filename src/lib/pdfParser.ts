@@ -34,7 +34,13 @@ export interface PDFCamSatir {
   genislik_mm: number
   yukseklik_mm: number
   ara_bosluk_mm: number | null
+  /** "4+16+4" → 4 (dış cam kalınlığı) */
+  dis_kalinlik_mm: number | null
   pozNo: string
+  /** Yıldız işareti varsa → %20'den küçük cam (farklı fiyat) */
+  kucuk_cam: boolean
+  /** Ø işareti yanındaki sayı → menfez delik çapı (mm) */
+  menfez_cap_mm: number | null
 }
 
 /** Progress callback tipi */
@@ -43,26 +49,52 @@ export type PDFProgressCallback = (msg: string) => void
 /* ===== PDF → Metin ===== */
 
 /**
- * Önce pdfjs-dist text extraction'ı dener.
- * Yetersiz metin çıkarsa Mistral OCR API'ye gönderir.
+ * PDF → metin. **Birincil yol: ham PDF'i doğrudan Mistral OCR API'ye gönder.**
+ *
+ * Neden pdf.js bypass?
+ *   ERP kaynaklı bazı PDF'lerde pdf.js worker "Badly formatted number: minus sign
+ *   in the middle" hatası verip sayfa sonundaki satırları (örn. Poz 44) canvas'a
+ *   eksik çiziyor. Bu canvas'ı Mistral'e gönderince satır kaybı yaşanıyor.
+ *   Mistral OCR API native PDF desteği veriyor → dosyayı olduğu gibi yollayalım.
+ *
+ * Fallback (yalnızca raw PDF başarısız olursa):
+ *   1. Sayfa-sayfa canvas OCR (pdf.js + Mistral image OCR)
+ *   2. pdf.js text extraction
  */
 export async function pdfToText(file: File, onProgress?: PDFProgressCallback): Promise<string> {
   const buffer = await file.arrayBuffer()
 
-  // 1) Hızlı text extraction dene
-  // buffer.slice(0) kopya oluşturur — pdfjs-dist orijinali detach eder
-  onProgress?.('Metin çıkarılıyor...')
-  const textLines = await tryTextExtraction(buffer.slice(0))
-
-  if (textLines.filter(l => l.trim().length > 5).length >= 20) {
-    console.log('[PDF] Text extraction başarılı:', textLines.length, 'satır')
-    return textLines.join('\n')
+  // 1) Raw PDF → Mistral OCR (BİRİNCİL YOL)
+  try {
+    onProgress?.('PDF Mistral OCR\'a gönderiliyor...')
+    const text = await mistralOCR(buffer, onProgress)
+    if (text && text.length > 100) {
+      console.log('[PDF] ✓ Raw PDF OCR başarılı, fallback gerekmiyor')
+      return text
+    }
+    console.warn('[PDF] Raw PDF OCR çok az metin döndürdü, fallback denenecek')
+  } catch (e) {
+    console.warn('[PDF] Raw PDF OCR başarısız, fallback denenecek:', e)
   }
 
-  console.log('[PDF] Text extraction yetersiz, Mistral OCR\'ye geçiliyor...')
+  // 2) Sayfa-sayfa canvas OCR fallback
+  try {
+    onProgress?.('Sayfa-sayfa görüntü OCR fallback...')
+    const text = await mistralOCRPageByPage(buffer.slice(0), onProgress)
+    if (text && text.length > 100) {
+      console.log('[PDF] ✓ Sayfa-sayfa OCR fallback başarılı')
+      return text
+    }
+  } catch (e) {
+    console.warn('[PDF] Sayfa-sayfa OCR de başarısız:', e)
+  }
 
-  // 2) Mistral OCR
-  return await mistralOCR(buffer, onProgress)
+  // 3) pdf.js text extraction son çare
+  onProgress?.('pdf.js text extraction son fallback...')
+  const lines = await tryTextExtraction(buffer.slice(0))
+  const text = lines.join('\n')
+  console.log(`[PDF] pdf.js fallback: ${lines.length} satır, ${text.length} karakter`)
+  return text
 }
 
 /** ArrayBuffer → base64 string */
@@ -76,11 +108,31 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-/** Mistral OCR — Önce Supabase Edge Function dener, başarısız olursa doğrudan API'ye gider */
+/** Mistral OCR — Ham PDF'i doğrudan API'ye yollar (pdf.js BYPASS).
+ *  Önce Supabase Edge Function dener, başarısız olursa doğrudan Mistral API'ye gider. */
 async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback): Promise<string> {
   onProgress?.('Mistral OCR isteği gönderiliyor...')
 
   const base64 = arrayBufferToBase64(buffer)
+
+  /** Per-page diagnostic — Mistral'in döndürdüğü her sayfada kaç cam-satır var */
+  const logPagesDiagnostic = (pages: { index?: number; markdown: string }[]) => {
+    const camRowRe = /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[.,]\d{3}\s+\d[.,]\d{3}/
+    let totalRows = 0
+    pages.forEach((p, idx) => {
+      const camRowCount = (p.markdown ?? '').split('\n').filter(l => {
+        let s = l.trim()
+        if (!s) return false
+        if (s.startsWith('|')) s = s.replace(/^\||\|$/g, '').split('|').map(c => c.trim()).join(' ')
+        return camRowRe.test(s)
+      }).length
+      totalRows += camRowCount
+      console.log(
+        `[Mistral OCR] Sayfa ${(p.index ?? idx) + 1}: ${(p.markdown ?? '').length} kar, ${camRowCount} cam-satır`,
+      )
+    })
+    console.log(`[Mistral OCR] Toplam: ${pages.length} sayfa, ${totalRows} cam-satır`)
+  }
 
   // 1) Supabase Edge Function dene
   const { data, error } = await supabase.functions.invoke('mistral-ocr', {
@@ -90,16 +142,15 @@ async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback)
   if (!error && data?.pages) {
     onProgress?.('Sonuçlar işleniyor...')
     const pages = data.pages as { index: number; markdown: string }[]
-    const fullText = pages.map((p: { markdown: string }) => p.markdown).join('\n')
-    console.log('[Mistral OCR] Edge Function başarılı, toplam karakter:', fullText.length)
-    return fullText
+    logPagesDiagnostic(pages)
+    return pages.map(p => p.markdown).join('\n')
   }
 
   // 2) Fallback: VITE_MISTRAL_API_KEY varsa doğrudan Mistral API'ye git
   const apiKey = import.meta.env.VITE_MISTRAL_API_KEY as string | undefined
   if (!apiKey) {
     throw new Error(
-      `Mistral OCR hatası: ${error?.message ?? 'Bilinmeyen hata'}. Edge Function deploy edilmemiş ve VITE_MISTRAL_API_KEY tanımlı değil.`
+      `Mistral OCR hatası: ${error?.message ?? 'Bilinmeyen hata'}. Edge Function deploy edilmemiş ve VITE_MISTRAL_API_KEY tanımlı değil.`,
     )
   }
 
@@ -129,8 +180,127 @@ async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback)
   const result = await res.json()
   onProgress?.('Sonuçlar işleniyor...')
   const pages = result.pages as { index: number; markdown: string }[]
-  const fullText = pages.map((p: { markdown: string }) => p.markdown).join('\n')
-  console.log('[Mistral OCR] Doğrudan API başarılı, toplam karakter:', fullText.length)
+  logPagesDiagnostic(pages)
+  return pages.map(p => p.markdown).join('\n')
+}
+
+/**
+ * Sayfa-sayfa görüntü OCR — pdfjs ile her sayfayı yüksek çözünürlüklü canvas'a render
+ * eder, PNG'ye çevirir ve Mistral OCR'a tek tek gönderir.
+ *
+ * Sorun: Tek-belge OCR çok-sayfalı PDF'lerde her sayfanın SON satırlarını
+ * (footer'a yakın olanları) düşürebiliyor. Sayfa-sayfa OCR'da her sayfa kendi
+ * bağlamında işlenir; ama Mistral yine de canvas'ın alt kenarına yapışık satırları
+ * bazen "footer" sanıp atlayabiliyor.
+ *
+ * Çözüm:
+ *   - scale=3 ile yüksek çözünürlük (rakamlar net)
+ *   - Canvas'a 8% bottom padding (beyaz boşluk) ekle → son tablo satırı ile
+ *     görüntü kenarı arasında nefes alanı kalır, OCR son satırı atmaz
+ *   - Edge Function (401) atlanıp doğrudan API'ye gidilir
+ *   - Her sayfa için cam-satır sayısı log'lanır → satır kaybı anında görünür
+ */
+async function mistralOCRPageByPage(
+  buffer: ArrayBuffer,
+  onProgress?: PDFProgressCallback,
+): Promise<string> {
+  const apiKey = import.meta.env.VITE_MISTRAL_API_KEY as string | undefined
+  if (!apiKey) {
+    throw new Error(
+      `Sayfa-sayfa OCR yapılamıyor: VITE_MISTRAL_API_KEY tanımlı değil. ` +
+      `.env.local dosyasına ekleyin.`,
+    )
+  }
+
+  const doc = await getDocument({
+    data: buffer,
+    cMapUrl: '/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: '/standard_fonts/',
+  }).promise
+
+  const pageTexts: string[] = []
+
+  for (let i = 1; i <= doc.numPages; i++) {
+    onProgress?.(`Sayfa ${i}/${doc.numPages} OCR ediliyor...`)
+
+    const page = await doc.getPage(i)
+    // scale 3 → daha net rakamlar (pozNo, ölçüler güvenilir okunur)
+    const viewport = page.getViewport({ scale: 3 })
+
+    // Padding: alt kenarda %10, sağ/sol/üst %3 — Mistral son satırı footer
+    // sanıp atmasın diye alt kenarda fazladan beyaz alan bırakıyoruz.
+    const padX = Math.ceil(viewport.width * 0.03)
+    const padTop = Math.ceil(viewport.height * 0.03)
+    const padBottom = Math.ceil(viewport.height * 0.10)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width) + padX * 2
+    canvas.height = Math.ceil(viewport.height) + padTop + padBottom
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas context oluşturulamadı')
+
+    // Beyaz arka plan
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    // Padding ile içeri çiz
+    ctx.translate(padX, padTop)
+
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+      canvas,
+    } as Parameters<typeof page.render>[0]).promise
+
+    const dataUrl = canvas.toDataURL('image/png')
+
+    // Doğrudan Mistral API (Edge Function atlanıyor)
+    const res = await fetch('https://api.mistral.ai/v1/ocr', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'mistral-ocr-latest',
+        document: {
+          type: 'image_url',
+          image_url: dataUrl,
+        },
+      }),
+    })
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}))
+      throw new Error(`Mistral OCR sayfa ${i} hatası (${res.status}): ${JSON.stringify(errBody)}`)
+    }
+    const result = await res.json()
+    const pages = result.pages as { markdown: string }[]
+    const pageMarkdown = pages.map(p => p.markdown).join('\n')
+
+    // Diagnostic: bu sayfada kaç cam-satır geldi?
+    // Hem düz metin hem markdown tablo satırlarını sayar.
+    const camSatirCount = pageMarkdown.split('\n').filter(l => {
+      let s = l.trim()
+      if (!s) return false
+      // Markdown tablo satırını düzleştir
+      if (s.startsWith('|')) s = s.replace(/^\||\|$/g, '').split('|').map(c => c.trim()).join(' ')
+      // Cam-satır pattern: <adet> <gen> <yük> <Bm²> <Tm²>
+      return /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[.,]\d{3}\s+\d[.,]\d{3}/.test(s)
+    }).length
+    console.log(
+      `[Mistral OCR] Sayfa ${i}/${doc.numPages}: ${pageMarkdown.length} kar, ${camSatirCount} cam-satır`,
+    )
+
+    pageTexts.push(pageMarkdown)
+
+    // Canvas'ı temizle — bellek birikmesin
+    canvas.width = 0
+    canvas.height = 0
+  }
+
+  onProgress?.('Sayfa OCR sonuçları birleştiriliyor...')
+  const fullText = pageTexts.join('\n\n')
+  console.log('[Mistral OCR] Sayfa-sayfa toplam karakter:', fullText.length)
   return fullText
 }
 
@@ -188,18 +358,20 @@ function isPimapenFormat(text: string): boolean {
     /cari\s*kodu/i,
     /sipari.?\s*no/i,
     /cam\s*s\s*no/i,
-    /pimapen|ercom/i,
+    /pimapen|ercom|firatpen/i,
     /\d+[+\-]\d+[+\-]\d+|\d{441644}|441\d{3}/,  // "4+16+4" veya OCR varyantı
     /cam\s*.*sipari/i,
     /cari\s*.?nvan/i,
     /poz\s*no/i,
-    /[Çç]ift\s+Cam/,       // OCR'de en güvenilir: "Çift Cam"
+    /[Çç]ift\s*Cam/,       // OCR'de en güvenilir: "Çift Cam"
+    // Encoding-bağımsız: cam-satır numeric pattern (en az 3 satır)
+    /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[.,]\d{3}\s+\d[.,]\d{3}/,
   ]
   let hits = 0
   for (const r of checks) {
     if (r.test(text)) hits++
   }
-  return hits >= 3
+  return hits >= 2
 }
 
 /* ===== Türkçe Sayı → number ===== */
@@ -361,8 +533,40 @@ function extractAraBoslukFromDesc(aciklama: string): number | null {
   return null
 }
 
+/** Açıklama stringinden dış cam kalınlığını çıkar.
+ *  "4+16+4 Çift Cam" → 4 ; "6+22+6 Sinerji" → 6 ; OCR "441644" → 4 ; "622266" → 6 */
+function extractDisKalinlikFromDesc(aciklama: string): number | null {
+  const m = aciklama.match(/(\d+)\+\d+\+(\d+)/)
+  if (m) {
+    const a = parseInt(m[1], 10)
+    const b = parseInt(m[2], 10)
+    if (a >= 3 && a <= 12 && a === b) return a
+    return a
+  }
+  const m2 = aciklama.match(/\b(\d{5,8})\b/)
+  if (m2) {
+    const s = m2[1]
+    const first = parseInt(s.slice(0, 2), 10)
+    const last = parseInt(s.slice(-2), 10)
+    // "441644" → first=44 → 4 ; "612246" → first=61 → 6
+    const v = first >= 30 ? Math.floor(first / 10) : first
+    if (v >= 3 && v <= 12) return v
+    if (last >= 30) {
+      const lv = Math.floor(last / 10)
+      if (lv >= 3 && lv <= 12) return lv
+    }
+  }
+  return null
+}
+
 /**
  * PIMAPEN satır parser — hem düz metin hem Mistral markdown tablosu destekler.
+ *
+ * Strateji (sırayla denenir):
+ *   1) Türkçe metin sağlamsa: "...Çift Cam... <adet> <gen> <yük> <Bm²> <Tm²> <pozNo>" regex'i
+ *   2) "Çift Cam" yoksa/bozuksa: SAF NUMERIC TAIL regex — satır sonunda
+ *      "<adet 1-3hane> <gen 3-4hane> <yük 3-4hane> <Bm² 0,xxx> <Tm² 0,xxx> <pozNo>"
+ *      pattern'i varsa kabul et. pdfjs encoding bozuksa bile çalışır.
  *
  * Mistral OCR çıktısı iki formatta gelebilir:
  *   1) Markdown tablo: "| 4+16+4 Çift Cam Konfor | 2 | 612 | 2.031 | 1,243 | 2,486 | 1 |"
@@ -373,6 +577,25 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
   const lines = text.split('\n')
   const araBoslukDefault = detectAraBosluk(text)
 
+  // Birincil regex: "Çift Cam" gerektirir, açıklamayı düzgün yakalar.
+  // pozNo "19 - K5", "4-A2", "12/B" gibi boşluk/tire içerebilir → satır sonuna
+  // kadar her şeyi al (.*) ama sadece anlamlı karakterler içersin.
+  const primaryRe =
+    /^(.+?[Çç]ift\s*Cam(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü]+){0,3}?)\s*(\*+)?\s*(?:Ø\s*(\d+))?\s+(\d{1,3})\s+(\d{1,3}(?:[.,]\d{3})?|\d{3,4})\s+(\d{1,3}(?:[.,]\d{3})?|\d{3,4})\s+(\d{1,3}(?:[.,]\d{3,})?)\s+(\d{1,3}(?:[.,]\d{3,})?)\s*(.*?)\s*$/
+
+  // İkincil regex: SAF NUMERIC TAIL — sadece sondaki sayı yapısı eşleşir.
+  // Encoding bozulsa da, "4+16+4 Çift Cam"in bozuk hali olsa da çalışır.
+  // Yapı: <açıklama> <adet 1-3 hane> <gen 3-4 hane> <yük 3-4 hane> <Bm²> <Tm²> [<poz>]
+  const numericTailRe =
+    /^(.*?)\s*(\*+)?\s*(?:Ø\s*(\d+))?\s+(\d{1,3})\s+(\d{1,3}(?:[.,]\d{3})?|\d{3,4})\s+(\d{1,3}(?:[.,]\d{3})?|\d{3,4})\s+(\d{1,3}[.,]\d{3,})\s+(\d{1,3}[.,]\d{3,})\s*(.*?)\s*$/
+
+  // Diagnostic istatistik
+  let camIceren = 0
+  let primaryHit = 0
+  let numericFallback = 0
+  let toplamSkip = 0
+  const reddedilen: string[] = []
+
   for (const line of lines) {
     let trimmed = line.trim()
     if (!trimmed) continue
@@ -380,44 +603,236 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
     // Markdown tablo header/separator satırlarını atla
     if (/^\|[\s\-|:]+\|$/.test(trimmed)) continue
 
-    // Markdown tablo satırını düz metne çevir: "| a | b |" → "a b"
+    // === STRATEJİ 0: Kolon-bazlı markdown tablo parser (en sağlam) ===
+    // "| Açıklama | Adet | Gen | Yük | B m² | T m² | Poz No |" formatında 7 kolon.
+    // Bazen poz dahil 6 kolon, bazen ek olarak Ø/menfez kolonları gelebilir.
+    // Kolon konumları sabit olduğu için regex'e değil, hücre konumuna güveniriz.
     if (trimmed.startsWith('|')) {
+      const cells = trimmed
+        .replace(/^\||\|$/g, '')
+        .split('|')
+        .map(s => s.trim())
+
+      // En az 6 hücre olmalı: açıklama, adet, gen, yük, bm², tm² (poz opsiyonel)
+      if (cells.length >= 6) {
+        // Header satırını atla: "Açıklama" / "Adet" / "Poz No" gibi kelimeler içeriyor
+        const isHeaderRow = cells.some(c => /^(a[çc]?[ıi]klama|adet|gen|y[üu]k|poz\s*no)$/i.test(c))
+        if (isHeaderRow) continue
+
+        // Toplam satırı: "| 4+16+4 Çift Cam | 217 | | | 172,623 | m². |" gibi
+        // → 5+ hücre var ama gen/yük/Bm² boş veya m² içeriyor.
+        const hasM2Cell = cells.some(c => /^m[²2]\.?$/i.test(c) || /\d[,.]\d+\s*m[²2]/i.test(c))
+        const emptyCells = cells.filter(c => c === '').length
+
+        // Hücre konumlarını tespit et:
+        //   Sondan: pozNo (opsiyonel, son), Tm², Bm², yük, gen, adet, açıklama
+        // Önce, sayısal kolon yapısını belirleyen "ondalık ile bitenleri" bul.
+        // Bm² ve Tm² Türkçe ondalıklı ("0,886"), gen/yük binlik noktalı veya tam sayı.
+        const hasOndalik = (s: string) => /^\d+[,.]\d{2,}$/.test(s) || /^\d+,\d+$/.test(s)
+
+        // Sondan başlayarak boş ve sayısal-olmayan hücreleri elle: pozNo'yu bul.
+        // pozNo: tam sayı VEYA "19 - K5", "4-A", "B5/12" gibi alfanümerik.
+        let pozIdx = cells.length - 1
+        // Eğer son hücre boş veya "m²" ise → toplam satırıdır, atla
+        if (cells[pozIdx] === '' || /^m[²2]\.?$/i.test(cells[pozIdx])) {
+          if (hasM2Cell) continue
+        }
+
+        // Sondan 6 hücreyi bekle: [açıklama-prefix..., adet, gen, yük, bm², tm², pozNo?]
+        // Önce pozNo'nun olup olmadığını test et: son hücre Tm² formatında mı?
+        let tm2Idx: number
+        let bm2Idx: number
+        let yukIdx: number
+        let genIdx: number
+        let adetIdx: number
+        let pozValue = ''
+
+        if (hasOndalik(cells[pozIdx])) {
+          // Son hücre Tm² → pozNo yok
+          tm2Idx = pozIdx
+          pozValue = ''
+        } else {
+          // Son hücre pozNo
+          pozValue = cells[pozIdx]
+          tm2Idx = pozIdx - 1
+        }
+        bm2Idx = tm2Idx - 1
+        yukIdx = bm2Idx - 1
+        genIdx = yukIdx - 1
+        adetIdx = genIdx - 1
+
+        if (adetIdx < 0) continue
+
+        const adetStr = cells[adetIdx]
+        const genStr = cells[genIdx]
+        const yukStr = cells[yukIdx]
+        const bm2Str = cells[bm2Idx]
+        const tm2Str = cells[tm2Idx]
+
+        // Hücre validasyonu: tüm kritik kolonlar dolu olmalı
+        if (!adetStr || !genStr || !yukStr || !bm2Str || !tm2Str) {
+          // Toplam satırı olabilir → m² varsa atla, yoksa diğer stratejilere bırak
+          if (hasM2Cell || emptyCells >= 2) continue
+        } else if (
+          /^\d{1,3}$/.test(adetStr) &&
+          /^\d{1,4}([.,]\d{3})?$/.test(genStr) &&
+          /^\d{1,4}([.,]\d{3})?$/.test(yukStr) &&
+          /^\d+[,.]\d+$/.test(bm2Str) &&
+          /^\d+[,.]\d+$/.test(tm2Str)
+        ) {
+          // Açıklama: 0..adetIdx arası hücreler (bazen prefix'te * veya Ø olabilir)
+          const aciklamaCells = cells.slice(0, adetIdx).filter(c => c !== '')
+          let aciklamaRaw = aciklamaCells.join(' ').trim()
+
+          // * (yıldız) işareti → küçük cam
+          const kucukCam = /\*+/.test(aciklamaRaw)
+          aciklamaRaw = aciklamaRaw.replace(/\s*\*+\s*/g, ' ').trim()
+
+          // Ø menfez
+          const menfezMatch = aciklamaRaw.match(/Ø\s*(\d+)/)
+          const menfezCap = menfezMatch ? parseInt(menfezMatch[1], 10) : null
+          if (menfezMatch) aciklamaRaw = aciklamaRaw.replace(/Ø\s*\d+/, '').trim()
+
+          if (!aciklamaRaw) aciklamaRaw = '4+16+4 Çift Cam'
+
+          const adet = parseInt(adetStr, 10)
+          const gen = parseTrInt(genStr)
+          const yuk = parseTrInt(yukStr)
+          const bm2 = parseTrFloat(bm2Str)
+
+          if (adet > 0 && gen >= 50 && yuk >= 50 && bm2 > 0) {
+            const araBosluk = extractAraBoslukFromDesc(aciklamaRaw) ?? araBoslukDefault
+            const disKalinlik = extractDisKalinlikFromDesc(aciklamaRaw)
+
+            if (/[Çç]ift\s*Cam/i.test(aciklamaRaw)) camIceren++
+            primaryHit++
+
+            satirlar.push({
+              aciklama: aciklamaRaw,
+              adet,
+              genislik_mm: gen,
+              yukseklik_mm: yuk,
+              ara_bosluk_mm: araBosluk,
+              dis_kalinlik_mm: disKalinlik,
+              pozNo: pozValue,
+              kucuk_cam: kucukCam,
+              menfez_cap_mm: menfezCap,
+            })
+            continue
+          }
+        }
+      }
+
+      // Markdown tablo satırı kolon parser ile yakalanamadı → düz metne çevir,
+      // diğer regex stratejilerine düşsün
       trimmed = trimmed.replace(/^\||\|$/g, '').split('|').map(s => s.trim()).join(' ')
     }
 
-    // Cam satırı tespiti: "Çift Cam" içermeli
-    if (!/[Çç]ift\s+Cam/i.test(trimmed)) continue
+    const hasCiftCam = /[Çç]ift\s*Cam/i.test(trimmed)
+    if (hasCiftCam) camIceren++
 
-    // Toplam satırını atla
-    if (/m[²2]\.?\s*$/.test(trimmed)) continue
+    // Toplam/ara-toplam satırını atla:
+    //   "... 217  172,623 m²."   (yalnızca adet + m² var, gen/yük yok)
+    //   "... 5  0,411 m². % 20 den küçük camlar."
+    // Tespit: m² işareti var VE 5+ sayı (adet/gen/yük/bm²/tm²) yok
+    const hasM2 = /\d[,.]\d+\s*m[²2]\.?/i.test(trimmed)
+    if (hasM2) {
+      const numCount = (trimmed.match(/\b\d/g) ?? []).length
+      const hasFullRow = /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[,.]\d{3}/.test(trimmed)
+      if (!hasFullRow) {
+        // Toplam satırı — atla, log'a yazma
+        continue
+      }
+      if (numCount < 5) continue
+    }
 
-    // Format: {açıklama} {adet} {gen} {yük_veya_çöp} {Bm²: D,DDD} {Tm²: D,DDD} {pozNo}
-    // Not: "Ø 150" gibi iki kelimeli açıklama sonekleri (delik çapı) özel olarak ele alınır.
-    // Sadece \S+ kullanılsaydı "Ø" açıklamaya, "150" yanlışlıkla adet'e atanırdı.
-    const m = trimmed.match(
-      /^(.+?[Çç]ift\s+Cam(?:\s+(?:Ø\s*\d+|\S+))?)\s+(\d{1,3})\s+([\d.]+)\s+(\S+)\s+(\d[,.]\d[\d,]*)\s+(\d[,.]\d[\d,]*)\s*(.*)/
-    )
-    if (!m) continue
+    // 1) Birincil regex (Çift Cam ile)
+    let m = primaryRe.exec(trimmed)
+    let isFallback = false
 
-    const aciklama = m[1].trim()
-    const adet    = parseInt(m[2], 10)
-    const gen     = parseTrInt(m[3])
-    const yukRaw  = m[4]
-    const bm2     = parseFloat(m[5].replace(',', '.'))
-    const pozNo   = (m[7] ?? '').trim()
+    // 2) Numeric tail fallback (Çift Cam zorunlu değil)
+    if (!m) {
+      m = numericTailRe.exec(trimmed)
+      if (m) {
+        // "Açıklama" tarafında en az 1 alfa karakter olsun (boş prefix'leri ele)
+        // ve toplam satırı maskelenmesin (yukarıda ayrıldı zaten)
+        const prefix = m[1].trim()
+        if (prefix.length === 0) continue
+        // Ay/yıl formatlı tarih satırlarını ele (örn: "27.02.2026 - : 3.07")
+        if (/^\d{1,2}\.\d{1,2}\.\d{4}/.test(prefix)) continue
+        isFallback = true
+      }
+    }
 
-    if (isNaN(gen) || gen <= 0 || adet <= 0 || isNaN(bm2) || bm2 <= 0) continue
+    if (!m) {
+      // Yalnız belirgin "veri-benzeri" satırları reddedildi olarak logla
+      if (/\d{3,4}\s+\d{3,4}/.test(trimmed) || hasCiftCam) {
+        toplamSkip++
+        if (reddedilen.length < 20) reddedilen.push(trimmed)
+      }
+      continue
+    }
 
-    // Yük: numeric parse; yoksa Bm² formülünden hesapla
+    const aciklamaRaw   = m[1].trim()
+    const kucuk_cam     = !!m[2]
+    const menfez_cap_mm = m[3] ? parseInt(m[3], 10) : null
+    const adet          = parseInt(m[4], 10)
+    const gen           = parseTrInt(m[5])
+    const yukRaw        = m[6]
+    const bm2           = parseTrFloat(m[7])
+    const pozNo         = (m[9] ?? '').trim()
+
+    if (isNaN(gen) || gen <= 0 || adet <= 0 || isNaN(bm2) || bm2 <= 0) {
+      toplamSkip++
+      if (reddedilen.length < 20) reddedilen.push(`[değer hatası] ${trimmed}`)
+      continue
+    }
+
+    // Mantık kontrolü: gen ve yük mm cinsinden makul aralıkta olmalı (50-9999)
     let yuk = parseTrInt(yukRaw)
     if (isNaN(yuk) || yuk < 10 || yuk > 9999) {
       yuk = Math.round((bm2 * 1_000_000) / gen)
     }
-    if (yuk <= 0) continue
+    if (yuk <= 0 || gen < 50 || yuk < 50) {
+      toplamSkip++
+      continue
+    }
+
+    // Açıklama: fallback'te boş/bozuk olabilir → temizle ve normalize et
+    let aciklama = aciklamaRaw
+    if (isFallback) {
+      // Boş veya çok kısa açıklama → varsayılan ata
+      if (!aciklama || aciklama.length < 3 || !/[A-Za-zÇĞİÖŞÜçğıöşü]/.test(aciklama)) {
+        aciklama = '4+16+4 Çift Cam'
+      }
+      numericFallback++
+    } else {
+      primaryHit++
+    }
 
     const araBosluk = extractAraBoslukFromDesc(aciklama) ?? araBoslukDefault
+    const disKalinlik = extractDisKalinlikFromDesc(aciklama)
 
-    satirlar.push({ aciklama, adet, genislik_mm: gen, yukseklik_mm: yuk, ara_bosluk_mm: araBosluk, pozNo })
+    satirlar.push({
+      aciklama,
+      adet,
+      genislik_mm: gen,
+      yukseklik_mm: yuk,
+      ara_bosluk_mm: araBosluk,
+      dis_kalinlik_mm: disKalinlik,
+      pozNo,
+      kucuk_cam,
+      menfez_cap_mm,
+    })
+  }
+
+  console.log(
+    `[PDF Parse] "Çift Cam" satır=${camIceren} | birincil=${primaryHit} | numeric-fallback=${numericFallback} | ` +
+    `toplam parse=${satirlar.length} | reddedilen=${toplamSkip}`
+  )
+  if (reddedilen.length > 0) {
+    console.warn('[PDF Parse] Reddedilen satır örnekleri:')
+    reddedilen.forEach((s, i) => console.warn(`  ${i + 1}. ${s}`))
   }
 
   return satirlar
@@ -443,6 +858,55 @@ export async function parsePDF(
 
   console.log('[PDF Parse] Header:', header)
   console.log('[PDF Parse] Satır sayısı:', satirlar.length)
+
+  // === Doğrulama: PDF footer toplamı ile parse edilen toplam karşılaştır ===
+  // Header'daki "Adet" değeri PDF formatına göre değişir:
+  //   - Pimapen/Ercom: poz/doğrama sayısı (eşsiz pozNo'larla eşleşmeli)
+  //   - Bazı formatlar: toplam cam parça sayısı (sum(adet) ile eşleşmeli)
+  // Her iki yorumdan en az biri tutuyorsa "doğrulandı" sayılır.
+  const parsedAdetSum = satirlar.reduce((sum, s) => sum + s.adet, 0)
+  const eşsizPozSet = new Set(satirlar.map(s => s.pozNo).filter(p => p !== ''))
+  const eşsizPozCount = eşsizPozSet.size
+  const parsedM2 = satirlar.reduce((sum, s) => {
+    return sum + (s.adet * s.genislik_mm * s.yukseklik_mm) / 1_000_000
+  }, 0)
+
+  if (header.toplamAdet != null) {
+    const matchAsPoz = header.toplamAdet === eşsizPozCount
+    const matchAsSum = header.toplamAdet === parsedAdetSum
+    if (matchAsPoz) {
+      console.log(
+        `[PDF Parse] ✓ Adet doğrulama (poz sayısı): ${eşsizPozCount}/${header.toplamAdet} eşleşti ` +
+        `(toplam cam parça=${parsedAdetSum})`,
+      )
+    } else if (matchAsSum) {
+      console.log(
+        `[PDF Parse] ✓ Adet doğrulama (parça sayısı): ${parsedAdetSum}/${header.toplamAdet} eşleşti ` +
+        `(eşsiz poz=${eşsizPozCount})`,
+      )
+    } else {
+      console.warn(
+        `[PDF Parse] ⚠ Adet kontrol: header=${header.toplamAdet}, eşsiz poz=${eşsizPozCount}, ` +
+        `toplam parça=${parsedAdetSum}. Hiçbiri eşleşmedi — ` +
+        `header değeri farklı bir anlam taşıyor olabilir veya satır kaybı vardır.`,
+      )
+    }
+  }
+
+  if (header.toplamMetrekare != null) {
+    const m2Fark = header.toplamMetrekare - parsedM2
+    if (Math.abs(m2Fark) < 0.5) {
+      console.log(
+        `[PDF Parse] ✓ m² doğrulama: ${parsedM2.toFixed(3)}/${header.toplamMetrekare.toFixed(3)} eşleşti`,
+      )
+    } else {
+      console.error(
+        `[PDF Parse] ✗ M² FARKI: PDF=${header.toplamMetrekare.toFixed(3)}, ` +
+        `parse=${parsedM2.toFixed(3)}, eksik=${m2Fark.toFixed(3)} m². ` +
+        `OCR bazı satırları kaçırmış olabilir.`,
+      )
+    }
+  }
 
   return { format: 'pimapen', header, satirlar, hamMetin }
 }
@@ -514,22 +978,82 @@ export function cariEslestir(
   return enIyi
 }
 
-/** Stok eşleştirme — açıklamadan cam tipi çıkar ve stokla karşılaştır */
+/** Cam tipi anahtar kelimeleri — açıklamada veya stok adında geçen tip kelimeleri */
+const CAM_TIPI_KELIMELER = [
+  'duz', 'cift', 'sinerji', 'konfor', 'temp', 'temperli', 'buzlu', 'fume',
+  'lowe', 'lowemissivity', 'reflekte', 'ayna', 'lamine',
+] as const
+
+/** Açıklamadaki/ad'daki cam tipi anahtar kelimelerini çıkar */
+function camTipiAnahtarlar(s: string): Set<string> {
+  const n = normalize(s)
+  const out = new Set<string>()
+  for (const w of n.split(' ').filter(Boolean)) {
+    if ((CAM_TIPI_KELIMELER as readonly string[]).includes(w)) out.add(w)
+  }
+  return out
+}
+
+/**
+ * Stok eşleştirme — açıklamadan cam tipi + dış kalınlık çıkar, stokla karşılaştır.
+ *  Stok'un `kalinlik_mm` ile `dis_kalinlik_mm` eşit olması zorunlu (varsa).
+ *  Stok adındaki tip kelimeleri açıklama ile çakışmalı; "çift cam" generic
+ *  kelimesi tek başına eşleşmez (Sinerji ile karışmasın).
+ */
 export function stokEslestir(
   aciklama: string,
-  stoklar: { id: string; ad: string }[]
+  stoklar: { id: string; ad: string; kalinlik_mm?: number | null }[],
+  disKalinlikMm?: number | null,
 ): { id: string; ad: string; skor: number } | null {
   if (stoklar.length === 0) return null
+
+  const aciklamaTipler = camTipiAnahtarlar(aciklama)
+  // "cift" generic, tek başına eşleştirme için yetersiz
+  const aciklamaSpesifik = new Set([...aciklamaTipler].filter(w => w !== 'cift'))
 
   let enIyi: { id: string; ad: string; skor: number } | null = null
 
   for (const s of stoklar) {
-    const skor = benzerlikSkoru(aciklama, s.ad)
+    // Kalınlık zorunluluğu: ikisi de biliniyorsa eşit olmalı
+    if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) !== disKalinlikMm) {
+      continue
+    }
+
+    const stokTipler = camTipiAnahtarlar(s.ad)
+    const stokSpesifik = new Set([...stokTipler].filter(w => w !== 'cift'))
+
+    let skor = 0
+
+    // Spesifik tip kelimesi kesişimi en güçlü sinyal
+    let kesisim = 0
+    for (const w of stokSpesifik) if (aciklamaSpesifik.has(w)) kesisim++
+
+    if (stokSpesifik.size > 0 && kesisim > 0) {
+      skor = 0.6 + 0.4 * (kesisim / stokSpesifik.size)
+      // Kalınlık da eşleşiyorsa bonus
+      if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) === disKalinlikMm) {
+        skor = Math.min(1, skor + 0.1)
+      }
+    } else if (stokSpesifik.size === 0 && aciklamaSpesifik.size === 0) {
+      // İki taraf da generic ("Düz Cam" gibi) — Jaccard fallback
+      skor = benzerlikSkoru(aciklama, s.ad) * 0.7
+      if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) === disKalinlikMm) {
+        skor = Math.min(1, skor + 0.2)
+      }
+    } else {
+      // Bir tarafta spesifik var diğerinde yok: zayıf eşleşme; sadece kalınlık eşitse al
+      if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) === disKalinlikMm
+          && stokSpesifik.size === 0) {
+        skor = 0.5
+      }
+    }
+
     if (!enIyi || skor > enIyi.skor) {
-      enIyi = { ...s, skor }
+      enIyi = { id: s.id, ad: s.ad, skor }
     }
   }
 
+  if (!enIyi || enIyi.skor < 0.5) return null
   return enIyi
 }
 
@@ -548,6 +1072,11 @@ export function citaEslestir(
     }
   }
 
-  // Fallback: genel benzerlik
-  return stokEslestir(`${mm}mm çıta`, citaStoklar)
+  // Fallback: en yüksek Jaccard
+  let enIyi: { id: string; ad: string; skor: number } | null = null
+  for (const s of citaStoklar) {
+    const skor = benzerlikSkoru(`${mm}mm cita`, s.ad)
+    if (!enIyi || skor > enIyi.skor) enIyi = { ...s, skor }
+  }
+  return enIyi
 }

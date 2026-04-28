@@ -1,14 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2, Truck, PackageCheck } from 'lucide-react'
+import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2, Truck, PackageCheck, Plus } from 'lucide-react'
 import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
-import type { PDFParseResult } from '@/lib/pdfParser'
+import type { PDFParseResult, PDFCamSatir } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
 import type { CamFormSatiri } from '@/types/siparis'
-import { cn } from '@/lib/utils'
+import { cn, camTipiAd } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { getDocument } from 'pdfjs-dist'
-import { generateCariKod } from '@/lib/idGenerator'
-import { useAraclar, sevkiyatKaydet } from '@/hooks/useSevkiyat'
+import { generateCariKod, generateStokKod } from '@/lib/idGenerator'
 
 /* ===== PDF Sayfa Görüntüleyici ===== */
 function PDFPageViewer({
@@ -103,6 +102,31 @@ function PDFPageViewer({
   return <canvas ref={canvasRef} className="max-w-full shadow-sm rounded border border-gray-100" />
 }
 
+/** PDFCamSatir → grup anahtarı (dış kalınlık + tip metni). Aynı tipdeki satırlar
+ *  tek seçim üzerinden yönetilir. */
+function satirAnahtari(s: PDFCamSatir): string {
+  const tip = s.aciklama
+    .replace(/\d+\+\d+\+\d+/, '')
+    .replace(/\b\d{5,8}\b/, '')
+    .replace(/\*+/, '')
+    .replace(/Ø\s*\d+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return `${s.dis_kalinlik_mm ?? '?'}|${tip.toLowerCase()}`
+}
+
+/** Aynı anahtara sahip ilk satırın temsilci açıklaması — UI'da göstermek için */
+function satirGrupBilgi(s: PDFCamSatir): { aciklama: string; kalinlik: number | null; tip: string } {
+  const tip = s.aciklama
+    .replace(/\d+\+\d+\+\d+/, '')
+    .replace(/\b\d{5,8}\b/, '')
+    .replace(/\*+/, '')
+    .replace(/Ø\s*\d+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return { aciklama: s.aciklama, kalinlik: s.dis_kalinlik_mm ?? null, tip }
+}
+
 interface Props {
   cariler: { id: string; ad: string; kod: string }[]
   stoklar: Stok[]
@@ -112,14 +136,17 @@ interface Props {
     teslim_tarihi?: string
     alt_musteri?: string
     notlar?: string
+    teslimat_tipi?: string
+    kaynak?: 'pdf' | 'manuel'
     camlar: CamFormSatiri[]
   }) => Promise<{ id: string; siparis_no: string; teslim_tarihi: string | null }>
+  onStokYenile?: () => Promise<void> | void
   onKapat: () => void
 }
 
 type Adim = 'yukleme' | 'eslestirme' | 'onizleme' | 'sevkiyat'
 
-export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }: Props) {
+export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYenile, onKapat }: Props) {
   const [adim, setAdim] = useState<Adim>('yukleme')
   const [yukleniyor, setYukleniyor] = useState(false)
   const [yuklemeDurum, setYuklemeDurum] = useState('')
@@ -131,17 +158,25 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
   // Eşleştirme
   const [secilenCariId, setSecilenCariId] = useState<string>('')
   const [cariSkor, setCariSkor] = useState<number>(0)
-  const [secilenStokId, setSecilenStokId] = useState<string>('')
-  const [stokSkor, setStokSkor] = useState<number>(0)
+  /** Her unique cam tipi-kalınlık kombinasyonu için stok seçimleri.
+   *  Anahtar: "{disKalinlik}|{normalizeCamTipi(aciklama)}" */
+  const [satirStokSecimler, setSatirStokSecimler] = useState<Record<string, { stokId: string; skor: number }>>({})
   const [mukerrer, setMukerrer] = useState(false)
 
   // Yerel cari listesi (prop + modal içinde yeni eklenenler)
   const [localCariler, setLocalCariler] = useState<{ id: string; ad: string; kod: string }[]>(() => cariler)
+  // Yerel stok listesi (eklenenler dahil)
+  const [localStoklar, setLocalStoklar] = useState<Stok[]>(() => stoklar)
+  useEffect(() => { setLocalStoklar(stoklar) }, [stoklar])
 
   // Yeni cari ekleme (inline form)
   const [yeniCariGoster, setYeniCariGoster] = useState(false)
   const [yeniCariAd, setYeniCariAd] = useState('')
   const [yeniCariKaydediliyor, setYeniCariKaydediliyor] = useState(false)
+
+  // Yeni stok ekleme modal state
+  const [yeniStokModal, setYeniStokModal] = useState<null | { gKey: string; ad: string; kalinlik: number | '' }>(null)
+  const [yeniStokKaydediliyor, setYeniStokKaydediliyor] = useState(false)
 
   // Çıta eşleştirme: mm → stok_id
   const [citaSecimler, setCitaSecimler] = useState<Record<number, string>>({})
@@ -149,14 +184,11 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
   // Import
   const [iceAktariliyor, setIceAktariliyor] = useState(false)
 
-  // Adım 4: Sevkiyat state
+  // Adım 4: Sevkiyat state — sadece teslimat tipi (araç yok)
   const [savedSiparis, setSavedSiparis] = useState<{ id: string; siparis_no: string } | null>(null)
   const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat'>('teslim_alacak')
-  const [aracId, setAracId] = useState('')
-  const [sevkiyatTarih, setSevkiyatTarih] = useState('')
-  const [sevkiyatNot, setSevkiyatNot] = useState('')
+  const [sevkiyatTeslimTarihi, setSevkiyatTeslimTarihi] = useState('')
   const [sevkiyatKaydediliyor, setSevkiyatKaydediliyor] = useState(false)
-  const { araclar, yukleniyor: araclarYukleniyor } = useAraclar()
 
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -223,15 +255,18 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         }
       }
 
-      // Stok eşleştirme — sadece cam kategorisi
-      const camStoklar = stoklar.filter((s) => s.kategori === 'cam')
-      if (result.satirlar.length > 0) {
-        const stokMatch = stokEslestir(result.satirlar[0].aciklama, camStoklar)
-        if (stokMatch) {
-          setSecilenStokId(stokMatch.id)
-          setStokSkor(stokMatch.skor)
-        }
+      // Stok eşleştirme — her unique (kalınlık + tip) kombinasyonu için ayrı eşleştirme
+      const camStoklar = localStoklar.filter((s) => s.kategori === 'cam')
+      const yeniStokSecimler: Record<string, { stokId: string; skor: number }> = {}
+      for (const satir of result.satirlar) {
+        const key = satirAnahtari(satir)
+        if (yeniStokSecimler[key]) continue
+        const stokMatch = stokEslestir(satir.aciklama, camStoklar, satir.dis_kalinlik_mm)
+        yeniStokSecimler[key] = stokMatch
+          ? { stokId: stokMatch.id, skor: stokMatch.skor }
+          : { stokId: '', skor: 0 }
       }
+      setSatirStokSecimler(yeniStokSecimler)
 
       // Çıta eşleştirme — her unique ara_bosluk_mm için çıta stok bul
       const citaStoklar = stoklar.filter((s) => s.kategori === 'cita')
@@ -302,17 +337,26 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         ? header.sevkTarihi.split('.').reverse().join('-')
         : undefined
 
-      const camlar: CamFormSatiri[] = parseResult.satirlar.map((s) => ({
-        stok_id: secilenStokId || '',
-        genislik_mm: s.genislik_mm,
-        yukseklik_mm: s.yukseklik_mm,
-        adet: s.adet,
-        ara_bosluk_mm: s.ara_bosluk_mm ?? '',
-        cita_stok_id: s.ara_bosluk_mm != null ? (citaSecimler[s.ara_bosluk_mm] || undefined) : undefined,
-        kenar_islemi: '',
-        poz: s.pozNo || '',
-        notlar: '',
-      }))
+      const camlar: CamFormSatiri[] = parseResult.satirlar.map((s) => {
+        const notParcalari: string[] = []
+        if (s.menfez_cap_mm != null) notParcalari.push(`Menfez Ø${s.menfez_cap_mm}`)
+        if (s.kucuk_cam) notParcalari.push('%20<')
+        const stokId = satirStokSecimler[satirAnahtari(s)]?.stokId ?? ''
+        return {
+          stok_id: stokId,
+          genislik_mm: s.genislik_mm,
+          yukseklik_mm: s.yukseklik_mm,
+          adet: s.adet,
+          ara_bosluk_mm: s.ara_bosluk_mm ?? '',
+          cita_stok_id: s.ara_bosluk_mm != null ? (citaSecimler[s.ara_bosluk_mm] || undefined) : undefined,
+          kenar_islemi: '',
+          poz: s.pozNo || '',
+          notlar: notParcalari.join(', '),
+          dis_kalinlik_mm: s.dis_kalinlik_mm ?? undefined,
+          menfez_cap_mm: s.menfez_cap_mm ?? undefined,
+          kucuk_cam: s.kucuk_cam,
+        }
+      })
 
       const result = await onIceAktar({
         cari_id: secilenCariId,
@@ -320,9 +364,12 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
         teslim_tarihi: teslimTarihi,
         alt_musteri: header.cariUnvan || undefined,
         notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Tedarikçi: ${header.tedarikciUnvan}`,
+        teslimat_tipi: 'teslim_alacak',
+        kaynak: 'pdf',
         camlar,
       })
       setSavedSiparis({ id: result.id, siparis_no: result.siparis_no })
+      setSevkiyatTeslimTarihi(result.teslim_tarihi ?? teslimTarihi ?? '')
       setAdim('sevkiyat')
     } catch (err: any) {
       setHata(`İçe aktarma başarısız: ${err.message ?? 'Bilinmeyen hata'}`)
@@ -333,19 +380,61 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
 
   /* ===== Adım 4: Sevkiyat ===== */
   const handleSevkiyatTamamla = async () => {
-    if (teslimatTipi === 'sevkiyat' && savedSiparis) {
-      if (!aracId || !sevkiyatTarih) return
-      setSevkiyatKaydediliyor(true)
-      try {
-        await sevkiyatKaydet(savedSiparis.id, aracId, sevkiyatTarih, sevkiyatNot || undefined)
-      } catch (e: unknown) {
-        setHata(e instanceof Error ? e.message : 'Sevkiyat kaydedilemedi')
-        setSevkiyatKaydediliyor(false)
-        return
-      }
-      setSevkiyatKaydediliyor(false)
+    if (!savedSiparis) {
+      onKapat()
+      return
     }
+    if (teslimatTipi === 'sevkiyat' && !sevkiyatTeslimTarihi) {
+      setHata('Sevkiyat seçildi ancak teslim tarihi girilmedi.')
+      return
+    }
+    setSevkiyatKaydediliyor(true)
+    try {
+      const update: Record<string, unknown> = { teslimat_tipi: teslimatTipi }
+      if (teslimatTipi === 'sevkiyat' && sevkiyatTeslimTarihi) {
+        update.teslim_tarihi = sevkiyatTeslimTarihi
+      }
+      const { error } = await supabase.from('siparisler').update(update).eq('id', savedSiparis.id)
+      if (error) throw new Error(error.message)
+    } catch (e: unknown) {
+      setHata(e instanceof Error ? e.message : 'Teslimat tipi kaydedilemedi')
+      setSevkiyatKaydediliyor(false)
+      return
+    }
+    setSevkiyatKaydediliyor(false)
     onKapat()
+  }
+
+  /* ===== Yeni Stok Oluştur ===== */
+  const handleStokOlustur = async () => {
+    if (!yeniStokModal) return
+    const { gKey, ad, kalinlik } = yeniStokModal
+    if (!ad.trim() || kalinlik === '' || !kalinlik) return
+    setYeniStokKaydediliyor(true)
+    try {
+      const kod = await generateStokKod()
+      const { data, error } = await supabase
+        .from('stok')
+        .insert({
+          kod,
+          ad: ad.trim(),
+          kalinlik_mm: Number(kalinlik),
+          kategori: 'cam',
+          birim: 'm2',
+        })
+        .select()
+        .single()
+      if (error) throw new Error(error.message)
+      const yeniStok = data as Stok
+      setLocalStoklar((prev) => [yeniStok, ...prev])
+      setSatirStokSecimler((prev) => ({ ...prev, [gKey]: { stokId: yeniStok.id, skor: 1 } }))
+      setYeniStokModal(null)
+      await onStokYenile?.()
+    } catch (err: any) {
+      setHata(`Stok eklenemedi: ${err.message ?? 'Bilinmeyen hata'}`)
+    } finally {
+      setYeniStokKaydediliyor(false)
+    }
   }
 
   /* ===== RENDER ===== */
@@ -599,40 +688,94 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                 )}
               </div>
 
-              {/* Stok Eşleştirme — sadece cam */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Cam Tipi (Stok) Eşleştirme
-                  {stokSkor >= 0.8 && (
-                    <span className="ml-2 text-xs text-green-600 font-normal inline-flex items-center gap-1">
-                      <CheckCircle2 size={12} /> Otomatik eşleştirildi
-                    </span>
-                  )}
-                  {stokSkor > 0 && stokSkor < 0.8 && (
-                    <span className="ml-2 text-xs text-yellow-600 font-normal">— eşleşme düşük, kontrol edin</span>
-                  )}
-                </label>
-                <div className="text-xs text-gray-400 mb-1.5">
-                  PDF'deki açıklama: <span className="font-mono text-gray-600">{parseResult.satirlar[0]?.aciklama ?? '—'}</span>
-                </div>
-                <select
-                  value={secilenStokId}
-                  onChange={(e) => { setSecilenStokId(e.target.value); setStokSkor(0) }}
-                  className={cn(
-                    'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
-                    stokSkor >= 0.8
-                      ? 'border-green-400 bg-green-50 focus:ring-green-400'
-                      : stokSkor > 0
-                      ? 'border-yellow-400 bg-yellow-50 focus:ring-yellow-400'
-                      : 'border-gray-200 focus:ring-blue-500'
-                  )}
-                >
-                  <option value="">— Cam Stok Seçin (opsiyonel) —</option>
-                  {stoklar.filter((s) => s.kategori === 'cam').map((s) => (
-                    <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Stok Eşleştirme — her unique cam tipi-kalınlık kombinasyonu */}
+              {(() => {
+                const camStoklar = localStoklar.filter((s) => s.kategori === 'cam')
+                // Unique satır anahtarları
+                const gosterilenKeyler = new Set<string>()
+                const gruplar: { key: string; bilgi: ReturnType<typeof satirGrupBilgi>; satirSayisi: number }[] = []
+                for (const s of parseResult.satirlar) {
+                  const k = satirAnahtari(s)
+                  if (gosterilenKeyler.has(k)) continue
+                  gosterilenKeyler.add(k)
+                  const adetSatir = parseResult.satirlar.filter((x) => satirAnahtari(x) === k).length
+                  gruplar.push({ key: k, bilgi: satirGrupBilgi(s), satirSayisi: adetSatir })
+                }
+
+                return (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Cam Tipi (Stok) Eşleştirme
+                      <span className="ml-2 text-xs text-gray-400 font-normal">
+                        {gruplar.length} farklı cam tipi tespit edildi
+                      </span>
+                    </label>
+                    <div className="space-y-2">
+                      {gruplar.map((g) => {
+                        const secim = satirStokSecimler[g.key]
+                        const eslesti = secim?.stokId && secim.skor >= 0.6
+                        return (
+                          <div key={g.key} className="flex items-start gap-3 p-2 rounded-lg border border-gray-100 bg-gray-50/50">
+                            <div className="shrink-0 w-32">
+                              <div className="text-xs font-mono font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                                {g.bilgi.kalinlik ? `${g.bilgi.kalinlik}mm` : '—'}
+                              </div>
+                              <div className="mt-1 text-xs text-gray-600 truncate" title={g.bilgi.tip}>
+                                {g.bilgi.tip || '—'}
+                              </div>
+                              <div className="mt-0.5 text-[10px] text-gray-400">{g.satirSayisi} satır</div>
+                            </div>
+                            <div className="flex-1">
+                              <select
+                                value={secim?.stokId ?? ''}
+                                onChange={(e) =>
+                                  setSatirStokSecimler((prev) => ({
+                                    ...prev,
+                                    [g.key]: { stokId: e.target.value, skor: e.target.value ? 1 : 0 },
+                                  }))
+                                }
+                                className={cn(
+                                  'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
+                                  eslesti
+                                    ? 'border-green-400 bg-green-50 focus:ring-green-400'
+                                    : secim?.stokId
+                                      ? 'border-yellow-400 bg-yellow-50 focus:ring-yellow-400'
+                                      : 'border-red-200 bg-red-50/30 focus:ring-blue-500'
+                                )}
+                              >
+                                <option value="">— Stok seçin —</option>
+                                {camStoklar.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.kod} — {s.kalinlik_mm ? `${s.kalinlik_mm}mm ` : ''}{camTipiAd(s.ad)}
+                                  </option>
+                                ))}
+                              </select>
+                              {!secim?.stokId && (
+                                <div className="mt-1.5 flex items-center gap-2">
+                                  <span className="text-xs text-red-600">Bu cam için sistemde stok bulunamadı.</span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setYeniStokModal({
+                                        gKey: g.key,
+                                        ad: g.bilgi.tip,
+                                        kalinlik: g.bilgi.kalinlik ?? '',
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                                  >
+                                    <Plus size={12} /> Yeni Stok Aç
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Çıta Eşleştirme — her unique mm için */}
               {(() => {
@@ -696,8 +839,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                   İçe aktarılacak {parseResult.satirlar.reduce((s, r) => s + r.adet, 0)} adet cam ({parseResult.satirlar.length} satır)
                 </h3>
                 <span className="text-xs text-gray-400">
-                  Cari: {cariler.find(c => c.id === secilenCariId)?.ad ?? '—'} ·
-                  Stok: {stoklar.find(s => s.id === secilenStokId)?.ad ?? 'Belirtilmemiş'}
+                  Cari: {cariler.find(c => c.id === secilenCariId)?.ad ?? '—'}
                 </span>
               </div>
               <div className="border border-gray-200 rounded-xl overflow-hidden flex-1 flex flex-col min-h-0">
@@ -706,38 +848,39 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
                         <th className="px-3 py-2">#</th>
+                        <th className="px-3 py-2">Açıklama</th>
                         <th className="px-3 py-2">Genişlik</th>
                         <th className="px-3 py-2">Yükseklik</th>
                         <th className="px-3 py-2">Adet</th>
                         <th className="px-3 py-2">M²</th>
-                        <th className="px-3 py-2">Çıta (mm)</th>
-                        <th className="px-3 py-2">Çıta Stok</th>
                         <th className="px-3 py-2">Poz No</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {parseResult.satirlar.map((s, i) => (
-                        <tr key={i} className="border-b border-gray-50 last:border-0">
-                          <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
-                          <td className="px-3 py-2 font-mono text-gray-800">{s.genislik_mm}</td>
-                          <td className="px-3 py-2 font-mono text-gray-800">{s.yukseklik_mm}</td>
-                          <td className="px-3 py-2 text-gray-700">{s.adet}</td>
-                          <td className="px-3 py-2 font-mono text-xs text-blue-700">
-                            {(s.genislik_mm * s.yukseklik_mm * s.adet / 1_000_000).toFixed(3)}
-                          </td>
-                          <td className="px-3 py-2">
-                            {s.ara_bosluk_mm ? (
-                              <span className="text-cyan-700 font-medium">{s.ara_bosluk_mm}</span>
-                            ) : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-gray-600">
-                            {s.ara_bosluk_mm && citaSecimler[s.ara_bosluk_mm]
-                              ? (() => { const ad = stoklar.find((st) => st.id === citaSecimler[s.ara_bosluk_mm!])?.ad ?? '—'; return ad.match(/\d+\s*mm/i)?.[0] ?? ad })() 
-                              : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-gray-500 text-xs">{s.pozNo || '—'}</td>
-                        </tr>
-                      ))}
+                      {parseResult.satirlar.map((s, i) => {
+                        const stokSec = satirStokSecimler[satirAnahtari(s)]
+                        const stok = stokSec?.stokId ? localStoklar.find((x) => x.id === stokSec.stokId) : null
+                        return (
+                          <tr key={i} className="border-b border-gray-50 last:border-0">
+                            <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
+                            <td className="px-3 py-2 text-gray-700 text-xs">
+                              {s.dis_kalinlik_mm != null && s.ara_bosluk_mm != null && (
+                                <span className="font-mono text-gray-500 mr-1">
+                                  {s.dis_kalinlik_mm}+{s.ara_bosluk_mm}+{s.dis_kalinlik_mm}
+                                </span>
+                              )}
+                              {stok ? camTipiAd(stok.ad) : <span className="text-red-500">⚠ stok yok</span>}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-gray-800">{s.genislik_mm}</td>
+                            <td className="px-3 py-2 font-mono text-gray-800">{s.yukseklik_mm}</td>
+                            <td className="px-3 py-2 text-gray-700">{s.adet}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-blue-700">
+                              {(s.genislik_mm * s.yukseklik_mm * s.adet / 1_000_000).toFixed(3)}
+                            </td>
+                            <td className="px-3 py-2 text-gray-500 text-xs">{s.pozNo || '—'}</td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -932,51 +1075,33 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
               </div>
 
               {teslimatTipi === 'sevkiyat' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Araç *</label>
-                    {araclarYukleniyor ? (
-                      <div className="h-9 bg-gray-100 rounded-lg animate-pulse" />
-                    ) : (
-                      <select
-                        value={aracId}
-                        onChange={e => setAracId(e.target.value)}
-                        className={cn(
-                          'w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
-                          !aracId ? 'border-red-300' : 'border-gray-200'
-                        )}
-                      >
-                        <option value="">Araç seçin…</option>
-                        {araclar.map(a => (
-                          <option key={a.id} value={a.id}>{a.ad} — {a.plaka}</option>
-                        ))}
-                      </select>
+                <div className={cn(
+                  'rounded-xl border-2 p-4 transition-all',
+                  !sevkiyatTeslimTarihi ? 'border-orange-300 bg-orange-50' : 'border-green-200 bg-green-50'
+                )}>
+                  {!sevkiyatTeslimTarihi && (
+                    <div className="flex items-center gap-2 text-orange-700 mb-3">
+                      <AlertTriangle size={15} className="shrink-0" />
+                      <span className="text-sm font-medium">Sevkiyat için teslim tarihi gereklidir</span>
+                    </div>
+                  )}
+                  <label className={cn(
+                    'block text-xs font-medium mb-1',
+                    !sevkiyatTeslimTarihi ? 'text-orange-700' : 'text-green-700'
+                  )}>
+                    Teslim Tarihi *
+                  </label>
+                  <input
+                    type="date"
+                    value={sevkiyatTeslimTarihi}
+                    onChange={(e) => setSevkiyatTeslimTarihi(e.target.value)}
+                    className={cn(
+                      'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2',
+                      !sevkiyatTeslimTarihi
+                        ? 'border-orange-300 focus:ring-orange-400'
+                        : 'border-green-300 focus:ring-green-400'
                     )}
-                    {!aracId && <p className="mt-1 text-xs text-red-500">Araç seçiniz</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Sevkiyat Tarihi *</label>
-                    <input
-                      type="date"
-                      value={sevkiyatTarih}
-                      onChange={e => setSevkiyatTarih(e.target.value)}
-                      className={cn(
-                        'w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
-                        !sevkiyatTarih ? 'border-red-300' : 'border-gray-200'
-                      )}
-                    />
-                    {!sevkiyatTarih && <p className="mt-1 text-xs text-red-500">Tarih giriniz</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Not (isteğe bağlı)</label>
-                    <input
-                      type="text"
-                      value={sevkiyatNot}
-                      onChange={e => setSevkiyatNot(e.target.value)}
-                      placeholder="Sevkiyat notu…"
-                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                  />
                 </div>
               )}
             </div>
@@ -1020,7 +1145,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
             {adim === 'sevkiyat' && (
               <button
                 onClick={handleSevkiyatTamamla}
-                disabled={sevkiyatKaydediliyor || (teslimatTipi === 'sevkiyat' && (!aracId || !sevkiyatTarih))}
+                disabled={sevkiyatKaydediliyor || (teslimatTipi === 'sevkiyat' && !sevkiyatTeslimTarihi)}
                 className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 {sevkiyatKaydediliyor ? 'Kaydediliyor...' : 'Tamamla'}
@@ -1029,6 +1154,67 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onKapat }
           </div>
         </div>
       </div>
+
+      {/* Yeni Stok Modal */}
+      {yeniStokModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-gray-800">Yeni Cam Stoğu Ekle</h3>
+              <button
+                onClick={() => setYeniStokModal(null)}
+                className="p-1 rounded text-gray-400 hover:bg-gray-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Cam Tipi *</label>
+                <input
+                  type="text"
+                  value={yeniStokModal.ad}
+                  onChange={(e) => setYeniStokModal((prev) => prev ? { ...prev, ad: e.target.value } : null)}
+                  placeholder="örn. Düz Cam, Konfor Cam"
+                  autoFocus
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Kalınlık (mm) *</label>
+                <select
+                  value={yeniStokModal.kalinlik === '' ? '' : String(yeniStokModal.kalinlik)}
+                  onChange={(e) => setYeniStokModal((prev) => prev ? { ...prev, kalinlik: e.target.value ? Number(e.target.value) : '' } : null)}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Seçiniz...</option>
+                  {[3, 4, 5, 6, 8, 10, 12].map((k) => (
+                    <option key={k} value={k}>{k}mm</option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-xs text-gray-400">
+                Stok kodu otomatik atanacak. Kategori: Cam.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                onClick={() => setYeniStokModal(null)}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleStokOlustur}
+                disabled={yeniStokKaydediliyor || !yeniStokModal.ad.trim() || !yeniStokModal.kalinlik}
+                className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {yeniStokKaydediliyor ? 'Kaydediliyor...' : 'Stok Aç'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

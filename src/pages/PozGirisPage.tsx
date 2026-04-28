@@ -11,6 +11,7 @@ import TamireGonderModal from '@/components/tamir/TamireGonderModal'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { dplUret } from '@/types/ayarlar'
 import type { EtiketVeri } from '@/types/ayarlar'
+import { camTipiAd } from '@/lib/utils'
 
 /* ========== Tipler ========== */
 
@@ -33,6 +34,7 @@ interface BatchCam {
   adet: number
   taranan_adet: number  // kaç adet yıkamadan geçti (yikama_loglari'dan)
   ara_bosluk_mm: number | null
+  dis_kalinlik_mm: number | null
   uretim_durumu: string
   stok_ad: string
   musteri: string
@@ -192,8 +194,8 @@ export default function PozGirisPage() {
       .select(`
         id, siparis_detay_id, sira_no,
         siparis_detaylari (
-          siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, uretim_durumu,
-          stok!stok_id ( ad ),
+          siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, dis_kalinlik_mm, uretim_durumu,
+          stok!stok_id ( ad, kalinlik_mm ),
           siparisler ( siparis_no, notlar, cari ( ad ) )
         )
       `)
@@ -210,6 +212,7 @@ export default function PozGirisPage() {
       adet: d.siparis_detaylari.adet ?? 1,
       taranan_adet: 0,  // aşağıda yikama_loglari ile doldurulacak
       ara_bosluk_mm: d.siparis_detaylari.ara_bosluk_mm,
+      dis_kalinlik_mm: d.siparis_detaylari.dis_kalinlik_mm ?? d.siparis_detaylari.stok?.kalinlik_mm ?? null,
       sira_no: d.sira_no ?? null,
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
@@ -405,6 +408,10 @@ export default function PozGirisPage() {
     if (etiketAyarlari.yazici.kopru_adresi && etiketAyarlari.yazdirma_kosulu === 'otomatik') {
       const veri: EtiketVeri = {
         cam_kodu: cam.cam_kodu,
+        cam_tipi: [
+          cam.ara_bosluk_mm != null ? `${cam.dis_kalinlik_mm ?? 4}+${cam.ara_bosluk_mm}+${cam.dis_kalinlik_mm ?? 4}` : null,
+          camTipiAd(cam.stok_ad) || null,
+        ].filter(Boolean).join(' '),
         musteri: musteriEtiket(cam.musteri, cam.nihai_musteri),
         genislik_mm: cam.genislik_mm,
         yukseklik_mm: cam.yukseklik_mm,

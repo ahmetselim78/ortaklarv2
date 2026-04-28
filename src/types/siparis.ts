@@ -16,6 +16,7 @@ export interface Siparis {
   sevkiyat_planlari?: { id: string; tarih: string }[]
   teslimat_tipi?: string
   tamamlandi_tarihi?: string | null
+  kaynak?: 'pdf' | 'manuel'
 }
 
 export interface SiparisDetay {
@@ -31,9 +32,12 @@ export interface SiparisDetay {
   kenar_islemi: string | null
   notlar: string | null
   poz: string | null
+  dis_kalinlik_mm?: number | null
+  menfez_cap_mm?: number | null
+  kucuk_cam?: boolean
   uretim_durumu: UretimDurumu
   created_at: string
-  stok?: { ad: string } | null
+  stok?: { ad: string; kalinlik_mm?: number | null } | null
   cita_stok?: { ad: string } | null
 }
 
@@ -47,4 +51,7 @@ export interface CamFormSatiri {
   kenar_islemi?: string
   notlar?: string
   poz?: string
+  dis_kalinlik_mm?: number | string
+  menfez_cap_mm?: number | string
+  kucuk_cam?: boolean
 }

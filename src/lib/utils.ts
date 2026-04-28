@@ -10,3 +10,14 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('tr-TR')
 }
+
+/**
+ * Stok adından cam tipi kısmını döndürür.
+ * "4mm Düz Cam" → "Düz Cam"
+ * "Sinerji Cam" → "Sinerji Cam"
+ * Kalınlık prefix'i (örn. "4mm ", "6 mm ") başta varsa atılır.
+ */
+export function camTipiAd(stokAd: string | null | undefined): string {
+  if (!stokAd) return ''
+  return stokAd.replace(/^\s*\d+\s*mm\s*/i, '').trim()
+}

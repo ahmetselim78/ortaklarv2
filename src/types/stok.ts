@@ -18,4 +18,4 @@ export interface Stok {
   tedarikci_ad?: string
 }
 
-export type YeniStok = Omit<Stok, 'id' | 'created_at' | 'tedarikci_ad'>
+export type YeniStok = Omit<Stok, 'id' | 'created_at' | 'tedarikci_ad' | 'mevcut_miktar' | 'marka'>

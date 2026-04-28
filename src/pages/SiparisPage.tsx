@@ -31,7 +31,7 @@ const DURUM_FILTRELER: { deger: DurumFiltre; etiket: string }[] = [
 export default function SiparisPage() {
   const { siparisler, yukleniyor, hata, ekle, guncelle, durumGuncelle, sil, yenile } = useSiparis()
   const { cariler } = useCari()
-  const { stoklar } = useStok()
+  const { stoklar, yenile: yenileStok } = useStok()
   const location = useLocation()
 
   const [formAcik, setFormAcik] = useState(false)
@@ -268,6 +268,7 @@ export default function SiparisPage() {
           stoklar={stoklar}
           cariler={cariler}
           onGuncelle={guncelle}
+          onStokYenile={yenileStok}
           onKapat={() => { setGorunenSiparis(null); yenile() }}
         />
       )}
@@ -282,6 +283,7 @@ export default function SiparisPage() {
             yenile()
             return result
           }}
+          onStokYenile={yenileStok}
           onKapat={() => { setPdfModalAcik(false); yenile() }}
         />
       )}

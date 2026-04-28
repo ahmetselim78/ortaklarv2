@@ -6,6 +6,7 @@ import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, Pa
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { cn } from '@/lib/utils'
+import { camTipiAd } from '@/lib/utils'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
@@ -196,6 +197,21 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
 
   const camStoklar = stoklar.filter(s => s.kategori === 'cam')
 
+  // Kalınlık + Cam Tipi ayrı seçim için yardımcılar
+  const benzersizKalinliklar = [...new Set(
+    camStoklar.map(s => s.kalinlik_mm).filter((k): k is number => k != null)
+  )].sort((a, b) => a - b)
+  const benzersizTipler = [...new Set(
+    camStoklar.map(s => camTipiAd(s.ad)).filter(Boolean)
+  )]
+  const stokFromKalinlikTip = (kalinlik: number | null, tip: string | null): Stok | undefined => {
+    return camStoklar.find(s =>
+      (kalinlik == null || Number(s.kalinlik_mm) === kalinlik) &&
+      (tip == null || camTipiAd(s.ad) === tip)
+    )
+  }
+  const stokById = (id: string | undefined) => camStoklar.find(s => s.id === id)
+
   const ADIMLAR = [
     { no: 1, etiket: 'Müşteri Bilgileri' },
     { no: 2, etiket: 'Cam Listesi' },
@@ -327,15 +343,8 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
                           <th className="px-2 py-2 text-center text-gray-300 w-7">#</th>
-                          <th className="px-2 py-2">
-                            <span className="flex items-center gap-1 group relative cursor-default">
-                              Poz
-                              <span className="w-3.5 h-3.5 rounded-full bg-gray-200 text-gray-500 text-[9px] font-bold flex items-center justify-center leading-none">?</span>
-                              <span className="absolute left-0 top-5 z-20 hidden group-hover:block w-52 bg-gray-800 text-white text-[10px] rounded-lg px-2.5 py-1.5 shadow-lg leading-relaxed">
-                                Pozisyon numarası. Tüm ölçüler girildikten sonra toplu girilmesi tavsiye edilir.
-                              </span>
-                            </span>
-                          </th>
+                          <th className="px-2 py-2">Poz</th>
+                          <th className="px-2 py-2">Kalınlık *</th>
                           <th className="px-2 py-2">Cam Cinsi *</th>
                           <th className="px-2 py-2">Gen. (mm)</th>
                           <th className="px-2 py-2">Yük. (mm)</th>
@@ -365,18 +374,57 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
                               />
                             </td>
                             <td className="px-1.5 py-1.5">
-                              <select
-                                {...register(`camlar.${index}.stok_id`)}
-                                className={cn(
-                                  'w-36 rounded border px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
-                                  errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
-                                )}
-                              >
-                                <option value="">Seçiniz...</option>
-                                {camStoklar.map(s => (
-                                  <option key={s.id} value={s.id}>{s.ad}</option>
-                                ))}
-                              </select>
+                              {(() => {
+                                const cur = stokById(watchedCamlar?.[index]?.stok_id)
+                                const curK = cur?.kalinlik_mm ?? ''
+                                return (
+                                  <select
+                                    value={curK === '' ? '' : String(curK)}
+                                    onChange={(e) => {
+                                      const k = e.target.value ? Number(e.target.value) : null
+                                      const tip = cur ? camTipiAd(cur.ad) : null
+                                      const yeni = stokFromKalinlikTip(k, tip) ?? (k != null ? stokFromKalinlikTip(k, null) : undefined)
+                                      setValue(`camlar.${index}.stok_id`, yeni?.id ?? '')
+                                    }}
+                                    className={cn(
+                                      'w-16 rounded border px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                      errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
+                                    )}
+                                  >
+                                    <option value="">—</option>
+                                    {benzersizKalinliklar.map(k => (
+                                      <option key={k} value={k}>{k}mm</option>
+                                    ))}
+                                  </select>
+                                )
+                              })()}
+                            </td>
+                            <td className="px-1.5 py-1.5">
+                              {(() => {
+                                const cur = stokById(watchedCamlar?.[index]?.stok_id)
+                                const curTip = cur ? camTipiAd(cur.ad) : ''
+                                return (
+                                  <select
+                                    value={curTip}
+                                    onChange={(e) => {
+                                      const tip = e.target.value || null
+                                      const k = cur?.kalinlik_mm ?? null
+                                      const yeni = stokFromKalinlikTip(k, tip) ?? (tip != null ? stokFromKalinlikTip(null, tip) : undefined)
+                                      setValue(`camlar.${index}.stok_id`, yeni?.id ?? '')
+                                    }}
+                                    className={cn(
+                                      'w-32 rounded border px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                      errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
+                                    )}
+                                  >
+                                    <option value="">Seçiniz...</option>
+                                    {benzersizTipler.map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                )
+                              })()}
+                              <input type="hidden" {...register(`camlar.${index}.stok_id`)} />
                             </td>
                             <td className="px-1.5 py-1.5">
                               <input

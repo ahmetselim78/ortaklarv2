@@ -20,14 +20,28 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { document_base64 } = await req.json()
+    const { document_base64, image_base64 } = await req.json()
 
-    if (!document_base64 || typeof document_base64 !== 'string') {
+    if (
+      (!document_base64 || typeof document_base64 !== 'string') &&
+      (!image_base64 || typeof image_base64 !== 'string')
+    ) {
       return new Response(
-        JSON.stringify({ error: 'document_base64 alanı gereklidir' }),
+        JSON.stringify({ error: 'document_base64 veya image_base64 alanı gereklidir' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
+
+    // Image OCR (sayfa-sayfa) → image_url ; aksi halde PDF → document_url
+    const documentPayload = image_base64
+      ? {
+          type: 'image_url',
+          image_url: `data:image/png;base64,${image_base64}`,
+        }
+      : {
+          type: 'document_url',
+          document_url: `data:application/pdf;base64,${document_base64}`,
+        }
 
     const res = await fetch('https://api.mistral.ai/v1/ocr', {
       method: 'POST',
@@ -37,10 +51,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'mistral-ocr-latest',
-        document: {
-          type: 'document_url',
-          document_url: `data:application/pdf;base64,${document_base64}`,
-        },
+        document: documentPayload,
       }),
     })
 

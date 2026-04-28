@@ -2,6 +2,7 @@
 export interface EtiketIcerik {
   barkod: boolean         // Cam kodu barkodu (Code 128)
   cam_kodu: boolean       // Cam kodu metni (GLS-XXXX)
+  cam_tipi: boolean       // Cam tipi (örn. "4+16+4 Temp Isıcam")
   musteri_adi: boolean    // Müşteri / nihai müşteri adı
   boyut: boolean          // Genişlik x Yükseklik (mm)
   sira_no: boolean        // Batch sıra numarası
@@ -56,6 +57,7 @@ export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
   icerik: {
     barkod: true,
     cam_kodu: true,
+    cam_tipi: true,
     musteri_adi: true,
     boyut: true,
     sira_no: true,
@@ -71,6 +73,7 @@ export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
 /** Etiket üzerindeki örnek veri (önizleme için) */
 export interface EtiketVeri {
   cam_kodu: string
+  cam_tipi: string
   musteri: string
   genislik_mm: number
   yukseklik_mm: number
@@ -130,6 +133,12 @@ export function dplUret(ayarlar: EtiketAyarlari, veri: EtiketVeri): string {
     satir += 40
   }
 
+  // Cam tipi — font=1, hmult=1, wmult=1
+  if (ic.cam_tipi && veri.cam_tipi) {
+    satirlar.push(`1A111${r(satir)}${r(col)}${ascii(veri.cam_tipi)}\r\n`)
+    satir += 30
+  }
+
   // Boyut — font=1, hmult=1, wmult=1
   if (ic.boyut) {
     satirlar.push(`1A111${r(satir)}${r(col)}${veri.genislik_mm}x${veri.yukseklik_mm}mm\r\n`)
@@ -160,7 +169,7 @@ export function dplUret(ayarlar: EtiketAyarlari, veri: EtiketVeri): string {
     satirlar.push(`1A111${r(satir)}${r(col)}${tarih}\r\n`)
   }
 
-  return `\x02L\r\nD15\r\n${satirlar.join('')}E\r\n`
+  return `\x02H15\r\n\x02L\r\nD11\r\n${satirlar.join('')}E\r\n`
 }
 
 /** Değişkenleri DPL şablonuna yerleştirir ({cam_kodu}, {musteri} vb.) */
@@ -168,6 +177,7 @@ export function dplSablonuUygula(sablon: string, veri: EtiketVeri): string {
   const bugun = new Date().toLocaleDateString('tr-TR')
   const icerik = sablon
     .replace(/\{cam_kodu\}/g, veri.cam_kodu)
+    .replace(/\{cam_tipi\}/g, ascii(veri.cam_tipi))
     .replace(/\{musteri\}/g, ascii(veri.musteri))
     .replace(/\{genislik_mm\}/g, String(veri.genislik_mm))
     .replace(/\{yukseklik_mm\}/g, String(veri.yukseklik_mm))

@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
-import { X, Pencil, Wrench, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { X, Pencil, Wrench, Plus, Trash2, Replace } from 'lucide-react'
 import type { Siparis, SiparisDetay, SiparisDurum, UretimDurumu } from '@/types/siparis'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { getSiparisDetaylari } from '@/hooks/useSiparis'
 import { supabase } from '@/lib/supabase'
-import { generateCamKodulari } from '@/lib/idGenerator'
-import { cn, formatDate } from '@/lib/utils'
+import { generateCamKodulari, generateStokKod } from '@/lib/idGenerator'
+import { useStok } from '@/hooks/useStok'
+import { generateStokKod } from '@/lib/idGenerator'
+import { generateStokKod } from '@/lib/idGenerator'
+import { cn, formatDate, camTipiAd } from '@/lib/utils'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
 import SiparisEditModal from './SiparisEditModal'
 
@@ -15,6 +18,7 @@ interface Props {
   stoklar: Stok[]
   cariler: Cari[]
   onKapat: () => void
+  onStokYenile?: () => Promise<void> | void
   onGuncelle?: (id: string, form: { tarih?: string; teslim_tarihi?: string | null; alt_musteri?: string | null; notlar?: string | null }) => Promise<void>
 }
 
@@ -89,16 +93,25 @@ interface DetayWithBatch extends SiparisDetay {
   aktif_tamir?: TamirBilgi | null
 }
 
-export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }: Props) {
+export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, onStokYenile }: Props) {
   const [detaylar, setDetaylar] = useState<DetayWithBatch[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [editModalAcik, setEditModalAcik] = useState(false)
+  const [topluModalAcik, setTopluModalAcik] = useState(false)
+  const [topluKaynakKey, setTopluKaynakKey] = useState('')
+  const [topluHedefStokId, setTopluHedefStokId] = useState('')
+  const [topluUygulaniyor, setTopluUygulaniyor] = useState(false)
+  // Quick-add yeni cam türü
+  const [yeniCamFormAcik, setYeniCamFormAcik] = useState(false)
+  const [yeniCamAd, setYeniCamAd] = useState('')
+  const [yeniCamKalinlik, setYeniCamKalinlik] = useState('4')
+  const [yeniCamEkleniyor, setYeniCamEkleniyor] = useState(false)
 
   // Beklemede satır düzenleme durumu
   const [editingDetayId, setEditingDetayId] = useState<string | null>(null)
   const [editRowForm, setEditRowForm] = useState({
     stok_id: '', genislik_mm: '', yukseklik_mm: '', adet: '1',
-    ara_bosluk_mm: '', poz: '', cita_stok_id: '', kenar_islemi: '', notlar: '',
+    ara_bosluk_mm: '', poz: '', kenar_islemi: '', notlar: '',
   })
   const [rowSaving, setRowSaving] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -106,7 +119,111 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
   const [camEkleniyor, setCamEkleniyor] = useState(false)
 
   const camStoklar = stoklar.filter(s => s.kategori === 'cam')
-  const citaStoklar = stoklar.filter(s => s.kategori === 'cita')
+
+  // Siparişteki mevcut cam türleri (toplu düzenle kaynağı için)
+  // Group key: stok_id + dis_kalinlik + ara_bosluk — ayını stok'a sahip ama farklı
+  // kompozisyondaki (örn. 4+12+4 vs 4+16+4) cam-lar ayrı tür olarak listelenir.
+  const siparistekiCamTurleri = useMemo(() => {
+    const map = new Map<string, {
+      key: string
+      stok_id: string
+      ad: string
+      dis_kalinlik_mm: number | null
+      ara_bosluk_mm: number | null
+      sayi: number
+      toplamAdet: number
+    }>()
+    for (const d of detaylar) {
+      if (!d.stok_id) continue
+      const stok = camStoklar.find(s => s.id === d.stok_id)
+      if (!stok) continue
+      const dk = d.dis_kalinlik_mm ?? null
+      const ab = d.ara_bosluk_mm ?? null
+      const key = `${d.stok_id}|${dk ?? ''}|${ab ?? ''}`
+      const mevcut = map.get(key)
+      if (mevcut) {
+        mevcut.sayi += 1
+        mevcut.toplamAdet += d.adet ?? 1
+      } else {
+        map.set(key, {
+          key,
+          stok_id: d.stok_id,
+          ad: stok.ad,
+          dis_kalinlik_mm: dk,
+          ara_bosluk_mm: ab,
+          sayi: 1,
+          toplamAdet: d.adet ?? 1,
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.sayi - a.sayi)
+  }, [detaylar, camStoklar])
+
+  const topluModalAc = () => {
+    setTopluKaynakKey('')
+    setTopluHedefStokId('')
+    setTopluModalAcik(true)
+  }
+
+  const topluUygula = async () => {
+    const kaynak = siparistekiCamTurleri.find(t => t.key === topluKaynakKey)
+    if (!kaynak || !topluHedefStokId || kaynak.stok_id === topluHedefStokId) return
+    setTopluUygulaniyor(true)
+    try {
+      // Sadece bu kompozisyondaki satırları güncelle
+      let q = supabase
+        .from('siparis_detaylari')
+        .update({ stok_id: topluHedefStokId })
+        .eq('siparis_id', siparis.id)
+        .eq('stok_id', kaynak.stok_id)
+      q = kaynak.dis_kalinlik_mm == null
+        ? q.is('dis_kalinlik_mm', null)
+        : q.eq('dis_kalinlik_mm', kaynak.dis_kalinlik_mm)
+      q = kaynak.ara_bosluk_mm == null
+        ? q.is('ara_bosluk_mm', null)
+        : q.eq('ara_bosluk_mm', kaynak.ara_bosluk_mm)
+      const { error } = await q
+      if (error) throw error
+      setTopluModalAcik(false)
+      await yukleDetaylar()
+    } finally {
+      setTopluUygulaniyor(false)
+    }
+  }
+
+  // Yeni cam türü hızlı ekleme (örn. "4+16+4+16+4 KONFOR", "4+14+5 TEMP")
+  const yeniCamEkle = async () => {
+    const ad = yeniCamAd.trim()
+    if (!ad) return
+    setYeniCamEkleniyor(true)
+    try {
+      const kod = await generateStokKod()
+      const { data, error } = await supabase
+        .from('stok')
+        .insert({
+          kod,
+          ad,
+          kategori: 'cam',
+          kalinlik_mm: yeniCamKalinlik ? Number(yeniCamKalinlik) : null,
+          renk: null,
+          tip: null,
+          birim: 'adet',
+          birim_fiyat: null,
+          tedarikci_id: null,
+        })
+        .select()
+        .single()
+      if (error) throw error
+      await onStokYenile?.()
+      setYeniCamFormAcik(false)
+      setYeniCamAd('')
+      setYeniCamKalinlik('4')
+      // Yeni eklenen stok'u hedef olarak otomatik seç
+      if (data?.id) setTopluHedefStokId(data.id)
+    } finally {
+      setYeniCamEkleniyor(false)
+    }
+  }
 
   const yukleDetaylar = useCallback(async () => {
     setYukleniyor(true)
@@ -164,7 +281,6 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
       adet: String(d.adet),
       ara_bosluk_mm: d.ara_bosluk_mm != null ? String(d.ara_bosluk_mm) : '',
       poz: d.poz ?? '',
-      cita_stok_id: d.cita_stok_id ?? '',
       kenar_islemi: d.kenar_islemi ?? '',
       notlar: d.notlar ?? '',
     })
@@ -183,7 +299,6 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
           adet: Number(editRowForm.adet) || 1,
           ara_bosluk_mm: editRowForm.ara_bosluk_mm ? Number(editRowForm.ara_bosluk_mm) : null,
           poz: editRowForm.poz || null,
-          cita_stok_id: editRowForm.cita_stok_id || null,
           kenar_islemi: editRowForm.kenar_islemi || null,
           notlar: editRowForm.notlar || null,
         })
@@ -234,7 +349,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
       setEditingDetayId(data.id)
       setEditRowForm({
         stok_id: '', genislik_mm: '', yukseklik_mm: '', adet: '1',
-        ara_bosluk_mm: '', poz: '', cita_stok_id: '', kenar_islemi: '', notlar: '',
+        ara_bosluk_mm: '', poz: '', kenar_islemi: '', notlar: '',
       })
     } finally {
       setCamEkleniyor(false)
@@ -260,15 +375,26 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
               {siparis.teslim_tarihi && ` · Teslim: ${formatDate(siparis.teslim_tarihi)}`}
             </p>
           </div>
-          <div className="flex items-start gap-3">
-            {/* Düzenle butonu */}
+          <div className="flex items-center gap-2">
+            {/* Düzenle butonu — yeşil */}
             <button
               onClick={() => setEditModalAcik(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors whitespace-nowrap"
             >
               <Pencil size={14} />
               Düzenle
             </button>
+            {/* Toplu Düzenle butonu — sadece beklemede iken */}
+            {siparis.durum === 'beklemede' && siparistekiCamTurleri.length > 0 && (
+              <button
+                onClick={topluModalAc}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap"
+                title="Bir cam türünü başka bir cam türüyle topluca değiştir"
+              >
+                <Replace size={14} />
+                Toplu Düzenle
+              </button>
+            )}
             {/* Durum badge (readonly) */}
             <div className="flex flex-col items-end gap-0.5">
               <span className={cn(
@@ -327,6 +453,170 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
           />
         )}
 
+        {/* ── Toplu Düzenle modalı ── */}
+        {topluModalAcik && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => !topluUygulaniyor && setTopluModalAcik(false)}>
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <Replace size={18} className="text-blue-600" />
+                  <h3 className="text-base font-semibold text-gray-800">Toplu Cam Türü Değiştir</h3>
+                </div>
+                <button
+                  onClick={() => setTopluModalAcik(false)}
+                  disabled={topluUygulaniyor}
+                  className="p-1 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+                >
+                  <X size={18} className="text-gray-500" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Seçtiğiniz cam türündeki <strong>tüm satırların</strong> stok ürünü hedef cam türüyle değiştirilir.
+                  Ölçü, adet, poz gibi diğer bilgiler korunur.
+                </p>
+
+                {/* Kaynak */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Değiştirilecek Cam Türü</label>
+                  <select
+                    value={topluKaynakKey}
+                    onChange={e => setTopluKaynakKey(e.target.value)}
+                    disabled={topluUygulaniyor}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                  >
+                    <option value="">— Seçiniz —</option>
+                    {siparistekiCamTurleri.map(t => {
+                      const dk = t.dis_kalinlik_mm
+                      const ab = t.ara_bosluk_mm
+                      const kompozisyon = (dk != null && ab != null) ? `${dk}+${ab}+${dk} ` : ''
+                      return (
+                        <option key={t.key} value={t.key}>
+                          {kompozisyon}{camTipiAd(t.ad)} ({t.sayi} satır / {t.toplamAdet} adet)
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+
+                {/* Hedef */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-medium text-gray-700">Yeni Cam Türü</label>
+                    {!yeniCamFormAcik && onStokYenile && (
+                      <button
+                        type="button"
+                        onClick={() => setYeniCamFormAcik(true)}
+                        className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-0.5"
+                      >
+                        <Plus size={11} /> Yeni Cam Türü Ekle
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={topluHedefStokId}
+                    onChange={e => setTopluHedefStokId(e.target.value)}
+                    disabled={topluUygulaniyor || !topluKaynakKey}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                  >
+                    <option value="">— Seçiniz —</option>
+                    {(() => {
+                      const kaynakStokId = siparistekiCamTurleri.find(t => t.key === topluKaynakKey)?.stok_id
+                      return camStoklar
+                        .filter(s => s.id !== kaynakStokId)
+                        .map(s => (
+                          <option key={s.id} value={s.id}>{camTipiAd(s.ad)}</option>
+                        ))
+                    })()}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Kompozisyon (4+16+4 vb.) korunur, sadece cam türü değişir.
+                  </p>
+                </div>
+
+                {/* Yeni Cam Türü — inline form */}
+                {yeniCamFormAcik && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold text-amber-800">Yeni Cam Türü Ekle</h4>
+                      <button
+                        type="button"
+                        onClick={() => { setYeniCamFormAcik(false); setYeniCamAd('') }}
+                        disabled={yeniCamEkleniyor}
+                        className="text-amber-600 hover:text-amber-800 disabled:opacity-50"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-amber-700 mb-1">Cam Adı</label>
+                      <input
+                        type="text"
+                        value={yeniCamAd}
+                        onChange={e => setYeniCamAd(e.target.value)}
+                        placeholder="örn. 4+16+4+16+4 KONFOR  /  4+14+5 TEMP"
+                        disabled={yeniCamEkleniyor}
+                        className="w-full px-2 py-1.5 text-sm border border-amber-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-amber-700 mb-1">Cam Kalınlığı (mm) — ana katman</label>
+                      <input
+                        type="number"
+                        value={yeniCamKalinlik}
+                        onChange={e => setYeniCamKalinlik(e.target.value)}
+                        disabled={yeniCamEkleniyor}
+                        className="w-full px-2 py-1.5 text-sm border border-amber-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={yeniCamEkle}
+                      disabled={yeniCamEkleniyor || !yeniCamAd.trim()}
+                      className="w-full px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded hover:bg-amber-700 disabled:bg-gray-300"
+                    >
+                      {yeniCamEkleniyor ? 'Ekleniyor...' : 'Stok\'a Ekle ve Hedef Yap'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Önizleme */}
+                {topluKaynakKey && topluHedefStokId && (() => {
+                  const kaynak = siparistekiCamTurleri.find(t => t.key === topluKaynakKey)
+                  const hedefAd = camStoklar.find(s => s.id === topluHedefStokId)?.ad
+                  if (!kaynak || !hedefAd) return null
+                  return (
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                      <strong>{kaynak.sayi}</strong> satır
+                      {' → '}
+                      <strong>{camTipiAd(hedefAd)}</strong> olarak güncellenecek.
+                    </div>
+                  )
+                })()}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+                <button
+                  onClick={() => setTopluModalAcik(false)}
+                  disabled={topluUygulaniyor}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={topluUygula}
+                  disabled={topluUygulaniyor || !topluKaynakKey || !topluHedefStokId || siparistekiCamTurleri.find(t => t.key === topluKaynakKey)?.stok_id === topluHedefStokId}
+                  className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  {topluUygulaniyor ? 'Uygulanıyor...' : 'Uygula'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* İçerik */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {yukleniyor ? (
@@ -344,8 +634,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
                   <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
                     <th className="px-3 py-2.5">Cam Kodu</th>
                     <th className="px-3 py-2.5">Poz</th>
-                    <th className="px-3 py-2.5">Cam Cinsi</th>
-                    <th className="px-3 py-2.5">Çita</th>
+                    <th className="px-3 py-2.5">Açıklama</th>
                     <th className="px-3 py-2.5">Boyut (mm)</th>
                     <th className="px-3 py-2.5">Adet</th>
                     {siparis.durum !== 'beklemede' && (
@@ -387,16 +676,6 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
                           >
                             <option value="">—</option>
                             {camStoklar.map(s => <option key={s.id} value={s.id}>{s.ad}</option>)}
-                          </select>
-                        </td>
-                        <td className="px-2 py-2">
-                          <select
-                            value={editRowForm.cita_stok_id}
-                            onChange={e => setEditRowForm(p => ({ ...p, cita_stok_id: e.target.value }))}
-                            className="w-28 rounded border border-gray-200 px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="">—</option>
-                            {citaStoklar.map(s => <option key={s.id} value={s.id}>{s.ad}</option>)}
                           </select>
                         </td>
                         <td className="px-2 py-2">
@@ -456,8 +735,52 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
                         <td className="px-3 py-2.5 text-gray-500 text-xs">
                           {d.poz || <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="px-3 py-2.5 text-gray-700">{d.stok?.ad ?? '—'}</td>
-                        <td className="px-3 py-2.5 text-gray-500 text-xs">{d.cita_stok?.ad ? (d.cita_stok.ad.match(/\d+\s*mm/i)?.[0] ?? d.cita_stok.ad) : <span className="text-gray-300">—</span>}</td>
+                        <td className="px-3 py-2.5 text-gray-700">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>
+                              {(() => {
+                                // Stok adı kompozisyon içeriyorsa (örn. "4+16+4+16+4 KONFOR", "4+14+5 TEMP")
+                                // prefix'i gizle, sadece stok adını göster.
+                                const stokAdiKompozisyonIcerir = /\d+\s*\+\s*\d+/.test(d.stok?.ad ?? '')
+                                if (stokAdiKompozisyonIcerir) {
+                                  return <span>{camTipiAd(d.stok?.ad) || '—'}</span>
+                                }
+                                return (
+                                  <>
+                                    {d.ara_bosluk_mm != null && d.dis_kalinlik_mm != null && (
+                                      <span className="text-gray-500 font-mono text-xs mr-1">
+                                        {d.dis_kalinlik_mm}+{d.ara_bosluk_mm}+{d.dis_kalinlik_mm}
+                                      </span>
+                                    )}
+                                    {d.ara_bosluk_mm != null && d.dis_kalinlik_mm == null && (
+                                      <span className="text-gray-500 font-mono text-xs mr-1">
+                                        {d.stok?.kalinlik_mm ?? 4}+{d.ara_bosluk_mm}+{d.stok?.kalinlik_mm ?? 4}
+                                      </span>
+                                    )}
+                                    {camTipiAd(d.stok?.ad) || '—'}
+                                  </>
+                                )
+                              })()}
+                            </span>
+                            {d.notlar && d.notlar.split(',').map(t => t.trim()).filter(Boolean).map((tag, i) => {
+                              const isMenfez = /menfez/i.test(tag)
+                              const isKucuk = /%20|küçük/i.test(tag)
+                              return (
+                                <span
+                                  key={i}
+                                  className={cn(
+                                    'inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold',
+                                    isMenfez ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                      : isKucuk ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                        : 'bg-gray-100 text-gray-600 border border-gray-200'
+                                  )}
+                                >
+                                  {tag}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </td>
                         <td className="px-3 py-2.5 text-gray-600">
                           {d.genislik_mm} × {d.yukseklik_mm}
                         </td>
