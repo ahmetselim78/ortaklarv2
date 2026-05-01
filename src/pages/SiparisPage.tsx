@@ -1,18 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Plus, ClipboardList, FileUp, Wrench } from 'lucide-react'
+import { Plus, ClipboardList, FileUp, Wrench, Files } from 'lucide-react'
 import Pagination from '@/components/ui/Pagination'
 import EmptyState from '@/components/ui/EmptyState'
 import { useSiparis } from '@/hooks/useSiparis'
 import { useCari } from '@/hooks/useCari'
 import { useStok } from '@/hooks/useStok'
+import { useSiparisTaslaklari, taslakBosMu } from '@/hooks/useSiparisTaslaklari'
 import { supabase } from '@/lib/supabase'
 import SiparisListesi from '@/components/siparis/SiparisListesi'
 import SiparisForm from '@/components/siparis/SiparisForm'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 import PDFImportModal from '@/components/siparis/PDFImportModal'
 import SevkiyatPlanModal from '@/components/siparis/SevkiyatPlanModal'
+import TaslaklarPanel from '@/components/siparis/TaslaklarPanel'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
+import type { SiparisTaslakVerisi } from '@/types/taslak'
 import { cn } from '@/lib/utils'
 
 type DurumFiltre = 'hepsi' | 'tamirde' | SiparisDurum
@@ -36,6 +39,10 @@ export default function SiparisPage() {
 
   const [formAcik, setFormAcik] = useState(false)
   const [pdfModalAcik, setPdfModalAcik] = useState(false)
+  const [taslaklarAcik, setTaslaklarAcik] = useState(false)
+  // Form taslaktan açıldıysa hangi taslak id güncellenmeli
+  const [aktifTaslak, setAktifTaslak] = useState<{ id: string; veri: SiparisTaslakVerisi } | null>(null)
+  const { taslaklar, upsert: taslakUpsert, sil: taslakSil } = useSiparisTaslaklari()
   const [gorunenSiparis, setGorunenSiparis] = useState<Siparis | null>(null)
   const [iptalEdilecek, setIptalEdilecek] = useState<Siparis | null>(null)
   const [iptalEdiliyor, setIptalEdiliyor] = useState(false)
@@ -132,6 +139,24 @@ export default function SiparisPage() {
         </div>
         <div className="flex gap-3">
           <button
+            onClick={() => setTaslaklarAcik(true)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors',
+              taslaklar.length > 0
+                ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50',
+            )}
+            title="Yarım kalan sipariş girişlerine devam et"
+          >
+            <Files size={16} />
+            Taslaklar
+            {taslaklar.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none bg-amber-200 text-amber-800">
+                {taslaklar.length}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setPdfModalAcik(true)}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
           >
@@ -139,7 +164,7 @@ export default function SiparisPage() {
             PDF'den İçe Aktar
           </button>
           <button
-            onClick={() => setFormAcik(true)}
+            onClick={() => { setAktifTaslak(null); setFormAcik(true) }}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus size={16} />
@@ -256,8 +281,37 @@ export default function SiparisPage() {
         <SiparisForm
           cariler={cariler}
           stoklar={stoklar}
-          onKaydet={ekle}
-          onKapat={() => setFormAcik(false)}
+          initialTaslak={aktifTaslak?.veri}
+          onKaydet={async (form) => {
+            const r = await ekle(form)
+            // Başarılı kayıt → ilgili taslağı sil
+            if (aktifTaslak) taslakSil(aktifTaslak.id)
+            return r
+          }}
+          onTaslakKaydet={(veri) => {
+            // Boş formu taslak olarak yazma
+            if (taslakBosMu(veri)) {
+              if (aktifTaslak) taslakSil(aktifTaslak.id)
+              return
+            }
+            taslakUpsert(veri, aktifTaslak?.id)
+          }}
+          onKapat={() => { setFormAcik(false); setAktifTaslak(null) }}
+        />
+      )}
+
+      {/* Taslaklar Listesi */}
+      {taslaklarAcik && (
+        <TaslaklarPanel
+          taslaklar={taslaklar}
+          cariler={cariler}
+          onSec={(t) => {
+            setAktifTaslak({ id: t.id, veri: t.veri })
+            setTaslaklarAcik(false)
+            setFormAcik(true)
+          }}
+          onSil={taslakSil}
+          onKapat={() => setTaslaklarAcik(false)}
         />
       )}
 

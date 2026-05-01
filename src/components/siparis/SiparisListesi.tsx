@@ -39,12 +39,6 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
 
   if (siparisler.length === 0) return null
 
-  function extractRefNo(notlar: string | null): string | null {
-    if (!notlar) return null
-    const m = notlar.match(/Sipariş No:\s*([^\s/]+)/)
-    return m ? m[1] : null
-  }
-
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <table className="w-full text-sm">
@@ -94,8 +88,8 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                 })()}
               </td>
               <td className="px-4 py-3">
-                {extractRefNo(s.notlar)
-                  ? <span className="font-mono text-xs text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{extractRefNo(s.notlar)}</span>
+                {s.harici_siparis_no
+                  ? <span className="font-mono text-xs text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{s.harici_siparis_no}</span>
                   : <span className="text-gray-300">—</span>
                 }
               </td>

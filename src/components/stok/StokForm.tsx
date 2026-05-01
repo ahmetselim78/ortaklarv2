@@ -6,16 +6,14 @@ import { X } from 'lucide-react'
 import type { Stok, StokKategori } from '@/types/stok'
 import type { Cari } from '@/types/cari'
 import { cn } from '@/lib/utils'
+import { useEscape } from '@/hooks/useEscape'
 
-const CAM_TIPLERI = ['Şeffaf', 'Renkli', 'Temperli', 'Lamine', 'Aynalı', 'Buzlu', 'Diğer']
 const CITA_BOYUTLARI = [9, 11, 12, 14, 15, 16, 20, 22]
 
 const schema = z.object({
   kategori: z.enum(['cam', 'cita', 'yan_malzeme']),
   ad: z.string().min(1, 'Ad zorunludur'),
-  tip: z.string().optional(),
   kalinlik_mm: z.coerce.number().positive('Pozitif olmalı').optional().or(z.literal('')),
-  renk: z.string().optional(),
   birim: z.string().min(1, 'Birim zorunludur'),
   birim_fiyat: z.coerce.number().min(0).optional().or(z.literal('')),
   tedarikci_id: z.string().optional(),
@@ -33,6 +31,7 @@ interface Props {
 }
 
 export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKaydet, onKapat }: Props) {
+  useEscape(onKapat)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
 
@@ -49,8 +48,6 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
       kategori: defaultKategori ?? 'cam',
       birim: 'm2',
       ad: '',
-      tip: '',
-      renk: '',
       kalinlik_mm: '',
       birim_fiyat: '',
       tedarikci_id: '',
@@ -65,12 +62,8 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
     if (duzenlenecek) return
     if (kategori === 'cita') {
       setValue('birim', 'm')
-      setValue('tip', '')
-      setValue('renk', '')
     } else if (kategori === 'yan_malzeme') {
       setValue('birim', 'kg')
-      setValue('tip', '')
-      setValue('renk', '')
       setValue('kalinlik_mm', '')
     } else {
       setValue('birim', 'm2')
@@ -82,9 +75,7 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
       reset({
         kategori: duzenlenecek.kategori ?? 'cam',
         ad: duzenlenecek.ad,
-        tip: duzenlenecek.tip ?? '',
         kalinlik_mm: duzenlenecek.kalinlik_mm ?? '',
-        renk: duzenlenecek.renk ?? '',
         birim: duzenlenecek.birim,
         birim_fiyat: duzenlenecek.birim_fiyat ?? '',
         tedarikci_id: duzenlenecek.tedarikci_id ?? '',
@@ -95,8 +86,6 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
         kategori: defaultKategori ?? 'cam',
         birim: defaultKategori === 'cita' ? 'm' : defaultKategori === 'yan_malzeme' ? 'kg' : 'm2',
         ad: '',
-        tip: '',
-        renk: '',
         kalinlik_mm: '',
         birim_fiyat: '',
         tedarikci_id: '',
@@ -113,8 +102,6 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
         ...veri,
         tedarikci_id: veri.tedarikci_id || null,
         marka: veri.marka || null,
-        tip: veri.tip || null,
-        renk: veri.renk || null,
         kalinlik_mm: typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null,
         birim_fiyat: typeof veri.birim_fiyat === 'number' ? veri.birim_fiyat : null,
       }
@@ -222,67 +209,46 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
             {errors.ad && <p className="mt-1 text-xs text-red-500">{errors.ad.message}</p>}
           </div>
 
-          {/* Cam: Tip & Kalınlık */}
-          {kategori === 'cam' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cam Tipi</label>
-                <select
-                  {...register('tip')}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">Seçiniz...</option>
-                  {CAM_TIPLERI.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Kalınlık (mm)</label>
-                <input
-                  {...register('kalinlik_mm')}
-                  type="number"
-                  step="0.1"
-                  className={cn(
-                    'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
-                    errors.kalinlik_mm ? 'border-red-300' : 'border-gray-200'
-                  )}
-                  placeholder="Örn: 6"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Cam: Renk */}
+          {/* Cam: Kalınlık */}
           {kategori === 'cam' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Renk</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Kalınlık (mm) *</label>
               <input
-                {...register('renk')}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Örn: Şeffaf, Bronz..."
+                {...register('kalinlik_mm')}
+                type="number"
+                step="0.1"
+                className={cn(
+                  'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
+                  errors.kalinlik_mm ? 'border-red-300' : 'border-gray-200'
+                )}
+                placeholder="Örn: 4, 5, 6, 8"
               />
+              <p className="mt-1 text-[11px] text-gray-400">
+                Kalınlık stok için zorunlu, Kompozisyon (4+16+4 vb.) siparişte satır bazında girilir.
+              </p>
             </div>
           )}
 
-          {/* Tedarikçi */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tedarikçi</label>
-            <select
-              {...register('tedarikci_id')}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="">Seçiniz...</option>
-              {tedarikciListesi.map((c) => (
-                <option key={c.id} value={c.id}>{c.kod} — {c.ad}</option>
-              ))}
-            </select>
-            {tedarikciListesi.length === 0 && (
-              <p className="mt-1 text-xs text-amber-500">
-                Henüz tedarikçi eklenmemiş. Cari panelinden tedarikçi ekleyin.
-              </p>
-            )}
-          </div>
+          {/* Tedarikçi — cam dışında */}
+          {kategori !== 'cam' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tedarikçi</label>
+              <select
+                {...register('tedarikci_id')}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Seçiniz...</option>
+                {tedarikciListesi.map((c) => (
+                  <option key={c.id} value={c.id}>{c.kod} — {c.ad}</option>
+                ))}
+              </select>
+              {tedarikciListesi.length === 0 && (
+                <p className="mt-1 text-xs text-amber-500">
+                  Henüz tedarikçi eklenmemiş. Cari panelinden tedarikçi ekleyin.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Birim & Fiyat */}
           <div className="grid grid-cols-2 gap-3">

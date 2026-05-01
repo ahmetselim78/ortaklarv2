@@ -29,10 +29,10 @@ export interface UretimEmriDetay {
     genislik_mm: number
     yukseklik_mm: number
     adet: number
-    ara_bosluk_mm: number | null
+    katman_yapisi?: string | null
     kenar_islemi: string | null
     notlar: string | null
-    stok?: { ad: string } | null
+    stok?: { ad: string; kalinlik_mm?: number | null } | null
     siparisler?: {
       id: string
       siparis_no: string

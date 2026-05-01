@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useEscape } from '@/hooks/useEscape'
 import { AlertTriangle, X, Wrench } from 'lucide-react'
 import type { TamirKaynak, TamirSorun } from '@/types/tamir'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: Props) {
+  useEscape(onClose)
   const [sorunTipi, setSorunTipi] = useState<TamirSorun>('kirik')
   const [tamirAdeti, setTamirAdeti] = useState(1)
   const [aciklama, setAciklama] = useState('')

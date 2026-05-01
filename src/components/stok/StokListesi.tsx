@@ -39,7 +39,7 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
     <div className="space-y-4">
       <input
         type="text"
-        placeholder="Ad, kod veya tip ile ara..."
+        placeholder="Ad veya kod ile ara..."
         value={arama}
         onChange={(e) => setArama(e.target.value)}
         className="w-full max-w-sm rounded-lg border border-gray-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -56,10 +56,8 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 font-medium">
                 <th className="px-4 py-3">Kod</th>
                 <th className="px-4 py-3">Ad</th>
-                {kategori === 'cam' && <th className="px-4 py-3">Tip</th>}
                 <th className="px-4 py-3">{kategori === 'cita' ? 'Boyut' : 'Kalınlık'}</th>
-                {kategori === 'cam' && <th className="px-4 py-3">Renk</th>}
-                <th className="px-4 py-3">Tedarikçi</th>
+                {kategori !== 'cam' && <th className="px-4 py-3">Tedarikçi</th>}
                 <th className="px-4 py-3">Birim Fiyat</th>
                 <th className="px-4 py-3 text-right">İşlem</th>
               </tr>
@@ -72,16 +70,12 @@ export default function StokListesi({ stoklar, yukleniyor, kategori, onDuzenle, 
                 >
                   <td className="px-4 py-3 font-mono text-gray-500">{stok.kod}</td>
                   <td className="px-4 py-3 font-medium text-gray-800">{stok.ad}</td>
-                  {kategori === 'cam' && (
-                    <td className="px-4 py-3 text-gray-600">{stok.tip ?? '—'}</td>
-                  )}
                   <td className="px-4 py-3 text-gray-600">
                     {stok.kalinlik_mm ? `${stok.kalinlik_mm} mm` : '—'}
                   </td>
-                  {kategori === 'cam' && (
-                    <td className="px-4 py-3 text-gray-600">{stok.renk ?? '—'}</td>
+                  {kategori !== 'cam' && (
+                    <td className="px-4 py-3 text-gray-600">{stok.tedarikci_ad ?? '—'}</td>
                   )}
-                  <td className="px-4 py-3 text-gray-600">{stok.tedarikci_ad ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-600">
                     {stok.birim_fiyat
                       ? `${Number(stok.birim_fiyat).toLocaleString('tr-TR')} ₺ / ${stok.birim}`

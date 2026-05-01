@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, Search, Package, Check } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { useEscape } from '@/hooks/useEscape'
 
 interface SiparisOzet {
   id: string
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
+  useEscape(onKapat)
   const [siparisler, setSiparisler] = useState<SiparisOzet[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [seciliIds, setSeciliIds] = useState<Set<string>>(new Set())

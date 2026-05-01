@@ -6,8 +6,6 @@ export interface Stok {
   ad: string
   kategori: StokKategori
   kalinlik_mm: number | null
-  renk: string | null
-  tip: string | null
   birim: string
   birim_fiyat: number | null
   tedarikci_id: string | null

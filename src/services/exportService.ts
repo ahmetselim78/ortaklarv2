@@ -1,6 +1,7 @@
 import Papa from 'papaparse'
 import { supabase } from '@/lib/supabase'
 import type { UretimEmriDetay } from '@/types/uretim'
+import { getEtiketCamTipi } from '@/lib/cam'
 
 interface ExportRow {
   cam_kodu: string
@@ -9,7 +10,7 @@ interface ExportRow {
   genislik_mm: number
   yukseklik_mm: number
   adet: number
-  ara_bosluk_mm: number | string
+  katman_yapisi: string
   cam_tipi: string
   kenar_islemi: string
   notlar: string
@@ -29,8 +30,8 @@ export function exportDetaylariCSV(detaylar: UretimEmriDetay[], batchNo: string)
       genislik_mm: d.genislik_mm,
       yukseklik_mm: d.yukseklik_mm,
       adet: d.adet,
-      ara_bosluk_mm: d.ara_bosluk_mm ?? '',
-      cam_tipi: d.stok?.ad ?? '',
+      katman_yapisi: d.katman_yapisi ?? '',
+      cam_tipi: getEtiketCamTipi(d, d.stok ?? null),
       kenar_islemi: d.kenar_islemi ?? '',
       notlar: d.notlar ?? '',
     }

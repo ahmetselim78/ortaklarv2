@@ -10,6 +10,7 @@ export interface Siparis {
   durum: SiparisDurum
   notlar: string | null
   alt_musteri: string | null
+  harici_siparis_no: string | null
   created_at: string
   cari?: { ad: string; kod: string }
   siparis_detaylari?: { count: number }[]
@@ -27,14 +28,13 @@ export interface SiparisDetay {
   genislik_mm: number
   yukseklik_mm: number
   adet: number
-  ara_bosluk_mm: number | null
   cita_stok_id: string | null
   kenar_islemi: string | null
   notlar: string | null
   poz: string | null
-  dis_kalinlik_mm?: number | null
   menfez_cap_mm?: number | null
   kucuk_cam?: boolean
+  katman_yapisi?: string | null
   uretim_durumu: UretimDurumu
   created_at: string
   stok?: { ad: string; kalinlik_mm?: number | null } | null
@@ -46,12 +46,11 @@ export interface CamFormSatiri {
   genislik_mm: number | string
   yukseklik_mm: number | string
   adet: number | string
-  ara_bosluk_mm?: number | string
   cita_stok_id?: string
   kenar_islemi?: string
   notlar?: string
   poz?: string
-  dis_kalinlik_mm?: number | string
   menfez_cap_mm?: number | string
   kucuk_cam?: boolean
+  katman_yapisi?: string
 }

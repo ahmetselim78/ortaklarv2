@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { X } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import { cn } from '@/lib/utils'
+import { useEscape } from '@/hooks/useEscape'
 
 const schema = z.object({
   ad: z.string().min(1, 'Ad zorunludur'),
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
+  useEscape(onKapat)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
 

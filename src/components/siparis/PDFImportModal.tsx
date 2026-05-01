@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useEscape } from '@/hooks/useEscape'
 import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2, Truck, PackageCheck, Plus } from 'lucide-react'
 import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
 import type { PDFParseResult, PDFCamSatir } from '@/lib/pdfParser'
@@ -136,6 +137,7 @@ interface Props {
     teslim_tarihi?: string
     alt_musteri?: string
     notlar?: string
+    harici_siparis_no?: string
     teslimat_tipi?: string
     kaynak?: 'pdf' | 'manuel'
     camlar: CamFormSatiri[]
@@ -147,6 +149,7 @@ interface Props {
 type Adim = 'yukleme' | 'eslestirme' | 'onizleme' | 'sevkiyat'
 
 export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYenile, onKapat }: Props) {
+  useEscape(onKapat)
   const [adim, setAdim] = useState<Adim>('yukleme')
   const [yukleniyor, setYukleniyor] = useState(false)
   const [yuklemeDurum, setYuklemeDurum] = useState('')
@@ -249,7 +252,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
           const { data } = await supabase
             .from('siparisler')
             .select('id')
-            .ilike('notlar', `%${result.header.siparisNo}%`)
+            .eq('harici_siparis_no', result.header.siparisNo)
             .limit(1)
           setMukerrer((data?.length ?? 0) > 0)
         }
@@ -338,23 +341,24 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
         : undefined
 
       const camlar: CamFormSatiri[] = parseResult.satirlar.map((s) => {
-        const notParcalari: string[] = []
-        if (s.menfez_cap_mm != null) notParcalari.push(`Menfez Ø${s.menfez_cap_mm}`)
-        if (s.kucuk_cam) notParcalari.push('%20<')
         const stokId = satirStokSecimler[satirAnahtari(s)]?.stokId ?? ''
+        const ic = stoklar.find(st => st.id === stokId)?.kalinlik_mm ?? null
+        const katmanYapisi =
+          s.dis_kalinlik_mm != null && s.ara_bosluk_mm != null && ic != null
+            ? `${Number(s.dis_kalinlik_mm)}+${Number(s.ara_bosluk_mm)}+${Number(ic)}`
+            : undefined
         return {
           stok_id: stokId,
           genislik_mm: s.genislik_mm,
           yukseklik_mm: s.yukseklik_mm,
           adet: s.adet,
-          ara_bosluk_mm: s.ara_bosluk_mm ?? '',
           cita_stok_id: s.ara_bosluk_mm != null ? (citaSecimler[s.ara_bosluk_mm] || undefined) : undefined,
           kenar_islemi: '',
           poz: s.pozNo || '',
-          notlar: notParcalari.join(', '),
-          dis_kalinlik_mm: s.dis_kalinlik_mm ?? undefined,
+          notlar: '',  // Menfez/küçük cam bilgileri menfez_cap_mm + kucuk_cam kolonlarında tutuluyor
           menfez_cap_mm: s.menfez_cap_mm ?? undefined,
           kucuk_cam: s.kucuk_cam,
+          katman_yapisi: katmanYapisi,
         }
       })
 
@@ -363,7 +367,8 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
         tarih,
         teslim_tarihi: teslimTarihi,
         alt_musteri: header.cariUnvan || undefined,
-        notlar: `PDF Import — Sipariş No: ${header.siparisNo} / Tedarikçi: ${header.tedarikciUnvan}`,
+        harici_siparis_no: header.siparisNo || undefined,
+        notlar: undefined,
         teslimat_tipi: 'teslim_alacak',
         kaynak: 'pdf',
         camlar,
@@ -853,6 +858,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                         <th className="px-3 py-2">Yükseklik</th>
                         <th className="px-3 py-2">Adet</th>
                         <th className="px-3 py-2">M²</th>
+                        <th className="px-3 py-2">Özellik</th>
                         <th className="px-3 py-2">Poz No</th>
                       </tr>
                     </thead>
@@ -876,6 +882,23 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                             <td className="px-3 py-2 text-gray-700">{s.adet}</td>
                             <td className="px-3 py-2 font-mono text-xs text-blue-700">
                               {(s.genislik_mm * s.yukseklik_mm * s.adet / 1_000_000).toFixed(3)}
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              <div className="flex flex-wrap gap-1">
+                                {s.menfez_cap_mm != null && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-mono">
+                                    Menfez Ø{s.menfez_cap_mm}
+                                  </span>
+                                )}
+                                {s.kucuk_cam && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                                    %20&lt;
+                                  </span>
+                                )}
+                                {s.menfez_cap_mm == null && !s.kucuk_cam && (
+                                  <span className="text-gray-300">—</span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-gray-500 text-xs">{s.pozNo || '—'}</td>
                           </tr>

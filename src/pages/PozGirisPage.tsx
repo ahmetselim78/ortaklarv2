@@ -12,6 +12,7 @@ import { useAyarlar } from '@/hooks/useAyarlar'
 import { dplUret } from '@/types/ayarlar'
 import type { EtiketVeri } from '@/types/ayarlar'
 import { camTipiAd } from '@/lib/utils'
+import { getCamKompozisyon } from '@/lib/cam'
 
 /* ========== Tipler ========== */
 
@@ -33,8 +34,8 @@ interface BatchCam {
   yukseklik_mm: number
   adet: number
   taranan_adet: number  // kaç adet yıkamadan geçti (yikama_loglari'dan)
-  ara_bosluk_mm: number | null
-  dis_kalinlik_mm: number | null
+  katman_yapisi: string | null  // Model B: tek otorite, ör. "4+16+4" / "4+12+4+16+5"
+  ic_kalinlik_mm: number | null  // stok.kalinlik_mm (yalnız etiket bilgisi için)
   uretim_durumu: string
   stok_ad: string
   musteri: string
@@ -54,12 +55,6 @@ interface GecmisSatir {
 type TaramaDurum = 'bos' | 'yukleniyor' | 'basarili' | 'hata' | 'tekrar' | 'yanlis_batch' | 'tamamlandi'
 
 /* ========== Yardımcılar ========== */
-
-/** Sipariş notlarından nihai müşteri adını çıkarır ("Nihai Müşteri: ..." kalıbı) */
-function extractNihaiMusteri(notlar: string): string {
-  const m = notlar.match(/Nihai\s+M[\u00fc\u00dc][\u015f\u015e]teri:\s*(.+?)(?:\s*\/|$)/i)
-  return m?.[1]?.trim() ?? ''
-}
 
 /** Cari adı + nihai müşteri → görüntü etiketi: "NOVEL — AKYOL LOUNGE" */
 function musteriEtiket(musteri: string, nihai: string): string {
@@ -151,7 +146,7 @@ export default function PozGirisPage() {
       .from('uretim_emri_detaylari')
       .select(`
         uretim_emri_id, siparis_detay_id,
-        siparis_detaylari ( uretim_durumu, adet, siparisler ( notlar, cari ( ad ) ) )
+        siparis_detaylari ( uretim_durumu, adet, siparisler ( alt_musteri, cari ( ad ) ) )
       `)
       .in('uretim_emri_id', emirIds)
 
@@ -163,7 +158,7 @@ export default function PozGirisPage() {
       entry.toplam += adet
       if ((d as any).siparis_detaylari?.uretim_durumu === 'yikandi') entry.taranan += adet
       const musteriAd: string = (d as any).siparis_detaylari?.siparisler?.cari?.ad ?? ''
-      const nihai = extractNihaiMusteri((d as any).siparis_detaylari?.siparisler?.notlar ?? '')
+      const nihai: string = (d as any).siparis_detaylari?.siparisler?.alt_musteri ?? ''
       const etiket = musteriEtiket(musteriAd, nihai)
       if (etiket) entry.musteriSet.add(etiket)
       detayMap.set(d.uretim_emri_id, entry)
@@ -194,9 +189,10 @@ export default function PozGirisPage() {
       .select(`
         id, siparis_detay_id, sira_no,
         siparis_detaylari (
-          siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, dis_kalinlik_mm, uretim_durumu,
+          siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, katman_yapisi,
+          uretim_durumu,
           stok!stok_id ( ad, kalinlik_mm ),
-          siparisler ( siparis_no, notlar, cari ( ad ) )
+          siparisler ( siparis_no, alt_musteri, cari ( ad ) )
         )
       `)
       .eq('uretim_emri_id', batchId)
@@ -211,13 +207,13 @@ export default function PozGirisPage() {
       yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
       adet: d.siparis_detaylari.adet ?? 1,
       taranan_adet: 0,  // aşağıda yikama_loglari ile doldurulacak
-      ara_bosluk_mm: d.siparis_detaylari.ara_bosluk_mm,
-      dis_kalinlik_mm: d.siparis_detaylari.dis_kalinlik_mm ?? d.siparis_detaylari.stok?.kalinlik_mm ?? null,
+      katman_yapisi: d.siparis_detaylari.katman_yapisi ?? null,
+      ic_kalinlik_mm: d.siparis_detaylari.stok?.kalinlik_mm ?? null,
       sira_no: d.sira_no ?? null,
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
-      nihai_musteri: extractNihaiMusteri(d.siparis_detaylari.siparisler?.notlar ?? ''),
+      nihai_musteri: d.siparis_detaylari.siparisler?.alt_musteri ?? '',
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
     }))
 
@@ -405,13 +401,18 @@ export default function PozGirisPage() {
     const tekrar = cam.uretim_durumu === 'yikandi'
 
     // Etiket bas (tekrar taramalarda da bas — her cam geçişinde etiket gerekir)
+    const kompozisyon = getCamKompozisyon(
+      { katman_yapisi: cam.katman_yapisi },
+      { ad: cam.stok_ad, kalinlik_mm: cam.ic_kalinlik_mm },
+    )
+    const camTipiTam = [kompozisyon || null, camTipiAd(cam.stok_ad) || null]
+      .filter(Boolean)
+      .join(' ')
+
     if (etiketAyarlari.yazici.kopru_adresi && etiketAyarlari.yazdirma_kosulu === 'otomatik') {
       const veri: EtiketVeri = {
         cam_kodu: cam.cam_kodu,
-        cam_tipi: [
-          cam.ara_bosluk_mm != null ? `${cam.dis_kalinlik_mm ?? 4}+${cam.ara_bosluk_mm}+${cam.dis_kalinlik_mm ?? 4}` : null,
-          camTipiAd(cam.stok_ad) || null,
-        ].filter(Boolean).join(' '),
+        cam_tipi: camTipiTam,
         musteri: musteriEtiket(cam.musteri, cam.nihai_musteri),
         genislik_mm: cam.genislik_mm,
         yukseklik_mm: cam.yukseklik_mm,
@@ -493,11 +494,10 @@ export default function PozGirisPage() {
         cam_kodu: cam.cam_kodu,
         musteri: cam.musteri,
         siparis_no: cam.siparis_no,
-        cam_tipi: cam.stok_ad,
+        cam_tipi: camTipiTam,
         genislik_mm: cam.genislik_mm,
         yukseklik_mm: cam.yukseklik_mm,
         adet: cam.adet,
-        ara_bosluk_mm: cam.ara_bosluk_mm,
         zaman: Date.now(),
         tekrar: tekrar,
       },

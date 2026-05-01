@@ -19,6 +19,7 @@ interface YeniSiparisForm {
   teslim_tarihi?: string
   notlar?: string
   alt_musteri?: string
+  harici_siparis_no?: string
   teslimat_tipi?: string
   kaynak?: 'pdf' | 'manuel'
   camlar: CamFormSatiri[]
@@ -58,6 +59,7 @@ export function useSiparis() {
         teslim_tarihi: form.teslim_tarihi || null,
         notlar: form.notlar || null,
         alt_musteri: form.alt_musteri || null,
+        harici_siparis_no: form.harici_siparis_no || null,
         teslimat_tipi: form.teslimat_tipi || 'teslim_alacak',
         kaynak: form.kaynak || 'manuel',
       })
@@ -77,12 +79,11 @@ export function useSiparis() {
       genislik_mm: Number(cam.genislik_mm),
       yukseklik_mm: Number(cam.yukseklik_mm),
       adet: Number(cam.adet),
-      ara_bosluk_mm: cam.ara_bosluk_mm ? Number(cam.ara_bosluk_mm) : null,
+      katman_yapisi: cam.katman_yapisi || null,
       cita_stok_id: cam.cita_stok_id || null,
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,
       poz: cam.poz || null,
-      dis_kalinlik_mm: cam.dis_kalinlik_mm ? Number(cam.dis_kalinlik_mm) : null,
       menfez_cap_mm: cam.menfez_cap_mm ? Number(cam.menfez_cap_mm) : null,
       kucuk_cam: cam.kucuk_cam ?? false,
     }))

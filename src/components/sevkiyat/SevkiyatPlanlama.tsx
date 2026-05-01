@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
+import { useEscape } from '@/hooks/useEscape'
 
 interface Arac {
   id: string; plaka: string; ad: string | null; kapasite_m2: number | null; aktif: boolean
@@ -66,6 +67,7 @@ function encodeDrag(p: DragPayload): string { return JSON.stringify(p) }
 function decodeDrag(s: string): DragPayload | null { try { return JSON.parse(s) } catch { return null } }
 
 export default function SevkiyatPlanlama({ onKapat }: Props) {
+  useEscape(onKapat)
   const [fullscreen, setFullscreen] = useState(false)
   const [takvimGorunum, setTakvimGorunum] = useState<'aylik' | 'haftalik'>('aylik')
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {

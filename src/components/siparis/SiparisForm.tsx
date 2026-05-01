@@ -5,8 +5,10 @@ import { z } from 'zod'
 import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, PackageCheck, AlertTriangle } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
+import type { SiparisTaslakVerisi } from '@/types/taslak'
 import { cn } from '@/lib/utils'
 import { camTipiAd } from '@/lib/utils'
+import { useEscape } from '@/hooks/useEscape'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
@@ -39,6 +41,14 @@ interface Props {
   stoklar: Stok[]
   onKaydet: (veri: FormVeri) => Promise<unknown>
   onKapat: () => void
+  /** Taslaktan devam ediliyorsa başlangıç verisi */
+  initialTaslak?: SiparisTaslakVerisi
+  /**
+   * Modal kapatılırken çağrılır. Form verisi parent'a iletilir; parent
+   * (SiparisPage) verinin boş olup olmadığını kontrol edip localStorage'a yazar.
+   * Döndürülmezse default davranışa düşer (sadece onKapat).
+   */
+  onTaslakKaydet?: (veri: SiparisTaslakVerisi) => void
 }
 
 const BOŞ_CAM = {
@@ -52,11 +62,13 @@ const BOŞ_CAM = {
   poz: '',
 }
 
-export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Props) {
+export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initialTaslak, onTaslakKaydet }: Props) {
   const [adim, setAdim] = useState<1 | 2 | 3>(1)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
   const [genisletilmis, setGenisletilmis] = useState<Set<number>>(new Set())
+  // Form başarıyla kaydedildi mi? (taslak kaydını atlamak için)
+  const [basariliKayit, setBasariliKayit] = useState(false)
 
   // Adım 3 state
   const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat'>('teslim_alacak')
@@ -75,13 +87,19 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
     control,
     setValue,
     trigger,
+    getValues,
     formState: { errors },
   } = useForm<FormVeri>({    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(schema) as any,
     defaultValues: {
-      tarih: new Date().toISOString().split('T')[0],
-      teslimat_tipi: 'teslim_alacak',
-      camlar: [{ ...BOŞ_CAM }],
+      tarih: initialTaslak?.tarih || new Date().toISOString().split('T')[0],
+      cari_id: initialTaslak?.cari_id ?? '',
+      teslim_tarihi: initialTaslak?.teslim_tarihi ?? '',
+      alt_musteri: initialTaslak?.alt_musteri ?? '',
+      notlar: initialTaslak?.notlar ?? '',
+      teslimat_tipi: initialTaslak?.teslimat_tipi || 'teslim_alacak',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      camlar: (initialTaslak?.camlar?.length ? initialTaslak.camlar : [{ ...BOŞ_CAM }]) as any,
     },
   })
 
@@ -187,6 +205,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
     setSunucuHata(null)
     try {
       await onKaydet(veri)
+      setBasariliKayit(true)
       onKapat()
     } catch (e: unknown) {
       setSunucuHata(e instanceof Error ? e.message : 'Bir hata oluştu')
@@ -194,6 +213,29 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
       setKaydediliyor(false)
     }
   }
+
+  /** Modal kapatılmadan önce mevcut form verisini taslak olarak parent'a iletir. */
+  const kapat = () => {
+    if (!basariliKayit && onTaslakKaydet) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const v = getValues() as any
+        onTaslakKaydet({
+          cari_id: v.cari_id,
+          tarih: v.tarih,
+          teslim_tarihi: v.teslim_tarihi,
+          alt_musteri: v.alt_musteri,
+          notlar: v.notlar,
+          teslimat_tipi: v.teslimat_tipi,
+          camlar: v.camlar,
+        })
+      } catch {
+        // veri okunamazsa sessizce geç
+      }
+    }
+    onKapat()
+  }
+  useEscape(kapat, !kaydediliyor)
 
   const camStoklar = stoklar.filter(s => s.kategori === 'cam')
 
@@ -248,7 +290,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
               ))}
             </div>
           </div>
-          <button onClick={onKapat} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 ml-4 shrink-0">
+          <button onClick={kapat} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 ml-4 shrink-0">
             <X size={18} />
           </button>
         </div>
@@ -653,7 +695,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat }: Pro
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={onKapat}
+                  onClick={kapat}
                   className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
                 >
                   İptal

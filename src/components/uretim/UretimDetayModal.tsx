@@ -8,6 +8,7 @@ import {
 import { exportDetaylariCSV, exportTarihiGuncelle } from '@/services/exportService'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { useEscape } from '@/hooks/useEscape'
 import { useStok } from '@/hooks/useStok'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
@@ -38,6 +39,7 @@ const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
 }
 
 export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGuncellendi }: Props) {
+  useEscape(onKapat)
   const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)

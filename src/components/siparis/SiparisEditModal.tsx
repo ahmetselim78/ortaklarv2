@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { X, ChevronRight, Trash2, Plus, ChevronDown, ChevronUp, Truck, PackageCheck, AlertTriangle } from 'lucide-react'
+import { X, ChevronRight, Trash2, Plus, ChevronDown, ChevronUp, Truck, PackageCheck, AlertTriangle, Eye, EyeOff, Save } from 'lucide-react'
 import type { Siparis, SiparisDetay } from '@/types/siparis'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { supabase } from '@/lib/supabase'
 import { generateCamKodulari } from '@/lib/idGenerator'
+import { isValidKatmanYapisi, normalizeKatmanYapisi, getCamKompozisyon } from '@/lib/cam'
+import { useKatmanYapilari } from '@/hooks/useKatmanYapilari'
+import { useEscape } from '@/hooks/useEscape'
+import KatmanCombobox from '@/components/ui/KatmanCombobox'
 import { cn } from '@/lib/utils'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
@@ -18,7 +22,7 @@ interface CamSatiri {
   genislik_mm: string
   yukseklik_mm: string
   adet: string
-  ara_bosluk_mm: string
+  katman_yapisi: string  // "4+16+4", "4+12+4+16+5", vb.
   kenar_islemi: string
   notlar: string
   poz: string
@@ -42,7 +46,16 @@ interface Props {
 let _keyCounter = 0
 const newKey = () => `k${++_keyCounter}`
 
+/** Mevcut detaydan düzenleme için katman_yapisi türet (eski veri / yeni veri her ikisini destekler). */
+function deriveKatmanYapisi(d: SiparisDetay, stoklar: Stok[]): string {
+  const norm = normalizeKatmanYapisi(d.katman_yapisi)
+  if (norm) return norm
+  const stok = stoklar.find(s => s.id === d.stok_id)
+  return getCamKompozisyon(d, stok ? { ad: stok.ad, kalinlik_mm: stok.kalinlik_mm } : null)
+}
+
 export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, onKaydet, onKapat }: Props) {
+  const { yapilar: populerKatmanYapilari } = useKatmanYapilari()
   const beklemede = siparis.durum === 'beklemede'
   const ADIMLAR = beklemede
     ? [{ no: 1, etiket: 'Sipariş Bilgileri' }, { no: 2, etiket: 'Cam Listesi' }, { no: 3, etiket: 'Sevkiyat' }]
@@ -77,7 +90,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       genislik_mm: String(d.genislik_mm),
       yukseklik_mm: String(d.yukseklik_mm),
       adet: String(d.adet ?? 1),
-      ara_bosluk_mm: d.ara_bosluk_mm != null ? String(d.ara_bosluk_mm) : '',
+      katman_yapisi: deriveKatmanYapisi(d, stoklar),
       kenar_islemi: d.kenar_islemi ?? '',
       notlar: d.notlar ?? '',
       poz: d.poz ?? '',
@@ -85,6 +98,9 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
   )
   const [silinenIds, setSilinenIds] = useState<string[]>([])
   const [genisletilmis, setGenisletilmis] = useState<Set<number>>(new Set())
+  const [ozelliklerGoster, setOzelliklerGoster] = useState(true)
+
+  useEscape(onKapat, !kaydediliyor)
 
   const camStoklar = stoklar.filter(s => s.kategori === 'cam')
   const musteriCariler = cariler.filter(c => c.tipi === 'musteri')
@@ -121,7 +137,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       genislik_mm: '',
       yukseklik_mm: '',
       adet: '1',
-      ara_bosluk_mm: last?.ara_bosluk_mm ?? '',
+      katman_yapisi: last?.katman_yapisi ?? '',
       kenar_islemi: '',
       notlar: '',
       poz: '',
@@ -208,8 +224,20 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
   const isLastStep = beklemede ? adim === 3 : adim === 2
 
   const doKaydet = async () => {
+    // Direkt kaydet butonu erken adımlarda da çağrılabildiği için tüm adım
+    // validasyonları burada da çalıştırılır.
+    if (!validateAdim1()) {
+      setAdim(1)
+      return
+    }
+    if (beklemede && !validateAdim2()) {
+      setAdim(2)
+      return
+    }
     if (teslimatTipi === 'sevkiyat' && !teslimTarihi) {
       setTeslimTarihiHata(true)
+      // Sevkiyat adımına geç ki kullanıcı tarih girsin
+      setAdim(beklemede ? 3 : 2)
       return
     }
     setKaydediliyor(true)
@@ -229,7 +257,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       if (sipErr) throw new Error(sipErr.message)
 
       if (beklemede) {
-        // 2. Silinen satırları kaldır
+        // 2. Silinen satırları kaldır (tek istek)
         if (silinenIds.length > 0) {
           const { error } = await supabase
             .from('siparis_detaylari')
@@ -238,26 +266,29 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
           if (error) throw new Error(error.message)
         }
 
-        // 3. Mevcut satırları güncelle
+        // 3. Mevcut satırları TEK upsert ile güncelle (N+1 round-trip yerine 1 istek)
         const mevcutlar = camlar.filter(c => c.id)
-        for (const c of mevcutlar) {
+        if (mevcutlar.length > 0) {
+          const updates = mevcutlar.map(c => ({
+            id: c.id!,
+            siparis_id: siparis.id,
+            cam_kodu: c.cam_kodu,            // NOT NULL — upsert için zorunlu
+            stok_id: c.stok_id || null,
+            genislik_mm: Number(c.genislik_mm) || 0,
+            yukseklik_mm: Number(c.yukseklik_mm) || 0,
+            adet: Number(c.adet) || 1,
+            katman_yapisi: normalizeKatmanYapisi(c.katman_yapisi) || null,
+            kenar_islemi: c.kenar_islemi || null,
+            notlar: c.notlar || null,
+            poz: c.poz || null,
+          }))
           const { error } = await supabase
             .from('siparis_detaylari')
-            .update({
-              stok_id: c.stok_id || null,
-              genislik_mm: Number(c.genislik_mm) || 0,
-              yukseklik_mm: Number(c.yukseklik_mm) || 0,
-              adet: Number(c.adet) || 1,
-              ara_bosluk_mm: c.ara_bosluk_mm ? Number(c.ara_bosluk_mm) : null,
-              kenar_islemi: c.kenar_islemi || null,
-              notlar: c.notlar || null,
-              poz: c.poz || null,
-            })
-            .eq('id', c.id!)
+            .upsert(updates, { onConflict: 'id' })
           if (error) throw new Error(error.message)
         }
 
-        // 4. Yeni satırları ekle
+        // 4. Yeni satırları ekle (tek istek)
         const yeniler = camlar.filter(c => !c.id)
         if (yeniler.length > 0) {
           const kodlar = await generateCamKodulari(yeniler.length)
@@ -268,7 +299,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
             genislik_mm: Number(c.genislik_mm) || 0,
             yukseklik_mm: Number(c.yukseklik_mm) || 0,
             adet: Number(c.adet) || 1,
-            ara_bosluk_mm: c.ara_bosluk_mm ? Number(c.ara_bosluk_mm) : null,
+            katman_yapisi: normalizeKatmanYapisi(c.katman_yapisi) || null,
             kenar_islemi: c.kenar_islemi || null,
             notlar: c.notlar || null,
             poz: c.poz || null,
@@ -422,14 +453,28 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                     <span className="text-xs text-red-500">{hatalar.camlar[-1].stok_id}</span>
                   )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setOzelliklerGoster(v => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors',
+                    ozelliklerGoster
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                      : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                  )}
+                  title={ozelliklerGoster ? 'Özellikler kolonunu gizle' : 'Özellikler kolonunu göster'}
+                >
+                  {ozelliklerGoster ? <Eye size={13} /> : <EyeOff size={13} />}
+                  Özellikler
+                </button>
               </div>
 
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="overflow-y-auto" style={{ maxHeight: 'calc(95vh - 280px)' }}>
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10">
-                      <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
-                        <th className="px-2 py-2 text-center text-gray-300 w-7">#</th>
+                      <tr className="bg-gray-100 border-b-2 border-gray-200 text-left text-[11px] text-gray-600 font-semibold uppercase tracking-wide">
+                        <th className="px-2 py-2.5 text-center text-gray-400 w-8">#</th>
                         <th className="px-2 py-2">
                           <span className="flex items-center gap-1 group relative cursor-default">
                             Poz
@@ -444,11 +489,11 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                           </span>
                         </th>
                         <th className="px-2 py-2">Cam Cinsi *</th>
+                        <th className="px-2 py-2">Katman</th>
                         <th className="px-2 py-2">Gen. (mm)</th>
                         <th className="px-2 py-2">Yük. (mm)</th>
                         <th className="px-2 py-2">Adet</th>
-                        <th className="px-2 py-2">Boşluk</th>
-                        <th className="px-2 py-2 w-[210px]">Özellikler</th>
+                        {ozelliklerGoster && <th className="px-2 py-2 w-[210px]">Özellikler</th>}
                         <th className="px-2 py-2 w-6"></th>
                       </tr>
                     </thead>
@@ -460,7 +505,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                             'border-b border-gray-100 last:border-0',
                             index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
                           )}>
-                            <td className="px-2 py-1.5 text-center text-[10px] text-gray-300 font-mono">{index + 1}</td>
+                            <td className="px-2 py-2 text-center text-[10px] text-gray-400 font-mono font-medium">{index + 1}</td>
                             <td className="px-1.5 py-1.5">
                               <input
                                 type="text"
@@ -470,7 +515,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                                 data-edit-field="poz"
                                 onKeyDown={e => handlePozEnter(e, index)}
                                 onFocus={e => e.currentTarget.select()}
-                                className="w-14 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-20 rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 placeholder="K1"
                               />
                             </td>
@@ -479,7 +524,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                                 value={cam.stok_id}
                                 onChange={e => updateCam(index, 'stok_id', e.target.value)}
                                 className={cn(
-                                  'w-36 rounded border px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                  'w-40 rounded border px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
                                   rowH?.stok_id ? 'border-red-300' : 'border-gray-200'
                                 )}
                               >
@@ -488,6 +533,17 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                                   <option key={s.id} value={s.id}>{s.ad}</option>
                                 ))}
                               </select>
+                            </td>
+                            <td className="px-1.5 py-1.5">
+                              <KatmanCombobox
+                                value={cam.katman_yapisi}
+                                onChange={v => updateCam(index, 'katman_yapisi', v.replace(/\s+/g, ''))}
+                                options={populerKatmanYapilari}
+                                invalid={!!cam.katman_yapisi && !isValidKatmanYapisi(cam.katman_yapisi)}
+                                placeholder="4+16+4"
+                                className="w-28"
+                                title="Katman yapısı (örn. 4+16+4 veya 4+12+4+16+5)."
+                              />
                             </td>
                             <td className="px-1.5 py-1.5">
                               <input
@@ -499,7 +555,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                                 onKeyDown={e => handleEnterNav(e, index, 'genislik_mm')}
                                 onFocus={e => e.currentTarget.select()}
                                 className={cn(
-                                  'w-20 rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                  'w-20 rounded border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
                                   rowH?.genislik_mm ? 'border-red-300' : 'border-gray-200'
                                 )}
                                 placeholder="0"
@@ -515,7 +571,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                                 onKeyDown={e => handleEnterNav(e, index, 'yukseklik_mm')}
                                 onFocus={e => e.currentTarget.select()}
                                 className={cn(
-                                  'w-20 rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                  'w-20 rounded border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
                                   rowH?.yukseklik_mm ? 'border-red-300' : 'border-gray-200'
                                 )}
                                 placeholder="0"
@@ -531,29 +587,14 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                                 onKeyDown={e => handleEnterNav(e, index, 'adet')}
                                 onFocus={e => e.currentTarget.select()}
                                 className={cn(
-                                  'w-14 rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                  'w-16 rounded border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500',
                                   rowH?.adet ? 'border-red-300' : 'border-gray-200'
                                 )}
                                 placeholder="1"
                                 min={1}
                               />
                             </td>
-                            <td className="px-1.5 py-1.5">
-                              <select
-                                value={cam.ara_bosluk_mm}
-                                onChange={e => updateCam(index, 'ara_bosluk_mm', e.target.value)}
-                                className="w-16 rounded border border-gray-200 px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              >
-                                <option value="">—</option>
-                                <option value="9">9</option>
-                                <option value="12">12</option>
-                                <option value="14">14</option>
-                                <option value="16">16</option>
-                                <option value="20">20</option>
-                                <option value="24">24</option>
-                              </select>
-                            </td>
-                            <td className="px-1.5 py-1.5 w-[210px]">
+                            <td className="px-1.5 py-1.5 w-[210px]" hidden={!ozelliklerGoster}>
                               <div className="flex flex-wrap gap-1 items-center" style={{ maxWidth: '200px' }}>
                                 {NOT_ETIKETLERI.map(tag => (
                                   <button
@@ -740,13 +781,24 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
               ? (beklemede ? 'Cam Listesi' : 'Sevkiyat')
               : 'Sevkiyat'
             return (
-              <button
-                onClick={ilerle}
-                className="flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
-              >
-                {nextLabel}
-                <ChevronRight size={15} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={ilerle}
+                  className="flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                >
+                  {nextLabel}
+                  <ChevronRight size={15} />
+                </button>
+                <button
+                  onClick={doKaydet}
+                  disabled={kaydediliyor}
+                  title="Mevcut bilgilerle direkt kaydet (sevkiyat adımını atla)"
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  <Save size={14} />
+                  {kaydediliyor ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+              </div>
             )
           })()}
         </div>

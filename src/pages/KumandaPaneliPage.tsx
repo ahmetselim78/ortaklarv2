@@ -7,11 +7,6 @@ import type { TamireGonderCam } from '@/components/tamir/TamireGonderModal'
 
 /* ========== Yardımcılar ========== */
 
-function extractNihaiMusteri(notlar: string): string {
-  const m = notlar.match(/Nihai\s+M[\u00fc\u00dc][\u015f\u015e]teri:\s*(.+?)(?:\s*\/|$)/i)
-  return m?.[1]?.trim() ?? ''
-}
-
 /** Cari adı + nihai müşteri → görüntü etiketi: "NOVEL — AKYOL LOUNGE" */
 function musteriEtiket(musteri: string, nihai: string): string {
   return nihai ? `${musteri} \u2014 ${nihai}` : musteri
@@ -85,7 +80,7 @@ export default function KumandaPaneliPage() {
         siparis_detaylari (
           cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet,
           stok!stok_id ( ad ),
-          siparisler ( siparis_no, notlar, cari ( ad ) )
+          siparisler ( siparis_no, alt_musteri, cari ( ad ) )
         )
       `)
       .eq('uretim_emri_id', loadBatchId)
@@ -94,7 +89,7 @@ export default function KumandaPaneliPage() {
       siparis_detay_id: d.siparis_detay_id,
       cam_kodu: d.siparis_detaylari.cam_kodu,
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
-      nihai_musteri: extractNihaiMusteri(d.siparis_detaylari.siparisler?.notlar ?? ''),
+      nihai_musteri: d.siparis_detaylari.siparisler?.alt_musteri ?? '',
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       genislik_mm: d.siparis_detaylari.genislik_mm,

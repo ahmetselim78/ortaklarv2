@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { useEscape } from '@/hooks/useEscape'
 
 interface Props {
   acik?: boolean
@@ -27,6 +28,7 @@ export default function ConfirmDialog({
   onKapat,
   yukleniyor = false,
 }: Props) {
+  useEscape(onKapat, acik && !yukleniyor)
   if (!acik) return null
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">

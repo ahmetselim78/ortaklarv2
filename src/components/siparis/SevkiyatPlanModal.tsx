@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Truck, X, PackageCheck } from 'lucide-react'
 import { useAraclar, sevkiyatKaydet } from '@/hooks/useSevkiyat'
 import { cn } from '@/lib/utils'
+import { useEscape } from '@/hooks/useEscape'
 
 interface Props {
   siparisId: string
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function SevkiyatPlanModal({ siparisId, siparisNo, teslimTarihi, onKapat }: Props) {
+  useEscape(onKapat)
   const { araclar, yukleniyor } = useAraclar()
   const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat' | null>(null)
   const [aracId, setAracId] = useState('')
