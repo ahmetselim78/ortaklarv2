@@ -1,0 +1,37 @@
+steps:
+  # Docker imajını build et (VITE değişkenlerini Secret Manager'dan al)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'VITE_SUPABASE_URL=${_VITE_SUPABASE_URL}'
+      - '--build-arg'
+      - 'VITE_SUPABASE_ANON_KEY=${_VITE_SUPABASE_ANON_KEY}'
+      - '--build-arg'
+      - 'VITE_MISTRAL_API_KEY=${_VITE_MISTRAL_API_KEY}'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA'
+      - '.'
+
+  # İmajı push et
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA']
+
+  # Cloud Run'a deploy et
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ortaklarv2'
+      - '--image=gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA'
+      - '--region=europe-west1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+
+images:
+  - 'gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA'
+
+# Substitution değerleri GCP Cloud Build Trigger ayarlarından girilir
+# Bu dosyaya API anahtarı YAZMAYIN
