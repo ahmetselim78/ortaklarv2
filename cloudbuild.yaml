@@ -1,37 +1,37 @@
 steps:
-  # Docker imajını build et (VITE değişkenlerini Secret Manager'dan al)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--no-cache'
       - '--build-arg'
-      - 'VITE_SUPABASE_URL=${_VITE_SUPABASE_URL}'
+      - 'VITE_SUPABASE_URL=$_VITE_SUPABASE_URL'
       - '--build-arg'
-      - 'VITE_SUPABASE_ANON_KEY=${_VITE_SUPABASE_ANON_KEY}'
+      - 'VITE_SUPABASE_ANON_KEY=$_VITE_SUPABASE_ANON_KEY'
       - '--build-arg'
-      - 'VITE_MISTRAL_API_KEY=${_VITE_MISTRAL_API_KEY}'
+      - 'VITE_MISTRAL_API_KEY=$_VITE_MISTRAL_API_KEY'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA'
+      - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME:$COMMIT_SHA'
+      - '-f'
+      - 'Dockerfile'
       - '.'
+    id: Build
 
-  # İmajı push et
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA']
+    args:
+      - 'push'
+      - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME:$COMMIT_SHA'
+    id: Push
 
-  # Cloud Run'a deploy et
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     args:
       - 'run'
-      - 'deploy'
-      - 'ortaklarv2'
-      - '--image=gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA'
-      - '--region=europe-west1'
+      - 'services'
+      - 'update'
+      - '$_SERVICE_NAME'
       - '--platform=managed'
-      - '--allow-unauthenticated'
-      - '--port=8080'
+      - '--image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME:$COMMIT_SHA'
+      - '--region=$_DEPLOY_REGION'
+      - '--quiet'
 
 images:
-  - 'gcr.io/$PROJECT_ID/ortaklarv2:$COMMIT_SHA'
-
-# Substitution değerleri GCP Cloud Build Trigger ayarlarından girilir
-# Bu dosyaya API anahtarı YAZMAYIN
+  - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME:$COMMIT_SHA'
