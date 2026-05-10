@@ -19,7 +19,7 @@ ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 ENV VITE_MISTRAL_API_KEY=$VITE_MISTRAL_API_KEY
 
-RUN npm run build
+RUN npx vite build
 
 # ── 2. Servis aşaması (nginx) ──────────────────────────────────
 FROM nginx:stable-alpine AS runner
