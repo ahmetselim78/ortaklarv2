@@ -7,7 +7,7 @@ import {
 import type { EtiketAyarlari, EtiketVeri } from '@/types/ayarlar'
 import { dplUret } from '@/types/ayarlar'
 
-const KOPRU_PORT = 9876
+const VARSAYILAN_KOPRU_PORT = 9876
 
 interface Props {
   ayarlar: EtiketAyarlari
@@ -243,7 +243,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
     setYaziciListesi(null)
     setYaziciListeHata(null)
     try {
-      const url = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazicilar`
+      const url = `http://${form.yazici.kopru_adresi.trim()}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}/yazicilar`
       const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
       const data = await res.json()
       if (!Array.isArray(data?.yazicilar)) throw new Error('Geçersiz yanıt.')
@@ -268,7 +268,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
       setTestSonucu({ basarili: false, mesaj: 'Windows Yazıcı Adı veya Yazıcı IP giriniz.' })
       return
     }
-    const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazdir`
+    const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}/yazdir`
     setTestGonderiyor(true)
     setTestSonucu(null)
     const controller = new AbortController()
@@ -297,7 +297,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
       setTestSonucu({
         basarili: false,
         mesaj: zaman_asimi
-          ? `Bağlantı zaman aşımı (10s) — ${form.yazici.kopru_adresi}:${KOPRU_PORT} adresine ulaşılamıyor. Köprü servisi çalışıyor mu?`
+          ? `Bağlantı zaman aşımı (10s) — ${form.yazici.kopru_adresi}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT} adresine ulaşılamıyor. Köprü servisi çalışıyor mu?`
           : kopruHatasi
           ? 'Köprü servisi bulunamadı. Yazıcı bilgisayarında yazici-kopru.exe çalışıyor mu?'
           : mesaj,
@@ -357,13 +357,28 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
               Köprü Sunucu Adresi
               <span className="ml-1 font-normal text-gray-400">(yazici-kopru.exe hangi bilgisayarda?)</span>
             </label>
-            <input
-              type="text"
-              placeholder="192.168.3.7 veya localhost"
-              value={form.yazici.kopru_adresi}
-              onChange={e => setYazici('kopru_adresi', e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="192.168.3.7 veya localhost"
+                value={form.yazici.kopru_adresi}
+                onChange={e => setYazici('kopru_adresi', e.target.value)}
+                className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="number"
+                placeholder="Port"
+                title="Köprü servisi portu (varsayılan 9876)"
+                value={form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}
+                onChange={e => setYazici('kopru_port', Number(e.target.value) || VARSAYILAN_KOPRU_PORT)}
+                min={1}
+                max={65535}
+                className="w-24 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              yazici-kopru servisinin HTTP portu (varsayılan {VARSAYILAN_KOPRU_PORT}).
+            </p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -575,7 +590,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
             <span>
               Mevcut ayarlarla test etiketi gönderir. Yazıcının bağlı olduğu bilgisayarda
               {' '}<strong>yazici-kopru.exe</strong> servisinin çalışıyor olması gerekir.
-              Köprü: <strong>{form.yazici.kopru_adresi || '—'}:{KOPRU_PORT}</strong>
+              Köprü: <strong>{form.yazici.kopru_adresi || '—'}:{form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}</strong>
               {' → '}
               Yazıcı: <strong>{form.yazici.yazici_adi || form.yazici.ip_adresi || '—'}</strong>
             </span>
@@ -599,7 +614,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
               onClick={async () => {
                 if (!form.yazici.kopru_adresi.trim()) return
                 const usb = form.yazici.yazici_adi.trim()
-                const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${KOPRU_PORT}/yazdir`
+                const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}/yazdir`
                 // Minimal DPL: Datamax M-Class, heat 15, dot size 1x1, en sade field format
                 const minimalDpl = "\x02H15\r\n\x02L\r\nD11\r\n1A11100500030KOPRU TEST OK\r\n1A11101000030GLS-TEST-001\r\nE\r\n"
                 const body = usb ? { yazici_adi: usb, dpl: minimalDpl } : { ip: form.yazici.ip_adresi, port: form.yazici.port, dpl: minimalDpl }

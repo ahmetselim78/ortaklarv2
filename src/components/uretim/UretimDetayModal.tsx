@@ -42,6 +42,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   useEscape(onKapat)
   const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
+  const [yuklemHata, setYuklemHata] = useState<string | null>(null)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)
   const [exportDialogAcik, setExportDialogAcik] = useState(false)
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
@@ -60,9 +61,15 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
 
   const detaylariGetir = async () => {
     setYukleniyor(true)
-    const data = await getBatchDetaylari(emir.id)
-    setDetaylar(data)
-    setYukleniyor(false)
+    setYuklemHata(null)
+    try {
+      const data = await getBatchDetaylari(emir.id)
+      setDetaylar(data)
+    } catch (err: any) {
+      setYuklemHata(err?.message ?? 'Veriler yüklenemedi')
+    } finally {
+      setYukleniyor(false)
+    }
   }
 
   useEffect(() => { detaylariGetir() }, [emir.id])
@@ -189,6 +196,17 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
                 ))}
+              </div>
+            ) : yuklemHata ? (
+              <div className="py-10 text-center">
+                <p className="text-red-500 font-medium text-sm mb-2">Veriler yüklenemedi</p>
+                <p className="text-gray-400 text-xs mb-4">{yuklemHata}</p>
+                <button
+                  onClick={detaylariGetir}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  Tekrar dene
+                </button>
               </div>
             ) : detaylar.length === 0 ? (
               <div className="text-center py-10 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">

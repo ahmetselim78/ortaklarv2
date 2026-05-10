@@ -13,6 +13,7 @@ export interface EtiketIcerik {
 /** Yazıcı bağlantı bilgileri */
 export interface YaziciBaglanti {
   kopru_adresi: string    // yazici-kopru.exe'nin çalıştığı bilgisayarın IP'si (varsayılan localhost)
+  kopru_port: number      // yazici-kopru servisinin HTTP portu (varsayılan 9876)
   yazici_adi: string      // Windows yazıcı adı (örn. "Datamax M-4206") — USB mod, boşsa TCP kullanılır
   ip_adresi: string       // TCP mod: köprüden görülen yazıcı IP'si
   port: number            // TCP mod: ham yazıcı portu (varsayılan 9100)
@@ -46,6 +47,7 @@ export interface AyarlarRow {
 export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
   yazici: {
     kopru_adresi: 'localhost',
+    kopru_port: 9876,
     yazici_adi: '',
     ip_adresi: '',
     port: 9100,

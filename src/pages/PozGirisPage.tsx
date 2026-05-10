@@ -23,6 +23,7 @@ interface BatchSatir {
   toplam_cam: number
   taranan_cam: number
   musteriler: string[]  // "NOVEL — AKYOL LOUNGE" formatında benzersiz müşteri listesi
+  tamirde_cam_var: boolean  // bekleyen tamir kaydı olan cam içeriyor mu
 }
 
 interface BatchCam {
@@ -105,6 +106,8 @@ export default function PozGirisPage() {
   const [aktifMusteri, setAktifMusteri] = useState<string | null>(null)
   const [tamirCam, setTamirCam] = useState<BatchCam | null>(null)
   const [tamirGonderildi, setTamirGonderildi] = useState(false)
+  // Batch tamamlandı ama hala bekleven tamir kaydı olan siparişler
+  const [tamirUyarisi, setTamirUyarisi] = useState<string[]>([])  // siparis_no listesi
 
   const inputRef = useRef<HTMLInputElement>(null)
   const sagListeRef = useRef<HTMLDivElement>(null)
@@ -164,6 +167,14 @@ export default function PozGirisPage() {
       detayMap.set(d.uretim_emri_id, entry)
     }
 
+    // Bekleyen tamir kaydı olan batch'leri bul
+    const { data: tamirler } = await supabase
+      .from('tamir_kayitlari')
+      .select('uretim_emri_id')
+      .eq('durum', 'bekliyor')
+      .in('uretim_emri_id', emirIds)
+    const tamirdeBatchIds = new Set((tamirler ?? []).map((t: any) => t.uretim_emri_id))
+
     const sonuc: BatchSatir[] = emirler.map(e => {
       const d = detayMap.get(e.id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
       return {
@@ -173,6 +184,7 @@ export default function PozGirisPage() {
         toplam_cam: d.toplam,
         taranan_cam: d.taranan,
         musteriler: Array.from(d.musteriSet),
+        tamirde_cam_var: tamirdeBatchIds.has(e.id),
       }
     })
 
@@ -294,13 +306,52 @@ export default function PozGirisPage() {
           .update({ durum: 'eksik_var' })
           .in('id', eksikSiparisIds)
 
+        // Bu batch'te tüm camları biten siparişler — ama başka batch'te de
+        // camları olabilir. Sadece TÜM siparis_detaylari yıkandı olanları 'tamamlandi' yap.
+        // Ayrıca tamirde bekleyen camı olan siparişleri işaretleme.
         const tamamSiparisIds = [...new Set(batchCamlari.map(c => c.siparis_id))]
           .filter(sid => !eksikSiparisIds.includes(sid))
         if (tamamSiparisIds.length > 0) {
-          await supabase
-            .from('siparisler')
-            .update({ durum: 'tamamlandi' })
-            .in('id', tamamSiparisIds)
+          const { data: digerDetaylar } = await supabase
+            .from('siparis_detaylari')
+            .select('siparis_id, uretim_durumu')
+            .in('siparis_id', tamamSiparisIds)
+
+          // Tamirde bekleyen kontrol
+          const tamamBatchDetayIds = batchCamlari
+            .filter(c => tamamSiparisIds.includes(c.siparis_id))
+            .map(c => c.siparis_detay_id)
+          const { data: bekleyenTamirler } = tamamBatchDetayIds.length > 0
+            ? await supabase
+                .from('tamir_kayitlari')
+                .select('siparis_detay_id')
+                .eq('durum', 'bekliyor')
+                .in('siparis_detay_id', tamamBatchDetayIds)
+            : { data: [] }
+          const tamirdekiDetayIds = new Set((bekleyenTamirler ?? []).map((t: any) => t.siparis_detay_id))
+          const sipDetayIdMap = new Map<string, string[]>()
+          for (const c of batchCamlari) {
+            const arr = sipDetayIdMap.get(c.siparis_id) ?? []
+            arr.push(c.siparis_detay_id)
+            sipDetayIdMap.set(c.siparis_id, arr)
+          }
+
+          const gercektenTamSipIds: string[] = []
+          for (const sid of tamamSiparisIds) {
+            const detaylar = (digerDetaylar ?? []).filter(d => d.siparis_id === sid)
+            const hepsiYikandi = detaylar.length > 0 && detaylar.every(d => d.uretim_durumu === 'yikandi')
+            if (!hepsiYikandi) continue
+            const sipDetayIds = sipDetayIdMap.get(sid) ?? []
+            const tamirdeBekleyenVar = sipDetayIds.some(did => tamirdekiDetayIds.has(did))
+            if (!tamirdeBekleyenVar) gercektenTamSipIds.push(sid)
+          }
+
+          if (gercektenTamSipIds.length > 0) {
+            await supabase
+              .from('siparisler')
+              .update({ durum: 'tamamlandi', tamamlandi_tarihi: new Date().toISOString() })
+              .in('id', gercektenTamSipIds)
+          }
         }
       } else if (taranan === 0) {
         // Hiç tarama yapılmadan çıkıldı — batch'i export_edildi'ye geri al
@@ -420,7 +471,7 @@ export default function PozGirisPage() {
         siparis_no: cam.siparis_no,
       }
       const dpl = dplUret(etiketAyarlari, veri)
-      const kopruUrl = `http://${etiketAyarlari.yazici.kopru_adresi.trim()}:9876/yazdir`
+      const kopruUrl = `http://${etiketAyarlari.yazici.kopru_adresi.trim()}:${etiketAyarlari.yazici.kopru_port ?? 9876}/yazdir`
       const usb = etiketAyarlari.yazici.yazici_adi?.trim()
       const fetchBody = usb
         ? { yazici_adi: usb, dpl }
@@ -517,11 +568,65 @@ export default function PozGirisPage() {
         .eq('id', seciliBatch.id)
       setSeciliBatch(prev => prev ? { ...prev, durum: 'tamamlandi' } : prev)
 
+      // Sipariş tamamlandı kontrolü:
+      // Bir sipariş birden fazla batch'e bölünmüş olabilir (eksik_var akışı).
+      // Sadece TÜM siparis_detaylari 'yikandi' olan siparişleri 'tamamlandi' yap.
       const benzersizSiparisIdsTamam = [...new Set(batchCamlari.map(c => c.siparis_id))]
-      await supabase
-        .from('siparisler')
-        .update({ durum: 'tamamlandi' })
-        .in('id', benzersizSiparisIdsTamam)
+      if (benzersizSiparisIdsTamam.length > 0) {
+        const { data: tumSipDetaylari } = await supabase
+          .from('siparis_detaylari')
+          .select('siparis_id, uretim_durumu')
+          .in('siparis_id', benzersizSiparisIdsTamam)
+
+        // Bu siparişlere ait bekleyen tamir kayıtlarını kontrol et
+        const tumDetayIds = (tumSipDetaylari ?? []).map(d => (d as any).id).filter(Boolean)
+        // siparis_detay_id listesi için batchCamlari'nı kullanaılım
+        const sipDetayIdMap = new Map<string, string[]>()  // siparis_id -> detay_id[]
+        for (const c of batchCamlari) {
+          const arr = sipDetayIdMap.get(c.siparis_id) ?? []
+          arr.push(c.siparis_detay_id)
+          sipDetayIdMap.set(c.siparis_id, arr)
+        }
+        const tumBatchDetayIds = batchCamlari.map(c => c.siparis_detay_id)
+        const { data: bekleyenTamirler } = tumBatchDetayIds.length > 0
+          ? await supabase
+              .from('tamir_kayitlari')
+              .select('siparis_detay_id')
+              .eq('durum', 'bekliyor')
+              .in('siparis_detay_id', tumBatchDetayIds)
+          : { data: [] }
+        const tamirdekiDetayIds = new Set((bekleyenTamirler ?? []).map((t: any) => t.siparis_detay_id))
+
+        const tamamlananSipIds: string[] = []
+        const tamirUyarisiSipNo: string[] = []
+
+        for (const sipId of benzersizSiparisIdsTamam) {
+          const detaylar = (tumSipDetaylari ?? []).filter(d => d.siparis_id === sipId)
+          const hepsiYikandi = detaylar.length > 0 && detaylar.every(d => d.uretim_durumu === 'yikandi')
+          if (!hepsiYikandi) continue  // bazı camlar hala yıkanmadı
+
+          // Hepsi yıkandı — ama tamirde bekleyen var mı?
+          const sipDetayIds = sipDetayIdMap.get(sipId) ?? []
+          const tamirdeBekleyenVar = sipDetayIds.some(did => tamirdekiDetayIds.has(did))
+          if (tamirdeBekleyenVar) {
+            // Sipariş tamamlanmış sayılmaz — tamirdeki cam bitene kadar bekle
+            const sipNo = batchCamlari.find(c => c.siparis_id === sipId)?.siparis_no ?? sipId
+            tamirUyarisiSipNo.push(sipNo)
+          } else {
+            tamamlananSipIds.push(sipId)
+          }
+        }
+
+        if (tamamlananSipIds.length > 0) {
+          await supabase
+            .from('siparisler')
+            .update({ durum: 'tamamlandi', tamamlandi_tarihi: new Date().toISOString() })
+            .in('id', tamamlananSipIds)
+        }
+        if (tamirUyarisiSipNo.length > 0) {
+          setTamirUyarisi(tamirUyarisiSipNo)
+        }
+      }
     } else if (tekrar) {
       beep('error')
       setDurum('tekrar')
@@ -582,22 +687,36 @@ export default function PozGirisPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl w-full">
               {batchler.map(b => {
                 const pct = b.toplam_cam > 0 ? Math.round((b.taranan_cam / b.toplam_cam) * 100) : 0
+                const tamir = b.tamirde_cam_var
                 return (
                   <button
                     key={b.id}
-                    onClick={() => handleBatchSec(b)}
-                    className="bg-gray-900 border border-gray-700 hover:border-blue-500 rounded-xl p-5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onClick={() => !tamir && handleBatchSec(b)}
+                    disabled={tamir}
+                    className={`rounded-xl p-5 text-left transition-colors focus:outline-none focus:ring-2 ${
+                      tamir
+                        ? 'bg-gray-900/50 border border-amber-700/60 opacity-70 cursor-not-allowed focus:ring-amber-700'
+                        : 'bg-gray-900 border border-gray-700 hover:border-blue-500 cursor-pointer focus:ring-blue-500'
+                    }`}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <span className="font-mono font-bold text-lg text-white">{b.batch_no}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        b.durum === 'export_edildi' ? 'bg-blue-900 text-blue-300' :
-                        b.durum === 'yikamada' ? 'bg-amber-900 text-amber-300' :
-                        'bg-red-900 text-red-300'
-                      }`}>
-                        {b.durum === 'export_edildi' ? 'Hazır' :
-                         b.durum === 'yikamada' ? 'Devam Ediyor' : 'Eksik Var'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {tamir && (
+                          <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-900 text-amber-300 border border-amber-700">
+                            <Wrench size={10} />
+                            Tamirde
+                          </span>
+                        )}
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          b.durum === 'export_edildi' ? 'bg-blue-900 text-blue-300' :
+                          b.durum === 'yikamada' ? 'bg-amber-900 text-amber-300' :
+                          'bg-red-900 text-red-300'
+                        }`}>
+                          {b.durum === 'export_edildi' ? 'Hazır' :
+                           b.durum === 'yikamada' ? 'Devam Ediyor' : 'Eksik Var'}
+                        </span>
+                      </div>
                     </div>
                     <div className="text-sm text-gray-400 mb-2">
                       {b.taranan_cam} / {b.toplam_cam} cam girildi
@@ -611,9 +730,14 @@ export default function PozGirisPage() {
                         ))}
                       </div>
                     )}
+                    {tamir && (
+                      <p className="text-xs text-amber-400/80 mb-2">
+                        Tamirdeki camlar tamamlanana kadar seçilemez.
+                      </p>
+                    )}
                     <div className="w-full bg-gray-800 rounded-full h-2">
                       <div
-                        className="bg-blue-500 h-2 rounded-full transition-all"
+                        className={`h-2 rounded-full transition-all ${tamir ? 'bg-amber-600' : 'bg-blue-500'}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -793,6 +917,28 @@ export default function PozGirisPage() {
                   <CheckCircle2 size={52} className="text-emerald-400 mx-auto mb-2" />
                   <p className="text-emerald-200 font-black text-2xl">Batch Tamamlandı!</p>
                   <p className="text-emerald-400/70 text-base mt-1">{toplamSayisi} cam başarıyla işlendi</p>
+                  {tamirUyarisi.length > 0 && (
+                    <div className="mt-4 bg-amber-900/40 border border-amber-600 rounded-xl px-4 py-3 text-left">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Wrench size={16} className="text-amber-400 shrink-0" />
+                        <span className="text-amber-300 font-bold text-sm">Tamirde cam var — sipariş tamamlanmadı</span>
+                      </div>
+                      <p className="text-amber-400/80 text-xs mb-2">
+                        Aşağıdaki sipariş(ler) tamirdeki camlar tamamlanana kadar <strong>"Tamamlandı"</strong> olarak işaretlenmedi:
+                      </p>
+                      <ul className="space-y-1">
+                        {tamirUyarisi.map(sipNo => (
+                          <li key={sipNo} className="flex items-center gap-2 text-xs text-amber-200 font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                            {sipNo}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-amber-500/70 text-xs mt-2">
+                        Tamir istasyonundan camları tamamladıktan sonra sipariş otomatik güncellenir.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
             </div>

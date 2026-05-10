@@ -86,24 +86,52 @@ export function useUretim() {
 
     if (detayHata) throw new Error(detayHata.message)
 
-    // Toplu olarak batch'e ekle
-    if (detaylar && detaylar.length > 0) {
-      const satirlar = detaylar.map((d, i) => ({
-        uretim_emri_id: uretimEmriId,
-        siparis_detay_id: d.id,
-        sira_no: i + 1,
-      }))
-      const { error: eklemeHata } = await supabase
+    // Aynı cam başka bir aktif batch'e zaten eklenmiş olabilir
+    // (örn. eksik_var senaryosu). Bu detayları hariç tut — bir cam yalnızca tek batch'te bulunabilir.
+    let eklenecekDetaylar = detaylar ?? []
+    if (eklenecekDetaylar.length > 0) {
+      const detayIdleri = eklenecekDetaylar.map(d => d.id)
+      const { data: zatenBatchte, error: kontrolHata } = await supabase
         .from('uretim_emri_detaylari')
-        .insert(satirlar)
-      if (eklemeHata) throw new Error(eklemeHata.message)
+        .select('siparis_detay_id')
+        .in('siparis_detay_id', detayIdleri)
+      if (kontrolHata) throw new Error(kontrolHata.message)
+      const batchtekiSet = new Set((zatenBatchte ?? []).map(d => d.siparis_detay_id))
+      eklenecekDetaylar = eklenecekDetaylar.filter(d => !batchtekiSet.has(d.id))
     }
 
-    // Siparişlerin durumunu 'batchte' yap
-    await supabase
-      .from('siparisler')
-      .update({ durum: 'batchte' })
-      .in('id', siparisIds)
+    if (eklenecekDetaylar.length === 0) {
+      // Hiç eklenecek cam yok — boş batch'i geri al, kullanıcıyı bilgilendir
+      await supabase.from('uretim_emirleri').delete().eq('id', uretimEmriId)
+      throw new Error('Seçilen siparişlerdeki tüm camlar zaten başka bir batch\'te. Yeni batch oluşturulmadı.')
+    }
+
+    // Toplu olarak batch'e ekle
+    const satirlar = eklenecekDetaylar.map((d, i) => ({
+      uretim_emri_id: uretimEmriId,
+      siparis_detay_id: d.id,
+      sira_no: i + 1,
+    }))
+    const { error: eklemeHata } = await supabase
+      .from('uretim_emri_detaylari')
+      .insert(satirlar)
+    if (eklemeHata) throw new Error(eklemeHata.message)
+
+    // Sadece bu batch'e gerçekten cam eklenen siparişlerin durumunu 'batchte' yap.
+    // (Tüm camları zaten başka batch'te olan siparişlerin durumunu değiştirme.)
+    const eklenenDetayIds = eklenecekDetaylar.map(d => d.id)
+    const { data: eklenenSipDetaylari } = await supabase
+      .from('siparis_detaylari')
+      .select('siparis_id')
+      .in('id', eklenenDetayIds)
+    const guncellenecekSipIds = [...new Set((eklenenSipDetaylari ?? []).map(d => d.siparis_id))]
+    if (guncellenecekSipIds.length > 0) {
+      await supabase
+        .from('siparisler')
+        .update({ durum: 'batchte' })
+        .in('id', guncellenecekSipIds)
+        .eq('durum', 'beklemede')
+    }
 
     await getir()
     return uretimEmriId
@@ -228,8 +256,8 @@ export async function getBatchDetaylari(uretimEmriId: string): Promise<UretimEmr
     .select(`
       id, uretim_emri_id, siparis_detay_id, sira_no,
       siparis_detaylari (
-        cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, kenar_islemi, notlar,
-        stok!stok_id ( ad ),
+        cam_kodu, genislik_mm, yukseklik_mm, adet, katman_yapisi, kenar_islemi, notlar,
+        stok!stok_id ( ad, kalinlik_mm ),
         siparisler ( id, siparis_no, cari ( ad ) )
       )
     `)
