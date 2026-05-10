@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Bağımlılıkları önce kopyala (layer cache için)
 COPY package*.json ./
-RUN npm ci
+RUN npm install --ignore-scripts
 
 # Kaynak kodunu kopyala
 COPY . .
