@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Plus, ClipboardList, FileUp, Wrench, Files } from 'lucide-react'
+import { Plus, ClipboardList, FileUp, Wrench, Files, Search, X as XIcon } from 'lucide-react'
 import Pagination from '@/components/ui/Pagination'
 import EmptyState from '@/components/ui/EmptyState'
 import { useSiparis } from '@/hooks/useSiparis'
@@ -50,6 +50,8 @@ export default function SiparisPage() {
   const [silEdiliyor, setSilEdiliyor] = useState(false)
   const [pendingSevkiyat, setPendingSevkiyat] = useState<{ siparis_id: string; siparis_no: string; teslim_tarihi: string | null } | null>(null)
   const [durumFiltre, setDurumFiltre] = useState<DurumFiltre>('hepsi')
+  const [cariFiltre, setCariFiltre] = useState<string>('')
+  const [altMusteriFiltre, setAltMusteriFiltre] = useState<string>('')
   const [sayfa, setSayfa] = useState(1)
   const SAYFA_BOYUTU = 20
 
@@ -97,14 +99,20 @@ export default function SiparisPage() {
   }, [tamirBilgisiGetir])
 
   const filtrelenmis = (() => {
-    if (durumFiltre === 'hepsi') return siparisler
-    if (durumFiltre === 'tamirde') return siparisler.filter(s => tamirdeSiparisIds.has(s.id))
-    return siparisler.filter(s => s.durum === durumFiltre)
+    let liste = siparisler
+    if (durumFiltre === 'tamirde') liste = liste.filter(s => tamirdeSiparisIds.has(s.id))
+    else if (durumFiltre !== 'hepsi') liste = liste.filter(s => s.durum === durumFiltre)
+    if (cariFiltre) liste = liste.filter(s => s.cari_id === cariFiltre)
+    if (altMusteriFiltre.trim()) {
+      const ara = altMusteriFiltre.trim().toLocaleLowerCase('tr')
+      liste = liste.filter(s => s.alt_musteri?.toLocaleLowerCase('tr').includes(ara))
+    }
+    return liste
   })()
 
   const sayfali = filtrelenmis.slice((sayfa - 1) * SAYFA_BOYUTU, sayfa * SAYFA_BOYUTU)
 
-  useEffect(() => { setSayfa(1) }, [durumFiltre])
+  useEffect(() => { setSayfa(1) }, [durumFiltre, cariFiltre, altMusteriFiltre])
 
   const handleIptalOnayla = async () => {
     if (!iptalEdilecek) return
@@ -235,6 +243,51 @@ export default function SiparisPage() {
             </button>
           )
         })}
+      </div>
+
+      {/* Müşteri / Alt Müşteri Filtresi */}
+      <div className="flex flex-wrap gap-3 mb-5">
+        <div className="relative flex-1 min-w-48">
+          <select
+            value={cariFiltre}
+            onChange={e => setCariFiltre(e.target.value)}
+            className="w-full pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Tüm müşteriler</option>
+            {cariler
+              .filter(c => c.tipi === 'musteri')
+              .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'))
+              .map(c => (
+                <option key={c.id} value={c.id}>{c.ad}</option>
+              ))}
+          </select>
+          {cariFiltre && (
+            <button
+              onClick={() => setCariFiltre('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <XIcon size={14} />
+            </button>
+          )}
+        </div>
+        <div className="relative flex-1 min-w-48">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            value={altMusteriFiltre}
+            onChange={e => setAltMusteriFiltre(e.target.value)}
+            placeholder="Alt müşteri ara..."
+            className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {altMusteriFiltre && (
+            <button
+              onClick={() => setAltMusteriFiltre('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <XIcon size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {hata && (

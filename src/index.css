@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+@keyframes citaUyariPulse {
+  0%, 100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgba(234, 179, 8, 0.12);
+  }
+}
+
 /* Hide number input spinners */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button {

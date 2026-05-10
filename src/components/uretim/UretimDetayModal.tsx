@@ -5,12 +5,11 @@ import type { Siparis } from '@/types/siparis'
 import {
   getBatchDetaylari,
 } from '@/hooks/useUretim'
-import { exportDetaylariCSV, exportTarihiGuncelle } from '@/services/exportService'
+import { exportDetaylariCSV, exportCitaBukumCSV, exportTarihiGuncelle } from '@/services/exportService'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { useEscape } from '@/hooks/useEscape'
 import { useStok } from '@/hooks/useStok'
-import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 
 interface Props {
@@ -42,9 +41,8 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   useEscape(onKapat)
   const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
-  const [yuklemHata, setYuklemHata] = useState<string | null>(null)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)
-  const [exportDialogAcik, setExportDialogAcik] = useState(false)
+  const [makineSecimAcik, setMakineSecimAcik] = useState(false)
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [secilenSiparis, setSecilenSiparis] = useState<Siparis | null>(null)
   const { stoklar } = useStok()
@@ -61,25 +59,24 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
 
   const detaylariGetir = async () => {
     setYukleniyor(true)
-    setYuklemHata(null)
-    try {
-      const data = await getBatchDetaylari(emir.id)
-      setDetaylar(data)
-    } catch (err: any) {
-      setYuklemHata(err?.message ?? 'Veriler yüklenemedi')
-    } finally {
-      setYukleniyor(false)
-    }
+    const data = await getBatchDetaylari(emir.id)
+    setDetaylar(data)
+    setYukleniyor(false)
   }
 
   useEffect(() => { detaylariGetir() }, [emir.id])
 
 
-  const handleExport = async () => {
+  const handleExport = async (tip: 'perfectcut' | 'cita_bukum') => {
     setExportYapiliyor(true)
     try {
+      if (tip === 'perfectcut') {
+        exportDetaylariCSV(detaylar, emir.batch_no)
+      } else {
+        exportCitaBukumCSV(detaylar, emir.batch_no)
+      }
       await exportTarihiGuncelle(emir.id)
-      exportDetaylariCSV(detaylar, emir.batch_no)
+      setMakineSecimAcik(false)
       onGuncellendi()
     } catch (err: any) {
       alert(err?.message ?? 'Export sırasında hata oluştu')
@@ -156,7 +153,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
 
             {/* Export Butonu */}
             <button
-              onClick={() => setExportDialogAcik(true)}
+              onClick={() => setMakineSecimAcik(true)}
               disabled={exportYapiliyor || detaylar.length === 0}
               className="flex items-center gap-2 px-4 py-1.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-40 transition-colors"
             >
@@ -196,17 +193,6 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
                 {Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
                 ))}
-              </div>
-            ) : yuklemHata ? (
-              <div className="py-10 text-center">
-                <p className="text-red-500 font-medium text-sm mb-2">Veriler yüklenemedi</p>
-                <p className="text-gray-400 text-xs mb-4">{yuklemHata}</p>
-                <button
-                  onClick={detaylariGetir}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  Tekrar dene
-                </button>
               </div>
             ) : detaylar.length === 0 ? (
               <div className="text-center py-10 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
@@ -295,20 +281,46 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
           </div>
         </div>
 
-        {/* Export diyalogu */}
-        <ConfirmDialog
-          acik={exportDialogAcik}
-          baslik="CSV Export"
-          mesaj={`"${emir.batch_no}" batch'ini CSV olarak dışa aktarmak istediğinize emin misiniz?`}
-          onayButon="Export Et"
-          onayRenk="green"
-          yukleniyor={exportYapiliyor}
-          onOnayla={async () => {
-            await handleExport()
-            setExportDialogAcik(false)
-          }}
-          onKapat={() => setExportDialogAcik(false)}
-        />
+        {/* Makine seçim modalı */}
+        {makineSecimAcik && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl p-6 w-80">
+              <h3 className="text-base font-semibold text-gray-800 mb-1">Makine Seçin</h3>
+              <p className="text-sm text-gray-500 mb-5">Hangi formatta CSV export almak istiyorsunuz?</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => handleExport('perfectcut')}
+                  disabled={exportYapiliyor}
+                  className="flex items-center gap-3 px-4 py-3 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 disabled:opacity-40 transition-colors text-left"
+                >
+                  <Download size={16} className="text-orange-600 shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium text-orange-700">PerfectCut</div>
+                    <div className="text-xs text-orange-500">Standart virgül ayrımlı format</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleExport('cita_bukum')}
+                  disabled={exportYapiliyor}
+                  className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 disabled:opacity-40 transition-colors text-left"
+                >
+                  <Download size={16} className="text-blue-600 shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium text-blue-700">Çıta Büküm</div>
+                    <div className="text-xs text-blue-500">Noktalı virgül ayrımlı format</div>
+                  </div>
+                </button>
+              </div>
+              <button
+                onClick={() => setMakineSecimAcik(false)}
+                disabled={exportYapiliyor}
+                className="mt-4 w-full text-sm text-gray-400 hover:text-gray-600 text-center"
+              >
+                İptal
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Sipariş detay modalı */}
         {secilenSiparis && (

@@ -32,10 +32,14 @@ export interface UretimEmriDetay {
     katman_yapisi?: string | null
     kenar_islemi: string | null
     notlar: string | null
+    poz: string | null
+    cita_stok_id: string | null
     stok?: { ad: string; kalinlik_mm?: number | null } | null
+    cita_stok?: { ad: string; kalinlik_mm: number | null } | null
     siparisler?: {
       id: string
       siparis_no: string
+      alt_musteri: string | null
       cari?: { ad: string } | null
     } | null
   }

@@ -79,7 +79,9 @@ export function useSiparis() {
       genislik_mm: Number(cam.genislik_mm),
       yukseklik_mm: Number(cam.yukseklik_mm),
       adet: Number(cam.adet),
-      katman_yapisi: cam.katman_yapisi || null,
+      katman_yapisi: cam.katman_yapisi ||
+        (() => { const ab = Number((cam as any).ara_bosluk_mm); return ab > 0 ? `0+${ab}+0` : null })() ||
+        null,
       cita_stok_id: cam.cita_stok_id || null,
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,

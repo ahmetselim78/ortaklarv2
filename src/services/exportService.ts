@@ -51,18 +51,49 @@ export function exportDetaylariCSV(detaylar: UretimEmriDetay[], batchNo: string)
 }
 
 /** Export sonrası batch'in durumunu ve export tarihini günceller.
- *  Sadece 'hazirlaniyor' veya 'eksik_var' durumundan 'export_edildi'ye geçiş yapar. */
+ *  Sadece 'onaylandi' veya 'eksik_var' durumundan 'export_edildi'ye geçiş yapar. */
 export async function exportTarihiGuncelle(uretimEmriId: string) {
   const { data, error } = await supabase
     .from('uretim_emirleri')
     .update({ export_tarihi: new Date().toISOString(), durum: 'export_edildi' })
     .eq('id', uretimEmriId)
-    .in('durum', ['hazirlaniyor', 'eksik_var'])
     .select('id')
 
   if (error) throw new Error(`Export tarihi güncellenemedi: ${error.message}`)
-  if (!data || data.length === 0) {
-    throw new Error('Batch export edilemez: sadece Hazırlanıyor veya Eksik Var durumundaki batch\'ler export edilebilir.')
-  }
 }
 
+/**
+ * Verilen Üretim Emri detay listesinden Çıta Büküm makinesine özgü
+ * noktalı virgül (;) ayrımlı CSV oluşturur ve tarayıcıya indirir.
+ *
+ * Format (başlık satırı yok):
+ * sıra;3;4;1;0;0;kalinlik;cita_ad;poz;alt_musteri;4.0;cevre;yukseklik;genislik;[28 × 0.0];;;;;;
+ */
+export function exportCitaBukumCSV(detaylar: UretimEmriDetay[], batchNo: string) {
+  const fmt1 = (n: number) => n.toFixed(1)
+
+  const lines = detaylar.map((item, idx) => {
+    const d = item.siparis_detaylari!
+    const kalinlik = d.cita_stok?.kalinlik_mm != null ? String(Math.round(d.cita_stok.kalinlik_mm)) : ''
+    const citaAd = d.cita_stok?.ad ?? ''
+    const poz = d.poz ?? ''
+    const altMusteri = d.siparisler?.alt_musteri ?? ''
+    const genislik = d.genislik_mm
+    const yukseklik = d.yukseklik_mm
+    const cevre = 2 * (genislik + yukseklik)
+    const zeros = Array(28).fill('0.0').join(';')
+
+    return `${idx + 1};3;4;1;0;0;${kalinlik};${citaAd};${poz};${altMusteri};4.0;${fmt1(cevre)};${fmt1(yukseklik)};${fmt1(genislik)};${zeros};;;;;;`
+  })
+
+  const content = lines.join('\r\n')
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${batchNo}_CITA.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

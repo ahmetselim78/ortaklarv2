@@ -29,7 +29,7 @@ export default function GostergeEkraniPage() {
   const [connected, setConnected] = useState(false)
   const [sesAcik, setSesAcik] = useState(false)
 
-  // Değer takibi
+  // Değer takibi (çıta kalınlığı mm)
   const [mevcutDeger, setMevcutDeger] = useState<number | null>(null)
   const [yeniDeger, setYeniDeger] = useState<number | null>(null)
   const [onayBekliyor, setOnayBekliyor] = useState(false)
@@ -40,6 +40,10 @@ export default function GostergeEkraniPage() {
 
   const sesRef = useRef(sesAcik)
   useEffect(() => { sesRef.current = sesAcik }, [sesAcik])
+
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const mevcutDegerRef = useRef<number | null>(null)
+  useEffect(() => { mevcutDegerRef.current = mevcutDeger }, [mevcutDeger])
 
   // Aktif batch verisini getir
   const fetchAktifBatch = useCallback(async () => {
@@ -104,9 +108,15 @@ export default function GostergeEkraniPage() {
   // ENTER ile onaylama
   const handleOnay = useCallback(() => {
     if (!onayBekliyor || yeniDeger == null) return
-    setMevcutDeger(yeniDeger)
+    const confirmed = yeniDeger
+    setMevcutDeger(confirmed)
     setYeniDeger(null)
     setOnayBekliyor(false)
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'cita_onay_durumu',
+      payload: { bekliyor: false, mevcut: confirmed },
+    })
   }, [onayBekliyor, yeniDeger])
 
   useEffect(() => {
@@ -124,33 +134,53 @@ export default function GostergeEkraniPage() {
       .on('broadcast', { event: 'batch_secildi' }, () => {
         fetchRef.current()
       })
-      .on('broadcast', { event: 'yeni_cam' }, ({ payload }) => {
-        const gelenBosluk = (payload as any).ara_bosluk_mm as number | null
+      .on('broadcast', { event: 'yeni_cam' }, async ({ payload }) => {
+        const p = payload as any
 
         // Batch tamamlanma sayısını güncelle
         fetchRef.current()
 
-        if (gelenBosluk == null) return
+        // Çıta kalınlığını doğrudan DB'den çek (broadcast payload'a bağımsız)
+        let gelenMm: number | null = null
+        if (p.cam_kodu) {
+          const { data } = await supabase
+            .from('siparis_detaylari')
+            .select('katman_yapisi, cita_stok:stok!cita_stok_id(kalinlik_mm)')
+            .eq('cam_kodu', p.cam_kodu)
+            .maybeSingle()
+          if (data) {
+            // 1) cita_stok.kalinlik_mm
+            gelenMm = (data as any).cita_stok?.kalinlik_mm ?? null
+            // 2) katman_yapisi orta sayısı ("4+16+4" → 16)
+            if (gelenMm == null && data.katman_yapisi) {
+              const p2 = data.katman_yapisi.split('+')
+              if (p2.length >= 3) gelenMm = Number(p2[1]) || null
+              else if (p2.length === 2) gelenMm = Number(p2[1]) || null
+            }
+          }
+        }
 
-        // Aynı değer gelirse ekran değişmez (mevcut veya bekleyen ile aynı)
-        setMevcutDeger(prev => {
-          if (prev == null) {
-            // İlk değer — direkt mevcut olarak ayarla
-            return gelenBosluk
-          }
-          // Farklı değer geldi mi?
-          if (gelenBosluk !== prev) {
-            setYeniDeger(gelenBosluk)
-            setOnayBekliyor(true)
-            setFlash(true)
-            setTimeout(() => setFlash(false), 600)
-            if (sesRef.current) beepAlert()
-          }
-          return prev
-        })
+        if (gelenMm == null) return
+
+        const onceki = mevcutDegerRef.current
+        if (onceki == null) {
+          setMevcutDeger(gelenMm)
+        } else if (gelenMm !== onceki) {
+          setYeniDeger(gelenMm)
+          setOnayBekliyor(true)
+          setFlash(true)
+          setTimeout(() => setFlash(false), 600)
+          if (sesRef.current) beepAlert()
+          channelRef.current?.send({
+            type: 'broadcast',
+            event: 'cita_onay_durumu',
+            payload: { bekliyor: true, eski: onceki, yeni: gelenMm },
+          })
+        }
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
+    channelRef.current = channel
     return () => { supabase.removeChannel(channel) }
   }, [])
 
