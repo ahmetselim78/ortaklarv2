@@ -27,6 +27,7 @@ function PDFPageViewer({
   const taskRef = useRef<any>(null)
   const cbRef = useRef(onTotalPages)
   const [ready, setReady] = useState(false)
+  const [hata, setHata] = useState<string | null>(null)
 
   useEffect(() => {
     cbRef.current = onTotalPages
@@ -35,6 +36,7 @@ function PDFPageViewer({
   useEffect(() => {
     let active = true
     setReady(false)
+    setHata(null)
     taskRef.current?.cancel()
     if (docRef.current) {
       docRef.current.destroy()
@@ -57,7 +59,11 @@ function PDFPageViewer({
         cbRef.current(doc.numPages)
         setReady(true)
       })
-      .catch(console.error)
+      .catch((e: any) => {
+        if (!active) return
+        console.error('[PDFViewer] Yükleme hatası:', e)
+        setHata('PDF önizleme yüklenemedi.')
+      })
     return () => {
       active = false
       taskRef.current?.cancel()
@@ -91,6 +97,15 @@ function PDFPageViewer({
       active = false
     }
   }, [ready, page, scale])
+
+  if (hata) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 gap-2 text-center text-sm text-red-500">
+        <AlertTriangle size={20} />
+        <span>{hata}</span>
+      </div>
+    )
+  }
 
   if (!ready) {
     return (

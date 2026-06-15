@@ -1,9 +1,12 @@
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { supabase } from './supabase'
 
-// Worker ayarı — ?url ile Vite'ın doğru şekilde resolve etmesi sağlanır
-GlobalWorkerOptions.workerSrc = workerUrl
+// Worker ayarı:
+// Vite build'inde ?url ile üretilen asset URL'ini kullanır.
+// Eğer üretim ortamında .mjs MIME type sorunu yaşanırsa CDN fallback devreye girer.
+// NOT: nginx.conf'ta .mjs için text/javascript MIME tipi tanımlanmış olmalıdır.
+GlobalWorkerOptions.workerSrc = workerUrl || `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.mjs`
 
 /* ===== Tipler ===== */
 

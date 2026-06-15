@@ -164,6 +164,7 @@ export default function KumandaPaneliPage() {
   const batchCamlariRef = useRef<BatchCamKumanda[]>([])
   useEffect(() => { batchCamlariRef.current = batchCamlari }, [batchCamlari])
 
+
   // Müşteri listesi: composite key + etiket (PozGiriş ile aynı format)
   const musteriListesi = useMemo(() => {
     const map = new Map<string, { key: string; etiket: string; toplam: number; tamamlandi: number }>()

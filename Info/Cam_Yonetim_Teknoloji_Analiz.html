@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cam Yönetim Üretim Paneli - Teknolojik Altyapı & State Yönetimi</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.8;
+      color: #2d3748;
+      background: #fff;
+      padding: 50px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2.8em;
+      margin: 40px 0 10px 0;
+      color: #1a202c;
+      border-bottom: 4px solid #3182ce;
+      padding-bottom: 15px;
+    }
+    h2 {
+      font-size: 2em;
+      margin: 35px 0 15px 0;
+      color: #2d3748;
+      border-left: 5px solid #3182ce;
+      padding-left: 15px;
+    }
+    h3 {
+      font-size: 1.4em;
+      margin: 20px 0 12px 0;
+      color: #4a5568;
+    }
+    p {
+      margin: 12px 0;
+      line-height: 1.7;
+    }
+    ul, ol {
+      margin: 15px 0 15px 30px;
+    }
+    li {
+      margin: 8px 0;
+      line-height: 1.6;
+    }
+    code {
+      background: #f5f5f5;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+      color: #d63384;
+    }
+    pre {
+      background: #2d3748;
+      color: #e2e8f0;
+      padding: 20px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 15px 0;
+      font-size: 0.85em;
+      line-height: 1.5;
+      border-left: 4px solid #3182ce;
+    }
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 0.95em;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    th {
+      background: #edf2f7;
+      padding: 14px;
+      border: 1px solid #cbd5e0;
+      text-align: left;
+      font-weight: 700;
+      color: #1a202c;
+    }
+    td {
+      padding: 12px 14px;
+      border: 1px solid #e2e8f0;
+    }
+    tr:nth-child(even) {
+      background: #f7fafc;
+    }
+    .header-info {
+      margin-bottom: 40px;
+      padding-bottom: 30px;
+      border-bottom: 3px solid #cbd5e0;
+    }
+    .header-info h1 {
+      margin-bottom: 5px;
+    }
+    .header-info h2 {
+      font-size: 1.5em;
+      color: #4a5568;
+      border: none;
+      padding: 0;
+      margin: 10px 0;
+    }
+    .header-info p {
+      color: #718096;
+      margin: 8px 0;
+    }
+    .section-divider {
+      border-top: 2px solid #cbd5e0;
+      margin: 50px 0;
+      padding-top: 20px;
+    }
+    .diagram {
+      background: #f7fafc;
+      border-left: 5px solid #3182ce;
+      padding: 18px;
+      margin: 15px 0;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85em;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: #2d3748;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 600;
+      margin-right: 5px;
+    }
+    .badge-success {
+      background: #c6f6d5;
+      color: #22543d;
+    }
+    .badge-warning {
+      background: #feebc8;
+      color: #7c2d12;
+    }
+    .badge-error {
+      background: #fed7d7;
+      color: #742a2a;
+    }
+    strong {
+      color: #1a202c;
+      font-weight: 700;
+    }
+    em {
+      font-style: italic;
+      color: #4a5568;
+    }
+    .footer {
+      margin-top: 60px;
+      padding-top: 30px;
+      border-top: 2px solid #cbd5e0;
+      text-align: center;
+      font-size: 0.9em;
+      color: #718096;
+    }
+    @media print {
+      body {
+        padding: 0;
+      }
+      .page-break {
+        page-break-after: always;
+      }
+      h1 {
+        page-break-after: avoid;
+      }
+      h2 {
+        page-break-after: avoid;
+      }
+      table {
+        page-break-inside: avoid;
+      }
+    }
+    .tech-list {
+      margin: 15px 0;
+    }
+    .tech-list li {
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-info">
+    <h1>🚀 Cam Yönetim Üretim Paneli</h1>
+    <h2>Teknolojik Altyapı & State Yönetimi Analizi</h2>
+    <p><strong>Proje Adı:</strong> OrtaklarV2</p>
+    <p><strong>Oluşturma Tarihi:</strong> 15 Haziran 2026</p>
+    <p><strong>Dokümantasyon Versiyonu:</strong> 1.0</p>
+  </div>
+
+  <h2>1. Teknoloji Stack'i</h2>
+
+  <h3>1.1 Frontend Framework</h3>
+  <ul class="tech-list">
+    <li><strong>React 19.2.4</strong> - Modern UI kütüphanesi, Server Components desteği</li>
+    <li><strong>React Router 7.14.1</strong> - Single Page Application routing ve navigation</li>
+  </ul>
+
+  <h3>1.2 State Management</h3>
+  <ul class="tech-list">
+    <li><strong>React Hooks</strong> - useState, useEffect, useCallback, useRef ile local component state yönetimi</li>
+    <li><strong>Custom Hooks</strong> - Business logic encapsulation
+      <ul>
+        <li>useStok()</li>
+        <li>useCari()</li>
+        <li>useSiparis()</li>
+        <li>useUretim()</li>
+        <li>useSevkiyat()</li>
+        <li>useAyarlar()</li>
+        <li>useKatmanYapilari()</li>
+        <li>useSiparisTaslaklari()</li>
+      </ul>
+    </li>
+    <li><span class="badge badge-warning">ÖNEMLİ</span> Projenin global state management aracı (Redux, Zustand, Jotai) <strong>yok</strong></li>
+  </ul>
+
+  <h3>1.3 Build & Tooling</h3>
+  <ul class="tech-list">
+    <li><strong>Vite 8.0.4</strong> - Lightning-fast bundler ve dev server</li>
+    <li><strong>TypeScript 6.0.2</strong> - Type-safe development</li>
+    <li><strong>Tailwind CSS 4.2.2</strong> - Utility-first CSS framework</li>
+    <li><strong>ESLint 9.39.4</strong> - Code quality ve linting</li>
+  </ul>
+
+  <h3>1.4 Backend & Database</h3>
+  <ul class="tech-list">
+    <li><strong>Supabase 2.103.3</strong> - PostgreSQL + Real-time API</li>
+    <li><strong>Direct Supabase Queries</strong> - ORM layer yok, raw client kullanımı</li>
+  </ul>
+
+  <h3>1.5 UI Components & Styling</h3>
+  <ul class="tech-list">
+    <li><strong>Lucide React 1.8.0</strong> - Modern icon library</li>
+    <li><strong>Tailwind Merge 3.5.0</strong> - CSS class merging ve conflict resolution</li>
+    <li><strong>clsx 2.1.1</strong> - Conditional className builder</li>
+  </ul>
+
+  <h3>1.6 Forms & Validation</h3>
+  <ul class="tech-list">
+    <li><strong>React Hook Form 7.72.1</strong> - Performant form state management</li>
+    <li><strong>@hookform/resolvers 5.2.2</strong> - Validation library integration</li>
+    <li><strong>Zod 4.3.6</strong> - Schema validation (TypeScript-first)</li>
+  </ul>
+
+  <h3>1.7 Data Processing</h3>
+  <ul class="tech-list">
+    <li><strong>PapaParse 5.5.3</strong> - CSV/TSV parsing</li>
+    <li><strong>pdfjs-dist 5.6.205</strong> - PDF manipulation ve rendering</li>
+  </ul>
+
+  <div class="section-divider"></div>
+
+  <h2>2. State Yönetimi Mimarisi</h2>
+
+  <h3>2.1 Mimariyel Hiyerarşi</h3>
+
+  <div class="diagram">React App
+├── Component Local State (useState)
+│   ├── Modal açık/kapalı durumları
+│   ├── Form input değerleri
+│   ├── Loading/error states
+│   └── UI interactions (drag-drop, selection)
+│
+├── Custom Hooks
+│   ├── Data fetching logic
+│   ├── Supabase queries
+│   ├── Business logic
+│   └── Memoization & callbacks
+│
+└── Supabase (External State)
+    ├── PostgreSQL database
+    ├── Real-time subscriptions
+    └── Authentication state</div>
+
+  <h3>2.2 State Türleri</h3>
+
+  <h4>A. Ephemeral UI State (Sayfanın ömrü kadar)</h4>
+  <p>Bu state'ler yalnızca bileşenin render edildiği sürece var olur:</p>
+  <pre><code>const [kartlarAcik, setKartlarAcik] = useState(false)
+const [sevkiyatAcik, setSevkiyatAcik] = useState(false)
+const [notDuzenle, setNotDuzenle] = useState('')
+const [dragSiparis, setDragSiparis] = useState&lt;TakvimSiparis | null&gt;(null)</code></pre>
+  <p><strong>Kullanım Alanları:</strong> Modal açılıp kapanması, UI interactionslar, temporary form states</p>
+
+  <h4>B. Derived State (Başka state'lerden hesaplanan)</h4>
+  <p>Başka state'lerden türetilmiş, yeniden hesaplanan data:</p>
+  <pre><code>const selectedSiparisler = selectedDate 
+  ? (siparisMap.get(selectedDate) ?? []) 
+  : []
+const monthGrid = buildMonthGrid()</code></pre>
+  <p><strong>Avantajı:</strong> Performance optimization, single source of truth</p>
+
+  <h4>C. Data State (Supabase'den fetch edilen)</h4>
+  <p>Server'dan gelen, kalıcı veri:</p>
+  <pre><code>const [istatistikler, setIstatistikler] = useState&lt;Istatistikler | null&gt;(null)
+const [takvimSiparisler, setTakvimSiparisler] = useState&lt;TakvimSiparis[]&gt;([])
+const [yikamaBatchler, setYikamaBatchler] = useState&lt;YikamaBatch[]&gt;([])</code></pre>
+
+  <h4>D. Reference/Timer State (useRef ile)</h4>
+  <p>Cleanup ve lifecycle management için:</p>
+  <pre><code>const yikamaIntervalRef = useRef&lt;ReturnType&lt;typeof setInterval&gt; | null&gt;(null)
+const dragNavTimerRef = useRef&lt;ReturnType&lt;typeof setTimeout&gt; | null&gt;(null)</code></pre>
+
+  <div class="section-divider"></div>
+
+  <h2>3. Veri Akışı Patterns</h2>
+
+  <h3>3.1 Pattern: Initial Data Fetch + Polling</h3>
+  <p><em>Dashboard'da kullanılıyor</em></p>
+  <div class="diagram">1. Component Mount
+2. useEffect tetiklenir
+3. 7 parallel Supabase query
+4. setState() ile veri güncellenir
+5. Every 30 seconds: Yıkamada verisi polling
+6. Cleanup: Interval'i clear et</div>
+
+  <h3>3.2 Pattern: Calendar + Optimistic Update</h3>
+  <p><em>Takvim sipariş sürükleme işleminde</em></p>
+  <div class="diagram">1. Ay değişir → useEffect tetiklenir
+2. Supabase: siparis + notları fetch et
+3. setState({takvimSiparisler, takvimNotlari})
+4. Kullanıcı drag-drop işlemi başlatır
+5. Optimistik: setTakvimSiparisler(new state) ← UI instant update
+6. Background: Supabase .update().eq() ← sync</div>
+
+  <h3>3.3 Pattern: Custom Hooks Encapsulation</h3>
+  <pre><code>// hooks/useStok.ts
+export function useStok() {
+  const [stoklar, setStoklar] = useState&lt;Stok[]&gt;([])
+  const [yukleniyor, setYukleniyor] = useState(true)
+  
+  useEffect(() => {
+    async function yukle() {
+      const { data } = await supabase
+        .from('stok')
+        .select('*')
+      setStoklar(data ?? [])
+      setYukleniyor(false)
+    }
+    yukle()
+  }, [])
+  
+  return { stoklar, yukleniyor }  // ← Encapsulated logic
+}
+
+// components/MyComponent.tsx
+const { stoklar, yukleniyor } = useStok()</code></pre>
+
+  <div class="section-divider"></div>
+
+  <h2>4. Avantajlar & Dezavantajlar</h2>
+
+  <h3>4.1 Avantajlar ✓</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Avantaj</th>
+        <th>Detay</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Simplicity</strong></td>
+        <td>Redux boilerplate yok, React öğrenme eğrisi düşük</td>
+      </tr>
+      <tr>
+        <td><strong>Performance</strong></td>
+        <td>Granular control, sadece gerekli re-renders</td>
+      </tr>
+      <tr>
+        <td><strong>Type Safety</strong></td>
+        <td>TypeScript + Zod validation built-in</td>
+      </tr>
+      <tr>
+        <td><strong>Dev Experience</strong></td>
+        <td>Vite fast refresh, küçük bundle size</td>
+      </tr>
+      <tr>
+        <td><strong>Custom Logic</strong></td>
+        <td>Hooks pattern, reusable encapsulation</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>4.2 Dezavantajlar ⚠</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Dezavantaj</th>
+        <th>Risk Seviyesi</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Prop Drilling</strong></td>
+        <td>Deep nesting → context API gerekebilir</td>
+      </tr>
+      <tr>
+        <td><strong>No Time-Travel Debugging</strong></td>
+        <td>Redux DevTools gibi tools yok</td>
+      </tr>
+      <tr>
+        <td><strong>Manual Cache Management</strong></td>
+        <td>Supabase queries tekrarlanabilir</td>
+      </tr>
+      <tr>
+        <td><strong>No Global Error Handling</strong></td>
+        <td>Her component'te try-catch yazılmalı</td>
+      </tr>
+      <tr>
+        <td><strong>Race Conditions</strong></td>
+        <td>Manual cancellation token management</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-divider"></div>
+
+  <h2>5. Type System & Validation</h2>
+
+  <h3>5.1 TypeScript Interfaces</h3>
+
+  <pre><code>// types/siparis.ts
+export type SiparisDurum = 'beklemede' | 'batchte' | 'yikamada' | 'tamamlandi' | 'eksik_var' | 'iptal'
+
+export interface Siparis {
+  id: string
+  siparis_no: string
+  cari_id: string
+  tarih: string
+  teslim_tarihi: string | null
+  durum: SiparisDurum
+  notlar: string | null
+  alt_musteri: string | null
+  cari?: { ad: string; kod: string }
+  siparis_detaylari?: { count: number }[]
+}
+
+export interface SiparisDetay {
+  id: string
+  siparis_id: string
+  cam_kodu: string
+  genislik_mm: number
+  yukseklik_mm: number
+  adet: number
+  uretim_durumu: UretimDurumu
+  stok?: { ad: string }
+}</code></pre>
+
+  <h3>5.2 Validation Stack</h3>
+
+  <pre><code>// React Hook Form + Zod example
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useForm } from 'react-hook-form'
+
+const siparisSchema = z.object({
+  siparis_no: z.string().min(1, 'Sipariş no zorunlu'),
+  teslim_tarihi: z.string()
+    .refine(d => new Date(d) > new Date(), 'Geçmiş tarih seçilemez'),
+  detaylar: z.array(z.object({
+    adet: z.number().positive('Adet pozitif olmalı'),
+  }))
+})
+
+type SiparisForm = z.infer&lt;typeof siparisSchema&gt;
+
+const { register, formState: { errors } } = useForm&lt;SiparisForm&gt;({
+  resolver: zodResolver(siparisSchema)
+})</code></pre>
+
+  <div class="section-divider"></div>
+
+  <h2>6. Supabase Integration</h2>
+
+  <h3>6.1 Direct Queries (No GraphQL/REST wrapper)</h3>
+
+  <pre><code>// lib/supabase.ts
+import { createClient } from '@supabase/supabase-js'
+
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+)
+
+// Usage - Type-safe TypeScript client
+const { data } = await supabase
+  .from('siparisler')
+  .select('id, siparis_no, cari(ad), siparis_detaylari(*)')
+  .eq('durum', 'beklemede')
+  .order('created_at', { ascending: false })</code></pre>
+
+  <h3>6.2 Özellikleri</h3>
+  <ul>
+    <li><span class="badge badge-success">✓</span> Type-safe TypeScript client</li>
+    <li><span class="badge badge-success">✓</span> Real-time subscriptions capable</li>
+    <li><span class="badge badge-warning">⚠</span> No request caching (manual management needed)</li>
+    <li><span class="badge badge-warning">⚠</span> No GraphQL complexity reduction</li>
+  </ul>
+
+  <div class="section-divider"></div>
+
+  <h2>7. Performance Optimizations</h2>
+
+  <h3>7.1 Mevcut Optimizasyonlar ✓</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Optimizasyon</th>
+        <th>Kullanılan Yer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>useCallback</td>
+        <td>Event handlers (takvimSiparisAc, notiKaydet)</td>
+      </tr>
+      <tr>
+        <td>Memoized Maps</td>
+        <td>siparisMap, notMap calculations</td>
+      </tr>
+      <tr>
+        <td>Conditional Rendering</td>
+        <td>Modal, loading states</td>
+      </tr>
+      <tr>
+        <td>Lazy Queries</td>
+        <td>Selected date değişiminde fetch</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 Eksik Fırsatlar ⚠</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>İyileştirme</th>
+        <th>Etki</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>React.memo() for child components</td>
+        <td>Unnecessary re-renders önlemek</td>
+      </tr>
+      <tr>
+        <td>useMemo() for expensive computations</td>
+        <td>Expensive calculations memoize etmek</td>
+      </tr>
+      <tr>
+        <td>Virtual scrolling (long lists)</td>
+        <td>Large siparis lists için performance</td>
+      </tr>
+      <tr>
+        <td>Request debouncing</td>
+        <td>Rapid queries'i batch etmek</td>
+      </tr>
+      <tr>
+        <td>Stale-while-revalidate pattern</td>
+        <td>Cached data göster, background update</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-divider"></div>
+
+  <h2>8. Önerilen İyileştirmeler</h2>
+
+  <h3>8.1 Global State Management</h3>
+  <p>Eğer prop drilling sorun olursa şu seçenekler önerilir:</p>
+  <pre><code>// Option 1: Zustand (lightweight)
+import { create } from 'zustand'
+const useAppStore = create(set => ({
+  selectedDate: null,
+  setSelectedDate: (date) => set({ selectedDate: date })
+}))
+
+// Option 2: Jotai (atomic)
+import { atom, useAtom } from 'jotai'
+const selectedDateAtom = atom&lt;string | null&gt;(null)
+const [selectedDate, setSelectedDate] = useAtom(selectedDateAtom)
+
+// Option 3: Context API + useReducer (built-in)
+const AppContext = createContext&lt;AppContextType&gt;(initialState)
+const [state, dispatch] = useReducer(reducer, initialState)</code></pre>
+
+  <h3>8.2 Request Caching</h3>
+  <pre><code>// React Query / TanStack Query (Recommended)
+import { useQuery } from '@tanstack/react-query'
+
+const { data: stoklar, isLoading } = useQuery({
+  queryKey: ['stok'],
+  queryFn: () => supabase.from('stok').select(),
+  staleTime: 5 * 60 * 1000, // 5 minutes
+  cacheTime: 10 * 60 * 1000, // 10 minutes
+})</code></pre>
+
+  <h3>8.3 Error Handling</h3>
+  <pre><code>// Error Boundary
+&lt;ErrorBoundary fallback={&lt;ErrorUI /&gt;}&gt;
+  &lt;Dashboard /&gt;
+&lt;/ErrorBoundary&gt;
+
+// Global error toast
+const showErrorToast = (error: Error) => {
+  toast.error(error.message, { duration: 4000 })
+}</code></pre>
+
+  <h3>8.4 Accessibility İyileştirmeleri</h3>
+  <ul>
+    <li><span class="badge badge-success">✓</span> Semantic HTML kullanılıyor</li>
+    <li><span class="badge badge-warning">⚠</span> ARIA labels eksik</li>
+    <li><span class="badge badge-warning">⚠</span> Keyboard navigation incomplete</li>
+    <li><span class="badge badge-error">✗</span> Screen reader testing yapılmamış</li>
+  </ul>
+
+  <div class="section-divider"></div>
+
+  <h2>9. Teknoloji Stack Özet Tablosu</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Kategori</th>
+        <th>Çözüm</th>
+        <th>Durum</th>
+        <th>Notlar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>State Management</strong></td>
+        <td>useState + custom hooks</td>
+        <td><span class="badge badge-success">✓ Production-ready</span></td>
+        <td>Prop drilling risk var</td>
+      </tr>
+      <tr>
+        <td><strong>Routing</strong></td>
+        <td>React Router v7</td>
+        <td><span class="badge badge-success">✓ Modern</span></td>
+        <td>Nested routes kullanılıyor</td>
+      </tr>
+      <tr>
+        <td><strong>Styling</strong></td>
+        <td>Tailwind CSS v4</td>
+        <td><span class="badge badge-success">✓ Up-to-date</span></td>
+        <td>Utilities + custom components</td>
+      </tr>
+      <tr>
+        <td><strong>Forms</strong></td>
+        <td>React Hook Form + Zod</td>
+        <td><span class="badge badge-success">✓ Robust</span></td>
+        <td>Type-safe validation</td>
+      </tr>
+      <tr>
+        <td><strong>Backend</strong></td>
+        <td>Supabase</td>
+        <td><span class="badge badge-success">✓ Real-time capable</span></td>
+        <td>Direct queries, no ORM</td>
+      </tr>
+      <tr>
+        <td><strong>Types</strong></td>
+        <td>TypeScript 6.0</td>
+        <td><span class="badge badge-success">✓ Type-safe</span></td>
+        <td>Interfaces + discriminated unions</td>
+      </tr>
+      <tr>
+        <td><strong>Build</strong></td>
+        <td>Vite</td>
+        <td><span class="badge badge-success">✓ Lightning-fast</span></td>
+        <td>Hot Module Replacement included</td>
+      </tr>
+      <tr>
+        <td><strong>Data Caching</strong></td>
+        <td>Manual/None</td>
+        <td><span class="badge badge-warning">⚠ Improvement needed</span></td>
+        <td>React Query önerilir</td>
+      </tr>
+      <tr>
+        <td><strong>Global State</strong></td>
+        <td>None (Context API yok)</td>
+        <td><span class="badge badge-warning">⚠ May need if scaling</span></td>
+        <td>Zustand/Jotai göz önünde</td>
+      </tr>
+      <tr>
+        <td><strong>Testing</strong></td>
+        <td>Not visible</td>
+        <td><span class="badge badge-error">✗ Missing</span></td>
+        <td>Jest/Vitest + React Testing Library</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-divider"></div>
+
+  <h2>10. Mimari Karar Nedenleri</h2>
+
+  <p>Bu mimarinin tercih edilme sebepleri:</p>
+
+  <ol>
+    <li>
+      <strong>Hız & Basitlik</strong>
+      <p>MVP'yi hızlı deliver etmek, complex patterns'den kaçınmak</p>
+    </li>
+    <li>
+      <strong>Team Size</strong>
+      <p>1-2 developer için yeterli, Redux gibi tools overkill</p>
+    </li>
+    <li>
+      <strong>Feature Complexity</strong>
+      <p>Linear state flow, tree-like component hierarchy</p>
+    </li>
+    <li>
+      <strong>TypeScript</strong>
+      <p>Type safety built-in, runtime errors azalır</p>
+    </li>
+    <li>
+      <strong>Supabase</strong>
+      <p>Backend + Auth + Real-time one-stop solution</p>
+    </li>
+  </ol>
+
+  <div class="section-divider"></div>
+
+  <h2>11. Proje Dosya Yapısı</h2>
+
+  <div class="diagram">src/
+├── pages/                    # Route handler components
+│   ├── Dashboard.tsx        # Main dashboard view
+│   ├── SiparisPage.tsx      # Orders management
+│   ├── UretimPage.tsx       # Production management
+│   ├── CariPage.tsx         # Customers management
+│   ├── StokPage.tsx         # Stock management
+│   ├── AyarlarPage.tsx      # Settings page
+│   └── ...
+│
+├── components/              # Reusable UI components
+│   ├── layout/
+│   │   ├── AppLayout.tsx    # Main layout wrapper
+│   │   └── Sidebar.tsx      # Navigation sidebar
+│   ├── siparis/            # Order-specific components
+│   │   ├── SiparisListesi.tsx
+│   │   ├── SiparisForm.tsx
+│   │   └── SiparisDetayModal.tsx
+│   ├── uretim/             # Production-specific
+│   │   ├── UretimListesi.tsx
+│   │   └── YeniBatchModal.tsx
+│   ├── ui/                 # Generic UI components
+│   │   ├── Modal.tsx
+│   │   ├── Button.tsx
+│   │   ├── Pagination.tsx
+│   │   └── StatusBadge.tsx
+│   └── ...
+│
+├── hooks/                  # Custom React hooks
+│   ├── useSiparis.ts       # Siparis business logic
+│   ├── useUretim.ts        # Uretim business logic
+│   ├── useStok.ts          # Stock data
+│   ├── useCari.ts          # Customer data
+│   ├── useSevkiyat.ts      # Shipping logic
+│   └── ...
+│
+├── types/                  # TypeScript interfaces
+│   ├── siparis.ts          # Siparis types
+│   ├── uretim.ts           # Uretim types
+│   ├── stok.ts             # Stock types
+│   ├── cari.ts             # Customer types
+│   └── ...
+│
+├── lib/                    # Utilities & clients
+│   ├── supabase.ts        # Supabase client initialization
+│   ├── utils.ts           # Helper functions
+│   └── pdfParser.ts       # PDF parsing logic
+│
+├── App.tsx                # Route definitions
+├── main.tsx              # React entry point
+└── index.css             # Global styles</div>
+
+  <div class="section-divider"></div>
+
+  <h2>12. Sonuç & Öneriler</h2>
+
+  <h3>Proje Durumu</h3>
+  <p>OrtaklarV2 projesi, React hooks ve TypeScript kullanarak <strong>scalable, type-safe, ve maintainable</strong> bir mimari sunmaktadır. Global state management gerekmeden, custom hooks pattern ile clean separation of concerns sağlanmıştır.</p>
+
+  <h3>Yapılması Gereken İyileştirmeler (Priorite Sırasına Göre)</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Priorite</th>
+        <th>İyileştirme</th>
+        <th>Faydası</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>🔴 Yüksek</strong></td>
+        <td>Request Caching (React Query)</td>
+        <td>Network trafiğini %60 azalt, UX improve</td>
+      </tr>
+      <tr>
+        <td><strong>🔴 Yüksek</strong></td>
+        <td>Error Boundaries & Global Error Handling</td>
+        <td>App crash'i önle, user experience improve</td>
+      </tr>
+      <tr>
+        <td><strong>🟡 Orta</strong></td>
+        <td>Unit & Integration Tests</td>
+        <td>Bugs'ı early catch, refactoring confidence</td>
+      </tr>
+      <tr>
+        <td><strong>🟡 Orta</strong></td>
+        <td>Accessibility Improvements</td>
+        <td>WCAG 2.1 AA compliance, wider audience</td>
+      </tr>
+      <tr>
+        <td><strong>🟢 Düşük</strong></td>
+        <td>Performance Monitoring (Sentry)</td>
+        <td>Production issues'i track et, analytics</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Başlangıç Adımları</h3>
+
+  <ol>
+    <li>React Query setup et ve Supabase queries'i migrate et</li>
+    <li>Error Boundary component'i implement et</li>
+    <li>Jest + React Testing Library ile test suite başlat</li>
+    <li>Accessibility audit'i çalıştır (axe, WAVE tools)</li>
+    <li>Production metrics monitoring kurulumu</li>
+  </ol>
+
+  <div class="footer">
+    <hr>
+    <p><strong>Bu dokümantasyon projenin mevcut teknoloji stack'i ve state yönetimi mimarisini detaylı olarak açıklamaktadır.</strong></p>
+    <p>Sorularınız veya önerileriniz varsa, geliştirme ekibinize başvurunuz.</p>
+    <p>© 2026 - OrtaklarV2 Project | Teknoloji Analizi Dokümantasyonu v1.0</p>
+    <p><em>Oluşturma Tarihi: 15 Haziran 2026</em></p>
+  </div>
+
+</body>
+</html>

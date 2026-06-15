@@ -13,6 +13,7 @@ import { dplUret } from '@/types/ayarlar'
 import type { EtiketVeri } from '@/types/ayarlar'
 import { camTipiAd } from '@/lib/utils'
 import { getCamKompozisyon } from '@/lib/cam'
+import { glsSayacArttir } from '@/lib/saatlikSayac'
 
 /* ========== Tipler ========== */
 
@@ -444,6 +445,9 @@ export default function PozGirisPage() {
       siparis_detay_id: cam.siparis_detay_id,
     })
 
+    // Saatlik üretim sayacını arttır (tekrar taramalarda sayma)
+    if (!tekrar) glsSayacArttir()
+
     // Adet takibi: her tarama 1 adet sayar
     const yeniTarananadet = cam.taranan_adet + 1
     const tumAdetTamamlandi = yeniTarananadet >= cam.adet
@@ -778,6 +782,7 @@ export default function PozGirisPage() {
                   >
                     <Wrench size={14} />
                     Tamire Gönder
+                    <kbd className="ml-1 px-1.5 py-0.5 rounded bg-red-950 border border-red-800 text-red-400 text-xs font-mono">X</kbd>
                   </button>
                 </>
               )}
@@ -809,6 +814,18 @@ export default function PozGirisPage() {
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (
+                    (e.key === 'x' || e.key === 'X') &&
+                    !input &&
+                    sonTarananCam &&
+                    !tamirCam &&
+                    durum !== 'tamamlandi'
+                  ) {
+                    e.preventDefault()
+                    setTamirCam(sonTarananCam)
+                  }
+                }}
                 placeholder="GLS kodu girin..."
                 className="w-full text-center text-2xl font-mono bg-gray-900 border-2 border-gray-700 rounded-xl px-6 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                 autoComplete="off"
@@ -824,6 +841,7 @@ export default function PozGirisPage() {
               >
                 <Wrench size={14} />
                 {sonTarananCam.cam_kodu} — Tamire Gönder
+                <kbd className="ml-1 px-1.5 py-0.5 rounded bg-red-950 border border-red-800 text-red-500 text-xs font-mono">X</kbd>
               </button>
             )}
           </div>

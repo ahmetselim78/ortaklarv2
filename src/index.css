@@ -9,6 +9,16 @@
   }
 }
 
+/* Personel karusel sonsuz yukarı kaydırma */
+@keyframes scrollUp {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+.personel-karusel {
+  animation: scrollUp linear infinite;
+  will-change: transform;
+}
+
 /* Hide number input spinners */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button {

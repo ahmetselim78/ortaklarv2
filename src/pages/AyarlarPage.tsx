@@ -1,14 +1,17 @@
 import { useState, useCallback } from 'react'
-import { Printer, ChevronRight, ArrowLeft, Truck, Layers } from 'lucide-react'
+import { Printer, ChevronRight, ArrowLeft, Truck, Layers, Users, Target, MessageSquare } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import EtiketAyarlariPanel, { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
 import KatmanYapilariPanel from '@/components/ayarlar/KatmanYapilariPanel'
+import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
+import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
+import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 /* ── Kategori tanımları ──────────────────────────────────────── */
 
-type AyarKategori = 'etiket' | 'araclar' | 'katman'
+type AyarKategori = 'etiket' | 'araclar' | 'katman' | 'personel' | 'hedef' | 'presets'
 
 interface Kategori {
   id: AyarKategori
@@ -43,6 +46,30 @@ const kategoriler: Kategori[] = [
     icon: Layers,
     renk: 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200',
     ikonRenk: 'text-emerald-600 bg-emerald-100',
+  },
+  {
+    id: 'personel',
+    label: 'Personel Yönetimi',
+    aciklama: 'Saatlik takip panosunda görünecek üretim personelini ekle, düzenle, aktif/pasif yap.',
+    icon: Users,
+    renk: 'bg-violet-50 hover:bg-violet-100 border-violet-200',
+    ikonRenk: 'text-violet-600 bg-violet-100',
+  },
+  {
+    id: 'hedef',
+    label: 'Hedef & Vardiya',
+    aciklama: 'Vardiya şablonları oluştur, saatlik üretim hedeflerini belirle ve bugüne uygula.',
+    icon: Target,
+    renk: 'bg-rose-50 hover:bg-rose-100 border-rose-200',
+    ikonRenk: 'text-rose-600 bg-rose-100',
+  },
+  {
+    id: 'presets',
+    label: 'Aksiyon Notu Hazır Cevaplar',
+    aciklama: 'Saatlik takip panosunda not eklerken hızlıca seçilebilecek hazır cevapları ve kısayol tuşlarını yönet.',
+    icon: MessageSquare,
+    renk: 'bg-sky-50 hover:bg-sky-100 border-sky-200',
+    ikonRenk: 'text-sky-600 bg-sky-100',
   },
 ]
 
@@ -193,6 +220,78 @@ export default function AyarlarPage() {
       </div>
       <div className="flex-1 overflow-auto p-8">
         <KatmanYapilariPanel />
+      </div>
+    </div>
+  )
+
+  /* Personel Yönetimi */
+  if (aktifKategori === 'personel') return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <Users size={16} className="text-violet-600" />
+          <span className="text-sm font-semibold text-gray-900">Personel Yönetimi</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <PersonelYonetimiPanel />
+      </div>
+    </div>
+  )
+
+  /* Hedef & Vardiya */
+  if (aktifKategori === 'hedef') return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <Target size={16} className="text-rose-600" />
+          <span className="text-sm font-semibold text-gray-900">Hedef &amp; Vardiya</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <HedefVardiyaPanel />
+      </div>
+    </div>
+  )
+
+  /* Aksiyon Notu Hazır Cevaplar */
+  if (aktifKategori === 'presets') return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <MessageSquare size={16} className="text-sky-600" />
+          <span className="text-sm font-semibold text-gray-900">Aksiyon Notu Hazır Cevaplar</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <AksiyonNotuPresetsPanel />
       </div>
     </div>
   )

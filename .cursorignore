@@ -1,0 +1,43 @@
+# Dependencies - Klasörleri gizle ama lock dosyalarını görmesine izin ver (Versiyon hataları için)
+node_modules/
+**/node_modules/
+
+# Build outputs - Derlenmiş büyük dosyalar (Kesinlikle kalmalı)
+dist/
+dist-ssr/
+build/
+*.tsbuildinfo
+
+# IDE ve Editor cache'leri (Kesinlikle kalmalı)
+.vscode/
+.idea/
+.DS_Store
+.history/
+.cursor/
+.cursor-cache/
+.eslintcache
+
+# Logs ve geçici dosyalar (Bütçe düşmanları, kesinlikle kalmalı)
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.local
+
+# OS specific
+.AppleDouble
+.LSOverride
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Analytics ve crash reports
+.nyc_output/
+coverage/
+
+# NOT: Docker, .env ve Cloud Run dosyalarını listeden çıkardık. 
+# Böylece "Cloud Run - Local önizleme hatası" gibi kritik senkronizasyon 
+# problemlerinde Cursor bu dosyaları okuyup sana nokta atışı çözümler üretebilecek.

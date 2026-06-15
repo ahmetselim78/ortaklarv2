@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   ClipboardList, Factory, Package, Users, TrendingUp, Clock,
   ChevronLeft, ChevronRight, Droplets, X, Save, StickyNote,
-  CalendarDays, CalendarRange, Truck, ChevronDown,
+  CalendarDays, Truck, ChevronDown,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
@@ -67,20 +67,6 @@ interface YikamaBatch {
    Pure helpers
 =================================================================== */
 
-function getMonday(d: Date): Date {
-  const date = new Date(d)
-  date.setHours(0, 0, 0, 0)
-  const day = date.getDay()
-  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day))
-  return date
-}
-
-function addDays(d: Date, n: number): Date {
-  const date = new Date(d)
-  date.setDate(date.getDate() + n)
-  return date
-}
-
 /** Local-time date → YYYY-MM-DD (DST safe) */
 function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -89,23 +75,6 @@ function toDateStr(d: Date): string {
 function toTurkishMonthName(month: number): string {
   return ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'][month]
-}
-
-function hesaplaRange(
-  gorunum: 'aylik' | 'haftalik',
-  currentMonth: Date,
-  weekStart: Date,
-): [string, string] {
-  if (gorunum === 'aylik') {
-    const y = currentMonth.getFullYear()
-    const m = currentMonth.getMonth()
-    const last = new Date(y, m + 1, 0).getDate()
-    return [
-      `${y}-${String(m + 1).padStart(2, '0')}-01`,
-      `${y}-${String(m + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`,
-    ]
-  }
-  return [toDateStr(weekStart), toDateStr(addDays(weekStart, 6))]
 }
 
 /* ===================================================================
@@ -173,11 +142,9 @@ export default function Dashboard() {
   const [kartlarAcik, setKartlarAcik] = useState(false)
 
   /* ---------- calendar ---------- */
-  const [takvimGorunum, setTakvimGorunum] = useState<'aylik' | 'haftalik'>('aylik')
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d
   })
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getMonday(new Date()))
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [takvimSiparisler, setTakvimSiparisler] = useState<TakvimSiparis[]>([])
   const [takvimNotlari, setTakvimNotlari] = useState<TakvimNotu[]>([])
@@ -191,6 +158,22 @@ export default function Dashboard() {
   /* ---------- drag & drop (takvim) ---------- */
   const [dragSiparis, setDragSiparis] = useState<TakvimSiparis | null>(null)
   const [overDate, setOverDate] = useState<string | null>(null)
+
+  /* ---------- drag nav (ay geçişi) ---------- */
+  const [dragNavZone, setDragNavZone] = useState<'prev' | 'next' | null>(null)
+  const dragNavTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /* ---------- global dragend: element DOM'dan kalksa bile state temizlenir ---------- */
+  useEffect(() => {
+    function onGlobalDragEnd() {
+      setDragSiparis(null)
+      setOverDate(null)
+      setDragNavZone(null)
+      if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null }
+    }
+    document.addEventListener('dragend', onGlobalDragEnd)
+    return () => document.removeEventListener('dragend', onGlobalDragEnd)
+  }, [])
 
   /* ---------- yıkamada ---------- */
   const [yikamaBatchler, setYikamaBatchler] = useState<YikamaBatch[]>([])
@@ -244,10 +227,14 @@ export default function Dashboard() {
   }, [])
 
   /* ===================================================================
-     Data: calendar (reloads when month / week / view type changes)
+     Data: calendar (reloads when month changes)
   =================================================================== */
   useEffect(() => {
-    const [baslangic, bitis] = hesaplaRange(takvimGorunum, currentMonth, currentWeekStart)
+    const y = currentMonth.getFullYear()
+    const m = currentMonth.getMonth()
+    const last = new Date(y, m + 1, 0).getDate()
+    const baslangic = `${y}-${String(m + 1).padStart(2, '0')}-01`
+    const bitis = `${y}-${String(m + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`
     let cancelled = false
 
     async function yukle() {
@@ -282,7 +269,7 @@ export default function Dashboard() {
 
     yukle()
     return () => { cancelled = true }
-  }, [takvimGorunum, currentMonth, currentWeekStart])
+  }, [currentMonth])
 
   /* Sync note editor when selected date changes */
   useEffect(() => {
@@ -412,11 +399,40 @@ export default function Dashboard() {
   =================================================================== */
   async function teslimTarihiGuncelle(siparis: TakvimSiparis, yeniTarih: string) {
     if (siparis.teslim_tarihi === yeniTarih) return
-    // Optimistik güncelleme
-    setTakvimSiparisler(prev =>
-      prev.map(s => s.id === siparis.id ? { ...s, teslim_tarihi: yeniTarih } : s)
-    )
+    // Optimistik güncelleme — aynı ayda map, farklı aydaysa ekle
+    setTakvimSiparisler(prev => {
+      const mevcutVar = prev.some(s => s.id === siparis.id)
+      const guncellenmis = { ...siparis, teslim_tarihi: yeniTarih }
+      return mevcutVar
+        ? prev.map(s => s.id === siparis.id ? guncellenmis : s)
+        : [...prev, guncellenmis]
+    })
     await supabase.from('siparisler').update({ teslim_tarihi: yeniTarih }).eq('id', siparis.id)
+  }
+
+  /* ===================================================================
+     Drag nav: sol/sağ kenara sürükleyince ay/hafta geçişi
+  =================================================================== */
+  function clearDragNav() {
+    if (dragNavTimerRef.current) { clearTimeout(dragNavTimerRef.current); dragNavTimerRef.current = null }
+    setDragNavZone(null)
+  }
+
+  function handleDragNavEnter(direction: 'prev' | 'next') {
+    if (dragNavTimerRef.current) clearTimeout(dragNavTimerRef.current)
+    setDragNavZone(direction)
+    dragNavTimerRef.current = setTimeout(() => {
+      setDragNavZone(null)
+      const d = new Date(currentMonth)
+      d.setMonth(d.getMonth() + (direction === 'prev' ? -1 : 1))
+      setCurrentMonth(d)
+    }, 1000)
+  }
+
+  function handleDragNavLeave(e: React.DragEvent) {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      clearDragNav()
+    }
   }
 
   /* ===================================================================
@@ -433,10 +449,6 @@ export default function Dashboard() {
     for (let d = 1; d <= lastDay; d++) days.push(new Date(year, month, d))
     while (days.length % 7 !== 0) days.push(null)
     return days
-  }
-
-  function buildWeekDays(): Date[] {
-    return Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
   }
 
   /* ===================================================================
@@ -467,8 +479,6 @@ export default function Dashboard() {
 
   const selectedSiparisler = selectedDate ? (siparisMap.get(selectedDate) ?? []) : []
   const monthGrid = buildMonthGrid()
-  const weekDays = buildWeekDays()
-  const weekEnd = addDays(currentWeekStart, 6)
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -546,91 +556,78 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
 
         {/* === Takvim (2/3 width) === */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 relative">
+
+          {/* Drag nav zones — sol/sağ kenara sürükleyince ay/hafta geçişi */}
+          {dragSiparis && (
+            <>
+              <div
+                onDragOver={e => e.preventDefault()}
+                onDragEnter={() => handleDragNavEnter('prev')}
+                onDragLeave={handleDragNavLeave}
+                className="absolute left-0 top-0 bottom-0 w-14 z-30 rounded-l-xl flex items-center justify-start pl-1.5 pointer-events-auto"
+              >
+                <div className={`transition-all duration-300 rounded-xl flex items-center justify-center w-10 h-10 ${
+                  dragNavZone === 'prev'
+                    ? 'bg-blue-500 animate-pulse shadow-xl shadow-blue-400/50'
+                    : 'bg-blue-100/70'
+                }`}>
+                  <ChevronLeft size={20} className={dragNavZone === 'prev' ? 'text-white' : 'text-blue-300'} />
+                </div>
+              </div>
+              <div
+                onDragOver={e => e.preventDefault()}
+                onDragEnter={() => handleDragNavEnter('next')}
+                onDragLeave={handleDragNavLeave}
+                className="absolute right-0 top-0 bottom-0 w-14 z-30 rounded-r-xl flex items-center justify-end pr-1.5 pointer-events-auto"
+              >
+                <div className={`transition-all duration-300 rounded-xl flex items-center justify-center w-10 h-10 ${
+                  dragNavZone === 'next'
+                    ? 'bg-blue-500 animate-pulse shadow-xl shadow-blue-400/50'
+                    : 'bg-blue-100/70'
+                }`}>
+                  <ChevronRight size={20} className={dragNavZone === 'next' ? 'text-white' : 'text-blue-300'} />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={15} className="text-gray-400" />
               <h2 className="text-sm font-semibold text-gray-700">Teslim Takvimi</h2>
-              <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-                <button
-                  onClick={() => setTakvimGorunum('aylik')}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                    takvimGorunum === 'aylik' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <CalendarDays size={13} /> Aylık
-                </button>
-                <button
-                  onClick={() => setTakvimGorunum('haftalik')}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                    takvimGorunum === 'haftalik' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <CalendarRange size={13} /> Haftalık
-                </button>
-              </div>
             </div>
-
-            {/* Navigation */}
-            {takvimGorunum === 'aylik' ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => { const d = new Date(currentMonth); d.setMonth(d.getMonth() - 1); setCurrentMonth(d) }}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                <span className="text-sm font-medium text-gray-700 min-w-[130px] text-center">
-                  {toTurkishMonthName(currentMonth.getMonth())} {currentMonth.getFullYear()}
-                </span>
-                <button
-                  onClick={() => { const d = new Date(currentMonth); d.setMonth(d.getMonth() + 1); setCurrentMonth(d) }}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                >
-                  <ChevronRight size={15} />
-                </button>
-                <button
-                  onClick={() => {
-                    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0)
-                    setCurrentMonth(d); setSelectedDate(today)
-                  }}
-                  className="px-2.5 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
-                >
-                  Bugün
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                <span className="text-sm font-medium text-gray-700 min-w-[170px] text-center whitespace-nowrap">
-                  {currentWeekStart.getDate()} {toTurkishMonthName(currentWeekStart.getMonth())} –{' '}
-                  {weekEnd.getDate()} {toTurkishMonthName(weekEnd.getMonth())} {weekEnd.getFullYear()}
-                </span>
-                <button
-                  onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                >
-                  <ChevronRight size={15} />
-                </button>
-                <button
-                  onClick={() => { setCurrentWeekStart(getMonday(new Date())); setSelectedDate(today) }}
-                  className="px-2.5 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
-                >
-                  Bu Hafta
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => { const d = new Date(currentMonth); d.setMonth(d.getMonth() - 1); setCurrentMonth(d) }}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <span className="text-sm font-medium text-gray-700 min-w-[130px] text-center">
+                {toTurkishMonthName(currentMonth.getMonth())} {currentMonth.getFullYear()}
+              </span>
+              <button
+                onClick={() => { const d = new Date(currentMonth); d.setMonth(d.getMonth() + 1); setCurrentMonth(d) }}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              >
+                <ChevronRight size={15} />
+              </button>
+              <button
+                onClick={() => {
+                  const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0)
+                  setCurrentMonth(d); setSelectedDate(today)
+                }}
+                className="px-2.5 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
+              >
+                Bugün
+              </button>
+            </div>
           </div>
 
           {/* ── Monthly grid ── */}
-          {takvimGorunum === 'aylik' && (
-            <div className="p-2">
+          <div className="p-2">
               {/* Day headers */}
               <div className="grid grid-cols-7 border-b border-gray-100 mb-0">
                 {HAFTA_GUNLERI.map(g => (
@@ -638,7 +635,11 @@ export default function Dashboard() {
                 ))}
               </div>
               {/* Cells */}
-              <div className="grid grid-cols-7 divide-x divide-y divide-gray-100 overflow-visible">
+              <div
+                className="grid grid-cols-7 divide-x divide-y divide-gray-100 overflow-visible"
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); setOverDate(null); setDragSiparis(null); clearDragNav() }}
+              >
                 {monthGrid.map((day, idx) => {
                   if (!day) return (
                     <div key={`pad-${idx}`} className="min-h-[110px] bg-gray-50/40" />
@@ -704,7 +705,7 @@ export default function Dashboard() {
                                 setDragSiparis(s)
                                 e.dataTransfer.effectAllowed = 'move'
                               }}
-                              onDragEnd={() => { setDragSiparis(null); setOverDate(null) }}
+                              onDragEnd={() => { setDragSiparis(null); setOverDate(null); clearDragNav() }}
                               className={`flex flex-col px-1.5 py-0.5 rounded-md text-[11px] leading-tight border cursor-grab active:cursor-grabbing select-none transition-opacity ${
                                 DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-800 border-gray-200'
                               } ${dragSiparis?.id === s.id ? 'opacity-40' : ''}`}
@@ -716,10 +717,10 @@ export default function Dashboard() {
                                 <span className="truncate text-[10px] opacity-55">› {s.alt_musteri}</span>
                               )}
                             </div>
-                            {/* Hover popover - son 2 satırda yukarı, diğerlerinde aşağı açılır */}
-                            <div className={`absolute left-0 z-50 hidden group-hover/pill:block pointer-events-none w-52 ${
-                              idx >= monthGrid.length - 14 ? 'bottom-full mb-0.5' : 'top-full mt-0.5'
-                            }`}>
+                            {/* Hover popover - son 2 satırda yukarı, diğerlerinde aşağı açılır; sürükleme sırasında gizle */}
+                            <div className={`absolute left-0 z-50 pointer-events-none w-52 ${
+                              dragSiparis ? 'hidden' : 'hidden group-hover/pill:block'
+                            } ${idx >= monthGrid.length - 14 ? 'bottom-full mb-0.5' : 'top-full mt-0.5'}`}>
                               <div className={`rounded-xl border shadow-lg p-3 text-xs bg-white border-gray-200`}>
                                 <div className="font-bold text-gray-900 text-[12px]">{s.siparis_no}</div>
                                 <div className="text-gray-700 mt-0.5 font-medium text-[11px]">{s.musteri}</div>
@@ -760,111 +761,13 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
-          )}
-
-          {/* ── Weekly view ── */}
-          {takvimGorunum === 'haftalik' && (
-            <div className="flex divide-x divide-gray-100 h-full min-h-[360px]">
-              {weekDays.map((day, i) => {
-                const dateStr = toDateStr(day)
-                const sipList = siparisMap.get(dateStr) ?? []
-                const hasNote = notMap.has(dateStr)
-                const isToday = dateStr === today
-                const isSelected = dateStr === selectedDate
-                const isDragOver = overDate === dateStr
-
-                return (
-                  <div
-                    key={dateStr}
-                    className={`flex-1 flex flex-col transition-colors ${
-                      isDragOver ? 'bg-blue-50 ring-2 ring-inset ring-blue-400' : ''
-                    }`}
-                    onDragOver={e => { e.preventDefault(); setOverDate(dateStr) }}
-                    onDragLeave={e => {
-                      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
-                        setOverDate(null)
-                      }
-                    }}
-                    onDrop={e => {
-                      e.preventDefault()
-                      setOverDate(null)
-                      if (dragSiparis) teslimTarihiGuncelle(dragSiparis, dateStr)
-                      setDragSiparis(null)
-                    }}
-                  >
-                    {/* Day header */}
-                    <button
-                      onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                      className={`flex flex-col items-center py-2.5 border-b transition-colors ${
-                        isSelected ? 'bg-blue-50 border-blue-200' : 'border-gray-100 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className={`text-[11px] font-semibold uppercase tracking-wide mb-0.5 ${
-                        isToday ? 'text-blue-600' : 'text-gray-400'
-                      }`}>
-                        {HAFTA_GUNLERI[i]}
-                      </span>
-                      <span className={`flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
-                        isToday ? 'bg-blue-600 text-white' : isSelected ? 'bg-blue-100 text-blue-700' : 'text-gray-700'
-                      }`}>
-                        {day.getDate()}
-                      </span>
-                      {hasNote && <span className="w-1 h-1 rounded-full bg-yellow-400 mt-0.5" />}
-                    </button>
-
-                    {/* Events */}
-                    <div className="flex-1 p-1.5 space-y-1 overflow-y-auto">
-                      {sipList.map(s => (
-                        <div
-                          key={s.id}
-                          draggable
-                          onDragStart={e => {
-                            setDragSiparis(s)
-                            e.dataTransfer.effectAllowed = 'move'
-                          }}
-                          onDragEnd={() => { setDragSiparis(null); setOverDate(null) }}
-                          onClick={e => { e.stopPropagation(); takvimSiparisAc(s.id) }}
-                          className={`px-2 py-2 rounded-lg border text-xs cursor-grab active:cursor-grabbing select-none transition-all ${
-                            DURUM_EVENT[s.durum] ?? 'bg-gray-100 text-gray-700 border-gray-200'
-                          } ${dragSiparis?.id === s.id ? 'opacity-40' : 'hover:shadow-md hover:brightness-95'}`}
-                        >
-                          <div className="font-bold">{s.siparis_no}</div>
-                          <div className="font-medium text-[11px] mt-0.5">{s.musteri}</div>
-                          {s.alt_musteri && (
-                            <div className="opacity-60 text-[10px] mt-0.5">› {s.alt_musteri}</div>
-                          )}
-                          {s.toplam_adet > 0 && (
-                            <div className="text-[10px] font-semibold opacity-70 mt-0.5">{s.toplam_adet} adet cam</div>
-                          )}
-                          <div className="mt-1.5">
-                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/60">
-                              {DURUM_ETIKET[s.durum] ?? s.durum}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                      {sipList.length === 0 && !isDragOver && (
-                        <div className="h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <span className="text-[10px] text-gray-300">Boş</span>
-                        </div>
-                      )}
-                      {isDragOver && (
-                        <div className="flex items-center justify-center py-3">
-                          <span className="text-[10px] font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                            Buraya taşı
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
         </div>
 
-        {/* === Sağ kolon: Yıkamada + Sevkiyat === */}
-        <div className="flex flex-col gap-6">
+        {/* === Sağ kolon: Yıkamada + Sevkiyat ===
+            Dış kap 0 yükseklikte → grid satır yüksekliğini takvim belirler.
+            İç kap lg:absolute inset-0 → takvimin yüksekliğini doldurur. */}
+        <div className="relative">
+        <div className="lg:absolute lg:inset-0 flex flex-col gap-4 overflow-hidden">
 
           {/* Yıkamada panel — dönen border animasyonu */}
           <div className="relative rounded-xl p-[2px] overflow-hidden">
@@ -964,7 +867,7 @@ export default function Dashboard() {
 
           {/* Seçili gün / Bugünün Notu */}
           {selectedDate ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col flex-1 min-h-0">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <span className="text-sm font-semibold text-gray-700">{formatDate(selectedDate)}</span>
@@ -981,22 +884,41 @@ export default function Dashboard() {
               </div>
 
               {selectedSiparisler.length > 0 ? (
-                <div className="space-y-1.5 mb-3">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 mb-3 pr-0.5">
                   {selectedSiparisler.map(s => (
-                    <div key={s.id} className="flex items-center justify-between px-2.5 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-mono text-[11px] font-semibold text-gray-700">{s.siparis_no}</span>
-                        <span className="text-[10px] text-gray-500 truncate">{s.musteri}</span>
-                        {s.alt_musteri && <span className="text-[10px] text-gray-400 truncate">› {s.alt_musteri}</span>}
-                        {s.toplam_adet > 0 && <span className="text-[10px] text-gray-400">{s.toplam_adet} adet cam</span>}
+                    <div
+                      key={s.id}
+                      draggable
+                      onDragStart={e => {
+                        setDragSiparis(s)
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragEnd={() => { setDragSiparis(null); setOverDate(null); clearDragNav() }}
+                      className={`flex items-center justify-between px-2.5 py-2 bg-gray-50 rounded-lg border border-gray-100 cursor-grab active:cursor-grabbing select-none transition-opacity hover:bg-gray-100 hover:border-gray-200 ${
+                        dragSiparis?.id === s.id ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-mono text-[11px] font-semibold text-gray-700">{s.siparis_no}</span>
+                          <span className="text-[10px] text-gray-500 truncate">{s.musteri}</span>
+                          {s.alt_musteri && <span className="text-[10px] text-gray-400 truncate">› {s.alt_musteri}</span>}
+                          {s.toplam_adet > 0 && <span className="text-[10px] text-gray-400">{s.toplam_adet} adet cam</span>}
+                        </div>
                       </div>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ml-2 ${
-                        DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {DURUM_ETIKET[s.durum] ?? s.durum}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                          DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {DURUM_ETIKET[s.durum] ?? s.durum}
+                        </span>
+                        <svg className="w-3 h-3 text-gray-300 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M7 2a2 2 0 110 4 2 2 0 010-4zM13 2a2 2 0 110 4 2 2 0 010-4zM7 8a2 2 0 110 4 2 2 0 010-4zM13 8a2 2 0 110 4 2 2 0 010-4zM7 14a2 2 0 110 4 2 2 0 010-4zM13 14a2 2 0 110 4 2 2 0 010-4z" />
+                        </svg>
+                      </div>
                     </div>
                   ))}
+                  <p className="text-[10px] text-gray-300 text-center pt-0.5">Siparişi sürükleyerek tarihi değiştir</p>
                 </div>
               ) : (
                 <p className="text-[11px] text-gray-400 mb-3 italic">Bu gün için teslim siparişi yok.</p>
@@ -1025,7 +947,7 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 flex-1">
               <div className="flex items-center gap-1.5 mb-2">
                 <StickyNote size={13} className="text-yellow-500" />
                 <span className="text-xs font-semibold text-gray-600">Bugünün Notu</span>
@@ -1051,6 +973,7 @@ export default function Dashboard() {
             </div>
           )}
 
+        </div>
         </div>
       </div>
 

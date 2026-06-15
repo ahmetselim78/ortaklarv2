@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useEscape } from '@/hooks/useEscape'
 import { AlertTriangle, X, Wrench } from 'lucide-react'
 import type { TamirKaynak, TamirSorun } from '@/types/tamir'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
+
+const SORUN_LIST: TamirSorun[] = ['kirik', 'cizik', 'olcum_hatasi', 'diger']
 
 export interface TamireGonderCam {
   cam_kodu: string
@@ -34,6 +36,8 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
   const [aciklama, setAciklama] = useState('')
   const [yukleniyor, setYukleniyor] = useState(false)
   const [hata, setHata] = useState('')
+  const formRef = useRef<HTMLFormElement>(null)
+  const aciklamaRef = useRef<HTMLTextAreaElement>(null)
 
   // cam değiştiğinde formu sıfırla
   useEffect(() => {
@@ -43,8 +47,41 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
     setHata('')
   }, [cam.siparis_detay_id])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Klavye kısayolları
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isTextarea = document.activeElement === aciklamaRef.current
+
+      // Delete → iptal
+      if (e.key === 'Delete') {
+        e.preventDefault()
+        onClose()
+        return
+      }
+
+      // Textarea odaktayken sadece Delete çalışır; diğer kısayollar devre dışı
+      if (isTextarea) return
+
+      // 1-4 → sorun türü seçimi
+      const idx = parseInt(e.key, 10) - 1
+      if (idx >= 0 && idx <= 3) {
+        e.preventDefault()
+        setSorunTipi(SORUN_LIST[idx])
+        return
+      }
+
+      // Enter → formu gönder
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        formRef.current?.requestSubmit()
+      }
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const doSubmit = async () => {
     setYukleniyor(true)
     setHata('')
 
@@ -75,6 +112,11 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
     }
 
     onSuccess()
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await doSubmit()
   }
 
   return (
@@ -134,7 +176,7 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {/* Adet seçimi — sadece adet > 1 ise göster */}
           {cam.adet > 1 && (
             <div>
@@ -166,17 +208,18 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
               Sorun Türü *
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(SORUN_ETIKETLERI) as TamirSorun[]).map((s) => (
+              {SORUN_LIST.map((s, i) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => setSorunTipi(s)}
-                  className={`px-3 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+                  className={`relative px-3 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
                     sorunTipi === s
                       ? 'bg-red-900/50 border-red-600 text-red-200'
                       : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'
                   }`}
                 >
+                  <span className="absolute top-1.5 left-2 text-[10px] font-mono font-bold opacity-50">{i + 1}</span>
                   {SORUN_ETIKETLERI[s]}
                 </button>
               ))}
@@ -189,6 +232,7 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
               Açıklama (isteğe bağlı)
             </label>
             <textarea
+              ref={aciklamaRef}
               value={aciklama}
               onChange={(e) => setAciklama(e.target.value)}
               placeholder="Sorun hakkında ek bilgi..."
@@ -208,9 +252,10 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl text-gray-300 font-medium text-sm transition-colors"
+              className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl text-gray-300 font-medium text-sm transition-colors flex items-center justify-center gap-2"
             >
               İptal
+              <kbd className="px-1.5 py-0.5 rounded bg-gray-700 border border-gray-600 text-gray-400 text-xs font-mono">Del</kbd>
             </button>
             <button
               type="submit"
@@ -219,6 +264,7 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
             >
               <Wrench size={15} />
               {yukleniyor ? 'Kaydediliyor...' : 'Tamire Gönder'}
+              {!yukleniyor && <kbd className="px-1.5 py-0.5 rounded bg-red-800 border border-red-600 text-red-200 text-xs font-mono">↵</kbd>}
             </button>
           </div>
         </form>

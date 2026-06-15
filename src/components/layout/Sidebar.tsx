@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings, Layers,
+  LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings, Layers, GaugeCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +20,7 @@ const navGroups: NavGroup[] = [
   {
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/saatlik-takip', label: 'Saatlik Takip', icon: GaugeCircle },
     ],
   },
   {

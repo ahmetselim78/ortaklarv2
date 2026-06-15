@@ -11,7 +11,9 @@ import KumandaPaneliPage from '@/pages/KumandaPaneliPage'
 import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
 import TamirIstasyonuPage from '@/pages/TamirIstasyonuPage'
 import AyarlarPage from '@/pages/AyarlarPage'
+import SaatlikTakipPage from '@/pages/SaatlikTakipPage'
 import NotFoundPage from '@/pages/NotFoundPage'
+import SaatlikTakipPanosu from '@/components/uretim/SaatlikTakipPanosu'
 
 export default function App() {
   return (
@@ -22,6 +24,8 @@ export default function App() {
         <Route path="/istasyonlar/kumanda" element={<KumandaPaneliPage />} />
         <Route path="/istasyonlar/gosterge" element={<GostergeEkraniPage />} />
         <Route path="/istasyonlar/tamir" element={<TamirIstasyonuPage />} />
+        {/* TV Panosu — tam ekran, sidebar yok */}
+        <Route path="/istasyonlar/uretim-panosu" element={<SaatlikTakipPanosu tamEkran />} />
 
         {/* Ana uygulama -- sidebar'li layout */}
         <Route element={<AppLayout />}>
@@ -31,6 +35,7 @@ export default function App() {
           <Route path="/siparisler" element={<SiparisPage />} />
           <Route path="/uretim" element={<UretimPage />} />
           <Route path="/istasyonlar" element={<UretimIstasyonlariPage />} />
+          <Route path="/saatlik-takip" element={<SaatlikTakipPage />} />
           <Route path="/ayarlar" element={<AyarlarPage />} />
         </Route>
 
