@@ -9,6 +9,14 @@ steps:
       - 'VITE_SUPABASE_ANON_KEY=$_VITE_SUPABASE_ANON_KEY'
       - '--build-arg'
       - 'VITE_MISTRAL_API_KEY=$_VITE_MISTRAL_API_KEY'
+      # --- CLOUDFLARE R2 İÇİN EKLENEN YENİ SATIRLAR (BURADAN BAŞLIYOR) ---
+      - '--build-arg'
+      - 'VITE_R2_UPLOAD_URL=$_VITE_R2_UPLOAD_URL'
+      - '--build-arg'
+      - 'VITE_R2_PUBLIC_BASE_URL=$_VITE_R2_PUBLIC_BASE_URL'
+      - '--build-arg'
+      - 'VITE_R2_UPLOAD_SECRET=$_VITE_R2_UPLOAD_SECRET'
+      # --- CLOUDFLARE R2 BİTTİ (AŞAĞISI ESKİSİ GİBİ KALACAK) ---
       - '-t'
       - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$REPO_NAME:$COMMIT_SHA'
       - '-f'
