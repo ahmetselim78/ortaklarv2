@@ -68,7 +68,9 @@ function FotoAlani({ deger, onDegisim, hata }: FotoAlanıProps) {
   const [yukleHata, setYukleHata] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const r2Aktif = !!import.meta.env.VITE_R2_UPLOAD_URL
+  const r2Aktif = !!import.meta.env.VITE_R2_UPLOAD_URL && 
+                !!import.meta.env.VITE_R2_PUBLIC_BASE_URL && 
+                !import.meta.env.VITE_R2_PUBLIC_BASE_URL.includes('placeholder')
 
   const dosyaSec = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const dosya = e.target.files?.[0]
