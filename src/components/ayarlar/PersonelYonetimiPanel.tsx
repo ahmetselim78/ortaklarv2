@@ -43,6 +43,7 @@ function PersonelAvatar({ foto_url, ad_soyad, boyut = 'md' }: {
         src={foto_url}
         alt={ad_soyad}
         onError={() => setHatali(true)}
+        crossOrigin="anonymous"
         className={`${boyutSinif} rounded-full object-cover shrink-0 border border-gray-200`}
       />
     )
@@ -68,7 +69,29 @@ function FotoAlani({ deger, onDegisim, hata }: FotoAlanıProps) {
   const [yukleHata, setYukleHata] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const r2Aktif = !!import.meta.env.VITE_R2_UPLOAD_URL && 
+  // ── Detaylı R2 Yapılandırma Kontrolü ──────────────────────────────────
+  const uploadUrl = import.meta.env.VITE_R2_UPLOAD_URL as string | undefined
+  const uploadSecret = import.meta.env.VITE_R2_UPLOAD_SECRET as string | undefined
+  const publicBaseUrl = import.meta.env.VITE_R2_PUBLIC_BASE_URL as string | undefined
+
+  const r2UploadUrlGeçerli = !!uploadUrl && uploadUrl.trim().length > 0
+  const r2SecretGeçerli = !!uploadSecret && uploadSecret.trim().length > 0
+  const r2PublicUrlGeçerli = !!publicBaseUrl && 
+                              publicBaseUrl.trim().length > 0 && 
+                              !publicBaseUrl.includes('placeholder') &&
+                              publicBaseUrl.startsWith('https://')
+
+  const r2Aktif = r2UploadUrlGeçerli && r2SecretGeçerli && r2PublicUrlGeçerli
+
+  // Debug: Kontrol sonuçlarını konsola yaz
+  if (!r2Aktif) {
+    console.warn('🔴 R2 Yapılandırması Eksik:', {
+      uploadUrl: r2UploadUrlGeçerli ? '✅ Var' : '❌ Yok/Boş',
+      uploadSecret: r2SecretGeçerli ? '✅ Var' : '❌ Yok/Boş',
+      publicBaseUrl: r2PublicUrlGeçerli ? '✅ Var' : '❌ Yok/Hatalı',
+      açıklama: !r2PublicUrlGeçerli ? `Public URL: "${publicBaseUrl}" (geçerli olmalı: https://pub-xxx.r2.dev)` : '',
+    })
+  } 
                 !!import.meta.env.VITE_R2_PUBLIC_BASE_URL && 
                 !import.meta.env.VITE_R2_PUBLIC_BASE_URL.includes('placeholder')
 
@@ -116,6 +139,7 @@ function FotoAlani({ deger, onDegisim, hata }: FotoAlanıProps) {
           <img
             src={deger}
             alt="Önizleme"
+            crossOrigin="anonymous"
             className="w-10 h-10 rounded-full object-cover border border-gray-200"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
           />

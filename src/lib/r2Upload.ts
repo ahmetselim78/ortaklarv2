@@ -73,8 +73,11 @@ export async function r2Upload(
       method: 'POST',
       headers,
       body: form,
+      mode: 'cors',
+      credentials: 'omit',
     })
-  } catch {
+  } catch (err) {
+    console.error('🔴 R2 Upload Network Hatası:', err)
     throw new R2UploadHata('Sunucuya bağlanılamadı. İnternet bağlantınızı kontrol edin.')
   }
 
