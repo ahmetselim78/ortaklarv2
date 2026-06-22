@@ -1,0 +1,70 @@
+﻿---
+description: Proje konvansiyonları ve dizin yapısı
+alwaysApply: true
+---
+
+# Proje Konvansiyonları
+
+## Dizin Yapısı
+
+```
+src/
+├── components/          # Reusable React bileşenleri
+│   ├── ui/             # Generic UI bileşenleri (Button, Modal, etc.)
+│   ├── layout/         # Layout bileşenleri (Sidebar, AppLayout)
+│   ├── siparis/        # Sipariş modülü bileşenleri
+│   ├── uretim/         # Üretim modülü bileşenleri
+│   ├── cari/           # Müşteri modülü bileşenleri
+│   ├── stok/           # Stok modülü bileşenleri
+│   ├── ayarlar/        # Ayarlar modülü bileşenleri
+│   ├── tamir/          # Tamir istasyonu bileşenleri
+│   └── sevkiyat/       # Sevkiyat modülü bileşenleri
+├── pages/              # Sayfa bileşenleri (route mapping)
+├── types/              # TypeScript type/interface tanımları
+├── hooks/              # Custom React hooks
+├── lib/                # Yardımcı fonksiyonlar ve utilities
+├── App.tsx             # Ana uygulama bileşeni
+└── main.tsx            # Entry point
+```
+
+## Bileşen Dosyalandırma
+
+Her bileşen kendi dosyasında:
+- Dosya adı: `ComponentName.tsx`
+- Export: `export default function ComponentName() { ... }`
+- Props interface: Dosyanın üstünde `interface ComponentNameProps { ... }`
+
+## Type Tanımları
+
+- Veritabanı modellerine karşılık gelen type'lar `types/` içinde
+- Dosya adları: entity adının snake_case'i (ör: `siparis.ts`, `uretim.ts`)
+- Interface adları: entity adının PascalCase'i (ör: `Siparis`, `Uretim`)
+
+## Supabase Entegrasyonu
+
+- Supabase client'ı import etme: `import { supabase } from '@/lib/supabase'`
+- SQL sorguları `supabase/functions/` içinde
+- Migration'lar `supabase/migrations/` içinde numerik prefix ile
+
+## Stil (Tailwind CSS)
+
+- Tailwind utility classes kullan; CSS dosyaları yazma
+- Component scope'lu stil için `cn()` helper'ı kullan
+- Stil sabitleri (color palettes) `StatusBadge.tsx` örneğine bakınız
+
+## Türkçe UI Etiketleri
+
+Tüm UI metni Türkçe. Sabit metinleri şu şekilde tanımla:
+
+```typescript
+const DURUM_ETIKETLERI: Record<string, string> = {
+  aktif: 'Aktif',
+  pasif: 'Pasif',
+}
+```
+
+## Form Validasyonu
+
+- Zod kullan schema tanımı için
+- React Hook Form kullan form state management için
+- Validation mesajları Türkçe

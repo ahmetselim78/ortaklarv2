@@ -1,0 +1,93 @@
+﻿---
+description: API ve veri entegrasyonu standartları
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# API & Veri Entegrasyonu
+
+## Supabase Queries
+
+Supabase ile veri çekme örneği:
+
+```typescript
+import { supabase } from '@/lib/supabase'
+
+export async function fetchCariList() {
+  const { data, error } = await supabase
+    .from('cari')
+    .select('id, ad, telefon, email')
+    .order('ad', { ascending: true })
+
+  if (error) {
+    console.error('Cari listesi çekilirken hata:', error)
+    throw new Error('Cari listesi yüklenemedi')
+  }
+
+  return data
+}
+```
+
+## Type Güvenliği
+
+- Database schema'ya uygun tip tanımları oluştur
+- Supabase return type'larını cast etme; kendi type'larını tanımla
+
+```typescript
+// ❌ BAD
+const data: any = await supabase.from('cari').select()
+
+// ✅ GOOD
+import type { Cari } from '@/types/cari'
+const { data } = await supabase.from('cari').select()
+const cariList: Cari[] = data || []
+```
+
+## Async/Await
+
+- Daima async/await kullan (promises'i avoid et)
+- Error handling'i try-catch ile yap
+- Loading state'leri manage et
+
+```typescript
+const [loading, setLoading] = useState(false)
+
+const handleSave = async (formData: FormData) => {
+  setLoading(true)
+  try {
+    const { error } = await supabase
+      .from('table')
+      .insert([formData])
+    
+    if (error) throw error
+    showToast('Başarıyla kaydedildi')
+  } catch (error) {
+    console.error('Kayıt başarısız:', error)
+    showToast('Hata oluştu', 'error')
+  } finally {
+    setLoading(false)
+  }
+}
+```
+
+## Realtime Updates
+
+Supabase realtime subscription'ları cleanup ile:
+
+```typescript
+useEffect(() => {
+  const channel = supabase
+    .channel('table-changes')
+    .on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'table_name' },
+      (payload) => {
+        // Handle change
+      }
+    )
+    .subscribe()
+
+  return () => {
+    channel.unsubscribe()
+  }
+}, [])
+```

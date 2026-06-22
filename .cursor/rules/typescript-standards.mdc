@@ -1,0 +1,98 @@
+﻿---
+description: TypeScript ve React bileşen standartları
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript & React Standartları
+
+## İmport Düzeni
+
+İmportları şu sırada grupla ve alfabetik olarak sırala:
+
+1. React ve React kütüphaneleri
+2. Dış paketler (form, validasyon, vb.)
+3. Tip tanımları (type, interface)
+4. Internal modüller (@/, ./components, vb.)
+5. Hooklar
+6. Yardımcı fonksiyonlar
+
+```typescript
+import { useState, useCallback } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import type { Cari } from '@/types/cari'
+import SomethingComponent from '@/components/Something'
+import { useCustomHook } from '@/hooks/useCustomHook'
+import { formatDate } from '@/lib/utils'
+```
+
+## React Bileşenleri
+
+- Fonksiyonel bileşenler kullan
+- Props için TypeScript interface'i tanımla
+- `export default` kullan tek dosya bileşenleri için
+- Bileşen adları PascalCase olmalı
+
+```typescript
+interface MyComponentProps {
+  title: string
+  onClick?: () => void
+  children?: React.ReactNode
+}
+
+export default function MyComponent({ title, onClick, children }: MyComponentProps) {
+  return <div>{title}</div>
+}
+```
+
+## Zod Validasyonu
+
+- Form şemaları bileşenin üstünde tanımla
+- Şema adlarını `schema` veya `{entityName}Schema` olarak adlandır
+- Türü `type MyFormData = z.infer<typeof schema>` ile çıkar
+
+```typescript
+const schema = z.object({
+  email: z.string().email('Geçerli email'),
+  age: z.coerce.number().min(18, 'En az 18 yaş'),
+  notes: z.string().optional(),
+})
+
+type FormData = z.infer<typeof schema>
+```
+
+## Hata Yönetimi
+
+Try-catch bloklarında hataları logla ve kullanıcıya anlamlı mesaj göster:
+
+```typescript
+try {
+  await saveData(formData)
+  showToast('Başarıyla kaydedildi')
+} catch (error) {
+  console.error('Veri kaydı başarısız:', error)
+  showToast('Bir hata oluştu. Lütfen tekrar deneyin.', 'error')
+}
+```
+
+## Türkçe Değişken Adları
+
+Kod içi değişkenleri, fonksiyonları, dosyaları İngilizce adlandır. Sadece:
+- Veritabanı sütun adları
+- UI etiketleri ve açıklamalar
+- Yorum satırları
+- Sabitler (SIPARIS_DURUM_STIL, vb.)
+
+Türkçe olabilir.
+
+```typescript
+// ✅ GOOD
+const customerName = cari.ad
+const formattedDate = formatDate(tarih)
+
+// ❌ AVOID
+const müşteriAdı = cari.ad
+const biçimlendirilenTarih = formatDate(tarih)
+```

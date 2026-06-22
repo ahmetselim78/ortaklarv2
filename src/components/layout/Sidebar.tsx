@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings, Layers, GaugeCircle,
+  LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings, Layers, GaugeCircle, ClipboardCheck, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -9,6 +9,7 @@ type NavItem = {
   label: string
   icon: typeof LayoutDashboard
   end?: boolean
+  newTab?: boolean
 }
 
 type NavGroup = {
@@ -38,13 +39,33 @@ const navGroups: NavGroup[] = [
       { to: '/istasyonlar', label: 'Üretim İstasyonları', icon: Radio },
     ],
   },
+  {
+    baslik: 'Girişler',
+    items: [
+      { to: '/istasyonlar/uretim-giris', label: 'Üretim Girişi', icon: ClipboardCheck, newTab: true },
+    ],
+  },
 ]
 
 const altNavItems: NavItem[] = [
+  { to: '/admin', label: 'Admin Paneli', icon: ShieldCheck },
   { to: '/ayarlar', label: 'Ayarlar', icon: Settings },
 ]
 
-function NavItemLink({ to, label, icon: Icon, end }: NavItem) {
+function NavItemLink({ to, label, icon: Icon, end, newTab }: NavItem) {
+  if (newTab) {
+    return (
+      <a
+        href={to}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:bg-gray-800 hover:text-white"
+      >
+        <Icon size={18} strokeWidth={1.9} />
+        <span className="truncate">{label}</span>
+      </a>
+    )
+  }
   return (
     <NavLink
       to={to}

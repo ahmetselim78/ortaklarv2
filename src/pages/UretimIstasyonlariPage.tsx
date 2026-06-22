@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, LayoutGrid, Monitor, Info, Keyboard, Wrench } from 'lucide-react'
+import { ClipboardList, LayoutGrid, Monitor, Wrench, ClipboardCheck, Info, Keyboard } from 'lucide-react'
 
 const stations = [
   {

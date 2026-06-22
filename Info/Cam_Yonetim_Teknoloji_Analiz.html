@@ -199,7 +199,8 @@
     <h2>Teknolojik Altyapı & State Yönetimi Analizi</h2>
     <p><strong>Proje Adı:</strong> OrtaklarV2</p>
     <p><strong>Oluşturma Tarihi:</strong> 15 Haziran 2026</p>
-    <p><strong>Dokümantasyon Versiyonu:</strong> 1.0</p>
+    <p><strong>Son Güncelleme:</strong> 22 Haziran 2026</p>
+    <p><strong>Dokümantasyon Versiyonu:</strong> 2.0 (Saatlik Takip & AI Şablonu Eklendi)</p>
   </div>
 
   <h2>1. Teknoloji Stack'i</h2>
@@ -634,7 +635,464 @@ const showErrorToast = (error: Error) => {
 
   <div class="section-divider"></div>
 
-  <h2>9. Teknoloji Stack Özet Tablosu</h2>
+  <h2>13. Saatlik Takip Sistemi ve İş Akışı</h2>
+
+  <h3>13.1 Günlük Geliştirme Döngüsü</h3>
+  <p>AI tarafından daha iyi anlaşılması için proje geliştirme sürecinin yapısı:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Zaman Dilimi</th>
+        <th>Aktivite</th>
+        <th>Sorumluluk</th>
+        <th>Çıktı</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>09:00 - 10:00</strong></td>
+        <td>Sabah Toplantısı & Sprint Planning</td>
+        <td>Product Owner + Dev Team</td>
+        <td>Günlük görevler, prioriteler belirlenir</td>
+      </tr>
+      <tr>
+        <td><strong>10:00 - 13:00</strong></td>
+        <td>Coding & Feature Development</td>
+        <td>Frontend Developers</td>
+        <td>Feature branches, commit messages, PR drafts</td>
+      </tr>
+      <tr>
+        <td><strong>13:00 - 14:00</strong></td>
+        <td>Lunch Break & Testing</td>
+        <td>QA Team</td>
+        <td>Manual testing results, bug reports</td>
+      </tr>
+      <tr>
+        <td><strong>14:00 - 16:00</strong></td>
+        <td>Code Review & Integration</td>
+        <td>Senior Dev + PR Reviewer</td>
+        <td>Approved PRs, merged to develop branch</td>
+      </tr>
+      <tr>
+        <td><strong>16:00 - 17:00</strong></td>
+        <td>Performance Testing & Optimization</td>
+        <td>Performance Engineer</td>
+        <td>Performance metrics, optimization insights</td>
+      </tr>
+      <tr>
+        <td><strong>17:00 - 17:30</strong></td>
+        <td>Daily Standup & Closing</td>
+        <td>Tüm Team</td>
+        <td>Status updates, tomorrow's plan</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>13.2 Özel Takip Noktaları</h3>
+
+  <div class="diagram">SAATLIK KONTROL LİSTESİ
+├── 09:00 Sprint Goals Kopyala
+├── 10:30 First Commit Check
+│   ├── Git status kontrol
+│   ├── Branch naming verification
+│   └── ESLint/TypeScript errors fix
+│
+├── 12:00 Midday Checkpoint
+│   ├── Progress % update
+│   ├── Blocker detection
+│   └── AI yardım talebi (varsa)
+│
+├── 14:00 Code Review Ready
+│   ├── PR açıldı mı?
+│   ├── Konularla ilgili testler yazıldı mı?
+│   └── Documentation updated?
+│
+├── 16:00 Merge Readiness
+│   ├── All tests passing
+│   ├── No conflicts with main
+│   └── Performance OK?
+│
+└── 17:00 End of Day Report
+    ├── Completed tasks
+    ├── Tomorrow's continuation
+    └── Yeni fikirler ve keşfetmeleri kaydet</div>
+
+  <h3>13.3 Şablonlu Rapor Formatı</h3>
+
+  <h4>Saatlik Rapor Şablonu (Kopyala-Yapıştır Kullan):</h4>
+
+  <pre><code>=== SAATLİK RAPOR - [TARİH] ===
+
+📍 SAAT: [HH:MM]
+
+📊 GÜN BAŞIYLA KARŞILAŞTIRMA:
+- Planlanan: [X görev]
+- Tamamlanan: [Y görev]
+- Devam Eden: [Z görev]
+- Tamamlanma %: [0-100%]
+
+🔧 TEKNİK DURUMU:
+- Branch: [feature/xyz]
+- Last Commit: [abc123...] [tarih]
+- Lint Errors: [Var/Yok]
+- Test Status: [Passing/Failing]
+
+✅ TAMAMLANAN İŞLER:
+1. [İş 1 - Detay]
+2. [İş 2 - Detay]
+
+🔄 DEVAM EDEN İŞLER:
+1. [İş 1 - % tamamlanmış - Sonraki adım]
+
+⚠️ BLOCKERS (Varsa):
+- [Blocker 1 - Çözüm önerisi]
+
+💡 YENİ FİKİRLER / KEŞFETMELER:
+- [Fikir 1]
+- [Fikir 2]
+- [Kaynaklar/Linkler]
+
+📝 AI SORULARI (Varsa):
+- [Soru 1]
+- [Soru 2]
+
+🎯 SONRAKI SAAT HEDEFI:
+- [Hedef 1]
+- [Hedef 2]
+
+---</code></pre>
+
+  <h3>13.4 Saatlik Takip İstatistikleri</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Metrik</th>
+        <th>Hedef</th>
+        <th>Mevcut Durum</th>
+        <th>Notlar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Ortalama Commit Sıklığı</td>
+        <td>Her 1.5 saat</td>
+        <td>Ölçülüyor</td>
+        <td>Atomic commits tercih edilir</td>
+      </tr>
+      <tr>
+        <td>PR Review Süresi</td>
+        <td>Max 2 saat</td>
+        <td>Ölçülüyor</td>
+        <td>Critical features faster</td>
+      </tr>
+      <tr>
+        <td>Test Coverage</td>
+        <td>%80+</td>
+        <td>TBD</td>
+        <td>Unit + Integration tests</td>
+      </tr>
+      <tr>
+        <td>Lint Errors</td>
+        <td>0</td>
+        <td>Commit time'da düzeltilir</td>
+        <td>Pre-commit hooks aktif</td>
+      </tr>
+      <tr>
+        <td>Bug Rate</td>
+        <td>&lt; 2 per sprint</td>
+        <td>Takip edilir</td>
+        <td>Production ve staging</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-divider"></div>
+
+  <h2>14. AI Bağlamı & Proje Şablonu</h2>
+
+  <h3>14.1 AI'nin Projeyi Anlaması İçin Kılavuz</h3>
+
+  <p><strong>Bu dokümantasyon AI asistanlarına (Cursor Agent, ChatGPT vb) yardımcı olmak için hazırlanmıştır.</strong></p>
+
+  <h4>Proje Özeti (AI için):</h4>
+
+  <pre><code>🏢 PROJE: OrtaklarV2 - Cam Yönetim Üretim Paneli
+
+📋 AMAÇ:
+   - Cam üretim işlemlerini yönetmek
+   - Siparişler, üretim, stok, sevkiyat takip
+   - Real-time dashboard ve raporlama
+
+🛠️ TEKNOLOJI:
+   - Frontend: React 19 + TypeScript + Tailwind CSS
+   - State: React Hooks (no Redux/Zustand yet)
+   - Backend: Supabase (PostgreSQL + Real-time API)
+   - Build: Vite 8.0.4
+   - Forms: React Hook Form + Zod
+
+📦 BAŞLICA TABLOLAR:
+   - siparisler (id, siparis_no, cari_id, durum, teslim_tarihi)
+   - siparis_detaylari (id, siparis_id, cam_kodu, adet, uretim_durumu)
+   - uretim_batches (id, batch_no, yikama_durumu, created_at)
+   - stok (id, stok_kodu, kategori, miktarı)
+   - cari (id, cari_no, ad, kod, iletişim)
+   - sevkiyat (id, siparis_id, taslak_bilgisi)
+
+🎯 BAŞLICA FEATURES:
+   1. Dashboard - Overview + metrics
+   2. Sipariş Yönetimi - Create, update, drag-drop takvim
+   3. Üretim Takip - Batch management, yıkama durumu
+   4. Stok Yönetimi - Stock levels, categories
+   5. Müşteri Yönetimi - Customer profiles
+   6. Sevkiyat İşlemleri - Shipping prep + templates
+   7. Ayarlar - System configuration
+
+📊 SAATLIK İŞ AKIŞI:
+   - 10:00-13:00: Feature development, coding
+   - 14:00-16:00: Code review, integration, testing
+   - 16:00-17:00: Performance optimization
+   - 17:00-17:30: Daily standup
+
+🔑 KRİTİK BÖLÜMLER:
+   - src/components/Dashboard.tsx - Ana kontrol merkezi
+   - src/hooks/useSiparis.ts - Order business logic
+   - src/hooks/useUretim.ts - Production logic
+   - src/lib/supabase.ts - Database client
+   - src/types/*.ts - Type definitions
+
+⚡ PERFORMANS HEDEFLERI:
+   - Dashboard load: < 2 seconds
+   - API response: < 500ms
+   - Rendering: 60 FPS
+   - Bundle size: < 500KB</code></pre>
+
+  <h3>14.2 AI'ye Yönelik Soru Şablonu</h3>
+
+  <p>Cursor Agent veya başka AI'ye soru sorarken bu formatı kullan:</p>
+
+  <pre><code>🤖 AI'YE SORU - Standarlaştırılmış Format
+
+BAŞLIK: [Kısa soru başlığı]
+
+BAĞLAM:
+- Hangı özellik üzerinde çalışıyorum? [Dashboard/Sipariş/Üretim vb.]
+- Mevcut branch: [feature/xyz]
+- Dosya: [src/components/Dashboard.tsx]
+- Satırlar: [123-456]
+
+PROBLEM/SORU:
+[Detaylı açıklama]
+
+ŞIMDIYE KADAR DENEDIĞIM:
+- [Deneme 1]
+- [Deneme 2]
+
+BEKLENEN SONUÇ:
+[Ne olması gerektiğini açıkla]
+
+MEVCUT SONUÇ:
+[Şu anda ne oluyor]
+
+İLGİLİ DOSYALAR:
+- src/types/siparis.ts
+- src/hooks/useSiparis.ts
+- src/components/SiparisForm.tsx
+
+ÖNCELIK: [🔴 Yüksek / 🟡 Orta / 🟢 Düşük]
+
+---</code></pre>
+
+  <h3>14.3 Yeni Fikirler & Geliştirme Notları</h3>
+
+  <p>Saatlik takip sırasında bulduğun yeni fikirler için:</p>
+
+  <pre><code>💡 YENİ FİKİR ŞABLONU
+
+TARİH & SAAT: [2026-06-22 11:30]
+
+FİKİR BAŞLIĞI: [Kısa başlık]
+
+AÇIKLAMA:
+[Fikrin detaylı açıklaması, 2-3 cümle]
+
+POTANSIYEL FAYDASI:
+- [Fayda 1 - metrics]
+- [Fayda 2]
+- [Fayda 3]
+
+OLASI RISKLER / ZORLUKLAR:
+- [Risk 1 - çözüm]
+- [Risk 2]
+
+İLGİLİ COMPONENTS:
+- [Component 1]
+- [Component 2]
+
+ARAŞTIRMA LİNKLERİ:
+- [URL 1]
+- [URL 2]
+
+UYGULANACAK MI?
+[ ] Hemen implement et
+[ ] Sprint'e ekle
+[ ] Backlog'a koy
+[ ] Dismiss et
+
+NOTLAR:
+[Ek açıklamalar]
+
+---</code></pre>
+
+  <h3>14.4 Commit Message Standardı (AI için)</h3>
+
+  <p>Her commit yapılırken bu formatı kullan, AI daha iyi anlayabilir:</p>
+
+  <pre><code>git commit -m "feat(siparis): Add drag-drop calendar
+
+- Implement calendar grid with month navigation
+- Add optimistic updates for siparis re-ordering
+- Integrate Supabase sync in background
+- Fix timezone handling for dates
+
+Type: Feature
+Component: SiparisPage
+Related: #123
+Breaking: No
+Tests: 3 new, 2 updated"</code></pre>
+
+  <h3>14.5 PR Template (AI Review'ı Kolaylaştırmak İçin)</h3>
+
+  <pre><code>## PR Title
+[Kısa tanım - feat/fix/refactor/docs]
+
+## 📝 Açıklama
+[Neler değişti, neden değişti]
+
+## 🎯 İlişkili Issues
+Closes #123
+
+## 🧪 Testing
+- [ ] Unit tests added
+- [ ] Manual testing done
+- [ ] No regressions
+
+## 📊 Performance Impact
+- Bundle size: [-5%]
+- Load time: [-200ms]
+- No performance issues detected
+
+## 🔍 Code Review Checklist
+- [ ] Types are correct
+- [ ] No console.logs
+- [ ] ESLint passes
+- [ ] Comments added for complex logic
+- [ ] Tests are comprehensive
+
+## 🆕 Yeni Fikirler / Bilgiler
+[Bu PR sırasında keşfettiğin şeyler, sonra AI'ye sorulabilecekler]
+
+---</code></pre>
+
+  <div class="section-divider"></div>
+
+  <h2>15. Ek Kaynaklar & Referans Materyaller</h2>
+
+  <h3>15.1 Proje Klasörleri</h3>
+
+  <ul>
+    <li><strong>/src/pages</strong> - Route components (Dashboard, SiparisPage vb.)</li>
+    <li><strong>/src/components</strong> - Reusable UI components</li>
+    <li><strong>/src/hooks</strong> - Business logic encapsulation</li>
+    <li><strong>/src/types</strong> - TypeScript interfaces</li>
+    <li><strong>/src/lib</strong> - Utilities (Supabase client, helpers)</li>
+    <li><strong>/Info</strong> - Documentation (bu dosya burada)</li>
+  </ul>
+
+  <h3>15.2 İlgili Dosyalar Hızlı Ref</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Özellik</th>
+        <th>Ana Dosyalar</th>
+        <th>İlgili Hooks</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Dashboard</strong></td>
+        <td>Dashboard.tsx, DashboardCards.tsx</td>
+        <td>useDashboard, useIstatistikler</td>
+      </tr>
+      <tr>
+        <td><strong>Siparişler</strong></td>
+        <td>SiparisPage.tsx, SiparisForm.tsx</td>
+        <td>useSiparis, useCari</td>
+      </tr>
+      <tr>
+        <td><strong>Üretim</strong></td>
+        <td>UretimPage.tsx, YeniBatchModal.tsx</td>
+        <td>useUretim, useSevkiyat</td>
+      </tr>
+      <tr>
+        <td><strong>Stok</strong></td>
+        <td>StokPage.tsx, StokForm.tsx</td>
+        <td>useStok, useKatmanYapilari</td>
+      </tr>
+      <tr>
+        <td><strong>Ayarlar</strong></td>
+        <td>AyarlarPage.tsx</td>
+        <td>useAyarlar, useSiparisTaslaklari</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>15.3 Hata Ayıklama İpuçları</h3>
+
+  <div class="diagram">🐛 DEBUGGING CHECKLIST
+
+1. Console Errors
+   └─ DevTools → Console tab açın
+   └─ Error stack trace'i okuyun
+   └─ Component trace'i takip edin
+
+2. TypeScript Errors
+   └─ npm run type-check
+   └─ VS Code Problems panel
+   └─ types/ klasöründe interface tanımını kontrol
+
+3. Supabase Issues
+   └─ supabase.com dashboard'a git
+   └─ Real-time subscriptions aktif mi?
+   └─ Row-level security policies doğru mu?
+   └─ Query'de select() doğru mu?
+
+4. State Updates
+   └─ React DevTools → Components tab
+   └─ useReducer/useState hooks açılı mı?
+   └─ State değişimi track et (props)
+   └─ Re-render sebeplerini analiz et
+
+5. Performance Issues
+   └─ Chrome DevTools → Performance tab
+   └─ React Profiler tab ile record et
+   └─ Components → renders analyze
+   └─ Memoization fırsatı var mı?</div>
+
+  <h3>15.4 Linkler & Kaynaklar</h3>
+
+  <ul>
+    <li><strong>Supabase Docs:</strong> https://supabase.com/docs</li>
+    <li><strong>React Hooks Guide:</strong> https://react.dev/reference/react/hooks</li>
+    <li><strong>TypeScript Handbook:</strong> https://www.typescriptlang.org/docs/</li>
+    <li><strong>Tailwind CSS:</strong> https://tailwindcss.com/docs</li>
+    <li><strong>React Router:</strong> https://reactrouter.com/docs</li>
+    <li><strong>Vite Guide:</strong> https://vitejs.dev/guide/</li>
+  </ul>
+
+  <div class="section-divider"></div>
 
   <table>
     <thead>
@@ -852,10 +1310,12 @@ const showErrorToast = (error: Error) => {
 
   <div class="footer">
     <hr>
-    <p><strong>Bu dokümantasyon projenin mevcut teknoloji stack'i ve state yönetimi mimarisini detaylı olarak açıklamaktadır.</strong></p>
+    <p><strong>Bu dokümantasyon projenin mevcut teknoloji stack'i, state yönetimi mimarisini, saatlik iş akışını ve AI entegrasyonunu detaylı olarak açıklamaktadır.</strong></p>
+    <p>Saatlik takip şablonlarını ve AI soru formatını kullanarak daha organize ve yapılandırılmış bir geliştirme süreci sağlanabilir.</p>
     <p>Sorularınız veya önerileriniz varsa, geliştirme ekibinize başvurunuz.</p>
-    <p>© 2026 - OrtaklarV2 Project | Teknoloji Analizi Dokümantasyonu v1.0</p>
-    <p><em>Oluşturma Tarihi: 15 Haziran 2026</em></p>
+    <p>© 2026 - OrtaklarV2 Project | Teknoloji Analizi Dokümantasyonu v2.0</p>
+    <p><em>Oluşturma Tarihi: 15 Haziran 2026 | Son Güncelleme: 22 Haziran 2026</em></p>
+    <p><em>Yeni Eklemeler: Saatlik Takip Sistemi, AI Şablonları, Rapor Formatları, Commit Standards</em></p>
   </div>
 
 </body>

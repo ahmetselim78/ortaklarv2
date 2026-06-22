@@ -428,6 +428,21 @@ function UretimSatiri({ satir, bugunMu, T, onNotClick, onTooltip }: SatirProps) 
         />
       </td>
 
+      {/* Fark — adet ve yüzde */}
+      <td className="w-36 px-2 py-4 text-center">
+        {gecmis || aktif ? (
+          <div className={`flex flex-col items-center gap-0.5 ${perf.text}`}>
+            <div className="flex items-center gap-1 text-base font-bold">
+              {fark > 0 ? <TrendingUp size={15} /> : fark < 0 ? <TrendingDown size={15} /> : <Minus size={15} />}
+              <span>{fark > 0 ? '+' : ''}{satir.gerceklesen_adet - satir.hedef_adet}</span>
+            </div>
+            <span className="text-xs font-semibold opacity-80">{fark > 0 ? '+' : ''}{fark}%</span>
+          </div>
+        ) : (
+          <span className={`text-sm ${T.emptyText}`}>—</span>
+        )}
+      </td>
+
       {/* Fire */}
       <td className="w-36 px-2 py-4 text-center">
         <CiftDeger
@@ -435,18 +450,6 @@ function UretimSatiri({ satir, bugunMu, T, onNotClick, onTooltip }: SatirProps) 
           kumulatif={satir.kumulatifFire}
           renkSinifi={satir.fire_adet > 0 ? 'text-orange-500' : T.emptyText}
         />
-      </td>
-
-      {/* Fark % */}
-      <td className="w-24 px-2 py-4 text-center">
-        {gecmis || aktif ? (
-          <div className={`flex items-center justify-center gap-1 text-base font-bold ${perf.text}`}>
-            {fark > 0 ? <TrendingUp size={15} /> : fark < 0 ? <TrendingDown size={15} /> : <Minus size={15} />}
-            <span>{Math.abs(fark)}%</span>
-          </div>
-        ) : (
-          <span className={`text-sm ${T.emptyText}`}>—</span>
-        )}
       </td>
 
       {/* NPT % */}
@@ -854,12 +857,13 @@ export default function SaatlikTakipPanosu({ tamEkran = false }: SaatlikTakipPan
                     Gerçekleşen
                     <div className={`text-xs font-normal normal-case ${T.tableHeadFaint}`}>saat / kümülatif</div>
                   </th>
+                  <th className={`w-36 px-2 py-3 text-center text-sm font-semibold uppercase tracking-wide ${T.tableHeadText}`}>
+                    Fark
+                    <div className={`text-xs font-normal normal-case ${T.tableHeadFaint}`}>adet / %</div>
+                  </th>
                   <th className="w-36 px-2 py-3 text-center text-sm font-semibold uppercase tracking-wide text-orange-500">
                     Fire
                     <div className="text-xs font-normal normal-case text-orange-700">saat / kümülatif</div>
-                  </th>
-                  <th className={`w-24 px-2 py-3 text-center text-sm font-semibold uppercase tracking-wide ${T.tableHeadText}`}>
-                    Fark
                   </th>
                   <th className={`w-20 px-2 py-3 text-center text-sm font-semibold uppercase tracking-wide ${T.tableHeadText}`}>
                     NPT
@@ -901,21 +905,22 @@ export default function SaatlikTakipPanosu({ tamEkran = false }: SaatlikTakipPan
                     }`}>{toplamGerceklesen}</span>
                   </td>
                   <td className="px-2 py-3 text-center">
+                    {toplamHedef > 0 && (() => {
+                      const farkPct = farkHesapla(toplamGerceklesen, toplamHedef)
+                      const farkAdet = toplamGerceklesen - toplamHedef
+                      const renk = toplamGerceklesen >= toplamHedef ? T.performans.yesil.text : T.performans.kirmizi.text
+                      return (
+                        <div className={`flex flex-col items-center gap-0.5 ${renk}`}>
+                          <span className="text-lg font-bold">{farkAdet > 0 ? '+' : ''}{farkAdet}</span>
+                          <span className="text-xs font-semibold opacity-80">{farkPct > 0 ? '+' : ''}{farkPct}%</span>
+                        </div>
+                      )
+                    })()}
+                  </td>
+                  <td className="px-2 py-3 text-center">
                     <span className={`text-lg font-bold tabular-nums ${toplamFire > 0 ? 'text-orange-500' : T.tableHeadText}`}>
                       {toplamFire}
                     </span>
-                  </td>
-                  <td className="px-2 py-3 text-center">
-                    {toplamHedef > 0 && (
-                      <span className={`text-lg font-bold ${
-                        toplamGerceklesen >= toplamHedef
-                          ? T.performans.yesil.text
-                          : T.performans.kirmizi.text
-                      }`}>
-                        {farkHesapla(toplamGerceklesen, toplamHedef) > 0 ? '+' : ''}
-                        {farkHesapla(toplamGerceklesen, toplamHedef)}%
-                      </span>
-                    )}
                   </td>
                   <td />
                   <td />

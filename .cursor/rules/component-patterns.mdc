@@ -1,0 +1,148 @@
+﻿---
+description: React bileşen pattern'ları ve best practices
+globs: **/*.tsx
+alwaysApply: false
+---
+
+# React Bileşen Pattern'ları
+
+## Bileşen Yapısı
+
+```typescript
+import { useState, useCallback } from 'react'
+import type { SomeType } from '@/types/module'
+import { useCustomHook } from '@/hooks/useCustomHook'
+import SomeComponent from '@/components/SomeComponent'
+import { cn } from '@/lib/utils'
+
+interface MyComponentProps {
+  title: string
+  onClose?: () => void
+  items?: SomeType[]
+}
+
+export default function MyComponent({
+  title,
+  onClose,
+  items = [],
+}: MyComponentProps) {
+  const [state, setState] = useState(false)
+  const customValue = useCustomHook()
+
+  const handleClick = useCallback(() => {
+    setState(!state)
+  }, [state])
+
+  return (
+    <div className="...">
+      {/* Component JSX */}
+    </div>
+  )
+}
+```
+
+## Modal/Dialog Bileşenleri
+
+Modal bileşenleri şu prop'ları kabul etmelidir:
+
+```typescript
+interface ModalProps {
+  isOpen: boolean
+  onClose: () => void
+  title?: string
+  children: React.ReactNode
+}
+
+export default function MyModal({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: ModalProps) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50">
+      <div className="...">
+        <h2>{title}</h2>
+        {children}
+      </div>
+    </div>
+  )
+}
+```
+
+## Liste Bileşenleri
+
+```typescript
+interface ListProps<T> {
+  items: T[]
+  loading?: boolean
+  emptyMessage?: string
+  onSelect?: (item: T) => void
+}
+
+export default function ItemList<T extends { id: string }>({
+  items,
+  loading = false,
+  emptyMessage = 'Kayıt bulunamadı',
+}: ListProps<T>) {
+  if (loading) return <div>Yükleniyor...</div>
+  if (!items.length) return <div>{emptyMessage}</div>
+
+  return (
+    <ul>
+      {items.map(item => (
+        <li key={item.id}>{/* ... */}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Conditional Rendering
+
+```typescript
+// ✅ GOOD - Ternary operator
+{isVisible ? <Component /> : null}
+
+// ✅ GOOD - Logical AND (null safe)
+{isVisible && <Component />}
+
+// ❌ AVOID - Early returns make testing harder
+if (!isVisible) return null
+```
+
+## Event Handlers
+
+Naming convention'ı takip et:
+
+```typescript
+// ✅ GOOD
+const handleClick = () => { ... }
+const handleSubmit = (e: React.FormEvent) => { ... }
+const handleChange = (value: string) => { ... }
+const handleSelect = (item: Item) => { ... }
+
+// Props'ta
+interface Props {
+  onClick?: () => void
+  onSubmit?: (data: FormData) => void
+  onChange?: (value: string) => void
+  onSelect?: (item: Item) => void
+}
+```
+
+## Key Props in Lists
+
+```typescript
+// ✅ GOOD - Stable unique ID
+{items.map(item => (
+  <div key={item.id}>{item.name}</div>
+))}
+
+// ❌ BAD - Index as key (breaks animation/state)
+{items.map((item, index) => (
+  <div key={index}>{item.name}</div>
+))}
+```

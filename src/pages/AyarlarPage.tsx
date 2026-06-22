@@ -1,17 +1,61 @@
-import { useState, useCallback } from 'react'
-import { Printer, ChevronRight, ArrowLeft, Truck, Layers, Users, Target, MessageSquare } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Printer, ChevronRight, ArrowLeft, Truck, Layers, Users, Target, MessageSquare, Send, Factory } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
+import { supabase } from '@/lib/supabase'
+
+const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
+
+const VARSAYILAN_GORUNUM = {
+  etiket: true,
+  araclar: true,
+  katman: true,
+  personel: true,
+  hedef: true,
+  presets: true,
+  telegram: true,
+  istasyon: true,
+}
+
+function useGorunumAyarlari() {
+  const [gorunum, setGorunum] = useState<Record<string, boolean> | null>(null)
+  const [yukleniyor, setYukleniyor] = useState(true)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('ayarlar')
+          .select('deger')
+          .eq('anahtar', GORUNUM_ANAHTAR)
+          .maybeSingle()
+        if (data?.deger) {
+          setGorunum({ ...VARSAYILAN_GORUNUM, ...(data.deger as Record<string, boolean>) })
+        } else {
+          setGorunum(VARSAYILAN_GORUNUM)
+        }
+      } catch (err) {
+        setGorunum(VARSAYILAN_GORUNUM)
+      } finally {
+        setYukleniyor(false)
+      }
+    })()
+  }, [])
+
+  return { gorunum, yukleniyor }
+}
 import EtiketAyarlariPanel, { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
 import KatmanYapilariPanel from '@/components/ayarlar/KatmanYapilariPanel'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
+import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
+import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 /* ── Kategori tanımları ──────────────────────────────────────── */
 
-type AyarKategori = 'etiket' | 'araclar' | 'katman' | 'personel' | 'hedef' | 'presets'
+type AyarKategori = 'etiket' | 'araclar' | 'katman' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
 
 interface Kategori {
   id: AyarKategori
@@ -71,18 +115,46 @@ const kategoriler: Kategori[] = [
     renk: 'bg-sky-50 hover:bg-sky-100 border-sky-200',
     ikonRenk: 'text-sky-600 bg-sky-100',
   },
+  {
+    id: 'telegram',
+    label: 'Telegram Raporu',
+    aciklama: 'Bot token ve chat ID ayarla; günlük üretim raporunun hangi saatlerde otomatik gönderileceğini belirle.',
+    icon: Send,
+    renk: 'bg-teal-50 hover:bg-teal-100 border-teal-200',
+    ikonRenk: 'text-teal-600 bg-teal-100',
+  },
+  {
+    id: 'istasyon',
+    label: 'Üretim İstasyonları',
+    aciklama: 'Operatör günlük rapor formunda görünecek istasyonları ekle, sırala veya pasife al.',
+    icon: Factory,
+    renk: 'bg-amber-50 hover:bg-amber-100 border-amber-200',
+    ikonRenk: 'text-amber-600 bg-amber-100',
+  },
 ]
 
 /* ── Ana Sayfa (Landing) ─────────────────────────────────────────────────── */
 
 function AyarlarAnaSayfa({ onSec }: { onSec: (k: AyarKategori) => void }) {
+  const { gorunum, yukleniyor } = useGorunumAyarlari()
+
+  if (yukleniyor || !gorunum) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+        Yükleniyor…
+      </div>
+    )
+  }
+
+  const gorünürKategoriler = kategoriler.filter(k => gorunum[k.id] !== false)
+
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Ayarlar</h1>
       <p className="text-sm text-gray-500 mb-8">Uygulama ayarlarını buradan yönetebilirsiniz.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {kategoriler.map(({ id, label, aciklama, icon: Icon, renk, ikonRenk }) => (
+        {gorünürKategoriler.map(({ id, label, aciklama, icon: Icon, renk, ikonRenk }) => (
           <button
             key={id}
             type="button"
@@ -292,6 +364,54 @@ export default function AyarlarPage() {
       </div>
       <div className="flex-1 overflow-auto p-8">
         <AksiyonNotuPresetsPanel />
+      </div>
+    </div>
+  )
+
+  /* Telegram Raporu */
+  if (aktifKategori === 'telegram') return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <Send size={16} className="text-teal-600" />
+          <span className="text-sm font-semibold text-gray-900">Telegram Raporu</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <TelegramAyarlariPanel />
+      </div>
+    </div>
+  )
+
+  /* Üretim İstasyonları */
+  if (aktifKategori === 'istasyon') return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <Factory size={16} className="text-amber-600" />
+          <span className="text-sm font-semibold text-gray-900">Üretim İstasyonları</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <IstasyonYonetimiPanel />
       </div>
     </div>
   )

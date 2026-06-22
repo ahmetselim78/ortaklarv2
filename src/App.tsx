@@ -12,8 +12,10 @@ import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
 import TamirIstasyonuPage from '@/pages/TamirIstasyonuPage'
 import AyarlarPage from '@/pages/AyarlarPage'
 import SaatlikTakipPage from '@/pages/SaatlikTakipPage'
+import AdminPage from '@/pages/AdminPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import SaatlikTakipPanosu from '@/components/uretim/SaatlikTakipPanosu'
+import OperatorGirisPage from '@/pages/OperatorGirisPage'
 
 export default function App() {
   return (
@@ -24,6 +26,7 @@ export default function App() {
         <Route path="/istasyonlar/kumanda" element={<KumandaPaneliPage />} />
         <Route path="/istasyonlar/gosterge" element={<GostergeEkraniPage />} />
         <Route path="/istasyonlar/tamir" element={<TamirIstasyonuPage />} />
+        <Route path="/istasyonlar/uretim-giris" element={<OperatorGirisPage />} />
         {/* TV Panosu — tam ekran, sidebar yok */}
         <Route path="/istasyonlar/uretim-panosu" element={<SaatlikTakipPanosu tamEkran />} />
 
@@ -37,6 +40,8 @@ export default function App() {
           <Route path="/istasyonlar" element={<UretimIstasyonlariPage />} />
           <Route path="/saatlik-takip" element={<SaatlikTakipPage />} />
           <Route path="/ayarlar" element={<AyarlarPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/operator-giris" element={<OperatorGirisPage />} />
         </Route>
 
         {/* 404 */}

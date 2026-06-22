@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { r2Upload, R2UploadHata } from '@/lib/r2Upload'
 import type { HrPersonel, YeniPersonel } from '@/types/saatlikUretim'
@@ -22,6 +22,8 @@ const personelSchema = z.object({
     errorMap: () => ({ message: 'Rol seçiniz' }),
   }),
   is_aktif: z.boolean().default(true),
+  kullanici_adi: z.string().optional().default(''),
+  giris_sifresi: z.string().optional().default(''),
 })
 
 type PersonelFormDegerleri = z.infer<typeof personelSchema>
@@ -220,6 +222,7 @@ export default function PersonelYonetimiPanel() {
   const [hata, setHata] = useState<string | null>(null)
   const [silmeOnayId, setSilmeOnayId] = useState<string | null>(null)
   const [duzenlePersonel, setDuzenlePersonel] = useState<HrPersonel | null>(null)
+  const [sifreGoster, setSifreGoster] = useState(false)
 
   const {
     register,
@@ -230,7 +233,7 @@ export default function PersonelYonetimiPanel() {
     formState: { errors },
   } = useForm<PersonelFormDegerleri>({
     resolver: zodResolver(personelSchema),
-    defaultValues: { ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true },
+    defaultValues: { ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' },
   })
 
   const fotoUrl = watch('foto_url')
@@ -255,12 +258,19 @@ export default function PersonelYonetimiPanel() {
   const duzenleBaslat = (p: HrPersonel) => {
     setDuzenlePersonel(p)
     setSilmeOnayId(null)
-    reset({ ad_soyad: p.ad_soyad, foto_url: p.foto_url ?? '', rol: p.rol as 'Direkt' | 'Endirekt', is_aktif: p.is_aktif })
+    reset({
+      ad_soyad: p.ad_soyad,
+      foto_url: p.foto_url ?? '',
+      rol: p.rol as 'Direkt' | 'Endirekt',
+      is_aktif: p.is_aktif,
+      kullanici_adi: p.kullanici_adi ?? '',
+      giris_sifresi: p.giris_sifresi ?? '',
+    })
   }
 
   const duzenleIptal = () => {
     setDuzenlePersonel(null)
-    reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true })
+    reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' })
   }
 
   // ── Personel ekle / güncelle ───────────────────────────────────────────────
@@ -271,21 +281,29 @@ export default function PersonelYonetimiPanel() {
       if (duzenlePersonel) {
         const { error } = await supabase
           .from('hr_personel')
-          .update({ ad_soyad: form.ad_soyad.trim(), foto_url: form.foto_url.trim(), rol: form.rol })
+          .update({
+            ad_soyad: form.ad_soyad.trim(),
+            foto_url: form.foto_url.trim(),
+            rol: form.rol,
+            kullanici_adi: form.kullanici_adi?.trim() || null,
+            giris_sifresi: form.giris_sifresi?.trim() || null,
+          })
           .eq('id', duzenlePersonel.id)
         if (error) throw error
         setDuzenlePersonel(null)
       } else {
-        const yeni: YeniPersonel = {
+        const yeni: YeniPersonel & { kullanici_adi?: string | null; giris_sifresi?: string | null } = {
           ad_soyad: form.ad_soyad.trim(),
           foto_url: form.foto_url.trim(),
           rol: form.rol,
           is_aktif: true,
+          kullanici_adi: form.kullanici_adi?.trim() || null,
+          giris_sifresi: form.giris_sifresi?.trim() || null,
         }
         const { error } = await supabase.from('hr_personel').insert([yeni])
         if (error) throw error
       }
-      reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true })
+      reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' })
       await getir()
     } catch (e) {
       setHata(e instanceof Error ? e.message : duzenlePersonel ? 'Personel güncellenemedi' : 'Personel eklenemedi')
@@ -314,7 +332,7 @@ export default function PersonelYonetimiPanel() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-3xl space-y-8">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
 
       {/* ── Personel Formu ── */}
       <div className={`bg-white rounded-xl border p-6 ${duzenlePersonel ? 'border-blue-300 ring-2 ring-blue-100' : 'border-gray-200'}`}>
@@ -366,6 +384,50 @@ export default function PersonelYonetimiPanel() {
                 <option value="Endirekt">Endirekt Çalışan</option>
               </select>
               {errors.rol && <p className="mt-1 text-xs text-red-600">{errors.rol.message}</p>}
+            </div>
+          </div>
+
+          {/* ── Giriş Bilgileri ── */}
+          <div className="border-t border-gray-100 pt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <KeyRound size={13} className="text-violet-500" />
+              <p className="text-xs font-semibold text-gray-700">Operatör Giriş Bilgileri</p>
+              <span className="text-xs text-gray-400">(opsiyonel)</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Kullanıcı Adı */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Kullanıcı Adı</label>
+                <input
+                  {...register('kullanici_adi')}
+                  placeholder="operatör1"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Giriş Şifresi */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Giriş Şifresi</label>
+                <div className="relative">
+                  <input
+                    {...register('giris_sifresi')}
+                    type={sifreGoster ? 'text' : 'password'}
+                    placeholder="••••••"
+                    autoComplete="new-password"
+                    className="w-full px-3 py-2 pr-9 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSifreGoster(v => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {sifreGoster ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">Operatör girişinde kullanılacak şifre.</p>
+              </div>
             </div>
           </div>
 
@@ -432,7 +494,7 @@ export default function PersonelYonetimiPanel() {
             Henüz personel eklenmemiş.
           </div>
         ) : (
-          <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
             {personeller.map(p => (
               <div
                 key={p.id}
@@ -450,7 +512,17 @@ export default function PersonelYonetimiPanel() {
                   <p className={`text-sm font-medium truncate ${p.is_aktif ? 'text-gray-800' : 'text-gray-500'}`}>
                     {p.ad_soyad}
                   </p>
-                  <p className="text-xs text-gray-400">{p.rol}</p>
+                  <p className="text-xs text-gray-400">
+                    {p.rol}
+                    {p.kullanici_adi && (
+                      <span className="ml-2 text-violet-500">@{p.kullanici_adi}</span>
+                    )}
+                    {p.giris_sifresi && (
+                      <span className="ml-1 text-gray-300" title="Şifre tanımlı">
+                        <KeyRound size={10} className="inline" />
+                      </span>
+                    )}
+                  </p>
                 </div>
 
                 <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${

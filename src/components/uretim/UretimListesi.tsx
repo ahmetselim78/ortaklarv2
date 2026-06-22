@@ -13,13 +13,34 @@ interface Props {
   onSiparisAc: (siparisId: string) => void
 }
 
+// Takvim (Dashboard DURUM_EVENT) ile aynı renk sistemi
 const DURUM_STIL: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'bg-gray-100 text-gray-600',
-  export_edildi: 'bg-orange-50 text-orange-700',
-  yikamada: 'bg-cyan-50 text-cyan-700',
-  tamamlandi: 'bg-green-50 text-green-700',
-  eksik_var: 'bg-red-50 text-red-700',
-  iptal: 'bg-gray-100 text-gray-400 line-through',
+  hazirlaniyor: 'bg-gray-100 text-gray-800 border border-gray-300',
+  export_edildi: 'bg-orange-100 text-orange-900 border border-orange-400',
+  yikamada:     'bg-cyan-100 text-cyan-900 border border-cyan-400',
+  tamamlandi:   'bg-green-100 text-green-900 border border-green-400',
+  eksik_var:    'bg-red-100 text-red-900 border border-red-400',
+  iptal:        'bg-red-50 text-red-500 border border-red-300 line-through',
+}
+
+// Satır sol kenar rengi
+const DURUM_KENAR: Record<UretimEmriDurum, string> = {
+  hazirlaniyor: 'border-l-4 border-l-gray-300',
+  export_edildi: 'border-l-4 border-l-orange-400',
+  yikamada:     'border-l-4 border-l-cyan-400',
+  tamamlandi:   'border-l-4 border-l-green-400',
+  eksik_var:    'border-l-4 border-l-red-400',
+  iptal:        'border-l-4 border-l-red-300',
+}
+
+// Satır arka plan tonu
+const DURUM_SATIR_BG: Record<UretimEmriDurum, string> = {
+  hazirlaniyor: '',
+  export_edildi: 'bg-orange-50/40',
+  yikamada:     'bg-cyan-50/40',
+  tamamlandi:   'bg-green-50/40',
+  eksik_var:    'bg-red-50/40',
+  iptal:        'bg-gray-50/60 opacity-70',
 }
 
 const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
@@ -61,7 +82,12 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
           {emirler.map((emir) => (
             <tr
               key={emir.id}
-              className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
+              className={cn(
+                'border-b border-gray-100 last:border-0 transition-colors',
+                DURUM_KENAR[emir.durum],
+                DURUM_SATIR_BG[emir.durum],
+                'hover:brightness-95',
+              )}
             >
               <td className="px-4 py-3 font-mono font-semibold text-gray-800">{emir.batch_no}</td>
               <td className="px-4 py-3 text-gray-600">{formatDate(emir.olusturulma_tarihi)}</td>
@@ -72,7 +98,7 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
               </td>
               <td className="px-4 py-3 text-gray-600">
                 {emir.export_tarihi ? (
-                  <span className="flex items-center gap-1 text-orange-700">
+                  <span className="flex items-center gap-1 text-orange-900">
                     <Download size={12} />
                     {formatDate(emir.export_tarihi)}
                   </span>

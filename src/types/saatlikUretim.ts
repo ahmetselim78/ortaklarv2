@@ -14,6 +14,8 @@ export interface HrPersonel {
   /** 'Direkt' | 'Endirekt' — ileride yüz tanıma API'si için string genişletildi */
   rol: PersonelRol | string
   is_aktif: boolean
+  kullanici_adi?: string | null
+  giris_sifresi?: string | null
 }
 
 export type YeniPersonel = Omit<HrPersonel, 'id'>
@@ -85,4 +87,19 @@ export interface IsGucuOzeti {
   endirekt: number
   toplam: number
   nptYuzdesi: number
+}
+
+// ── Telegram ──────────────────────────────────────────────────────────────────
+
+export interface TelegramAyarlari {
+  id: string
+  bot_token: string
+  chat_id: string
+  aktif: boolean
+}
+
+export interface TelegramRaporSaati {
+  id: string
+  saat: string
+  aktif: boolean
 }
