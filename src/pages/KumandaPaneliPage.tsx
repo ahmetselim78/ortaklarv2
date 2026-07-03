@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Wifi, WifiOff, Wrench } from 'lucide-react'
 import TamireGonderModal from '@/components/tamir/TamireGonderModal'
 import type { TamireGonderCam } from '@/components/tamir/TamireGonderModal'
+import { fizikselGlsKodu } from '@/lib/siparisDetay'
 
 /* ========== Yardımcılar ========== */
 
@@ -35,8 +36,10 @@ interface CamKarti {
 }
 
 interface BatchCamKumanda {
+  uretim_emri_detay_id: string
   siparis_detay_id: string
   cam_kodu: string
+  teknik_cam_kodu: string
   musteri: string
   nihai_musteri: string
   siparis_no: string
@@ -98,8 +101,10 @@ export default function KumandaPaneliPage() {
       .eq('uretim_emri_id', loadBatchId)
 
     const camlar: BatchCamKumanda[] = (data ?? []).map((d: any) => ({
+      uretim_emri_detay_id: d.id,
       siparis_detay_id: d.siparis_detay_id,
-      cam_kodu: d.siparis_detaylari.cam_kodu,
+      cam_kodu: fizikselGlsKodu(d.sira_no, d.siparis_detaylari.cam_kodu),
+      teknik_cam_kodu: d.siparis_detaylari.cam_kodu,
       musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
       nihai_musteri: d.siparis_detaylari.siparisler?.alt_musteri ?? '',
       siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
@@ -120,11 +125,12 @@ export default function KumandaPaneliPage() {
     if (detayIds.length > 0) {
       const { data: loglar } = await supabase
         .from('yikama_loglari')
-        .select('siparis_detay_id')
+        .select('siparis_detay_id, uretim_emri_detay_id')
         .in('siparis_detay_id', detayIds)
       for (const log of loglar ?? []) {
-        const prev = logCountMap.get((log as any).siparis_detay_id) ?? 0
-        logCountMap.set((log as any).siparis_detay_id, prev + 1)
+        const key = (log as any).uretim_emri_detay_id ?? (log as any).siparis_detay_id
+        const prev = logCountMap.get(key) ?? 0
+        logCountMap.set(key, prev + 1)
       }
     }
 
@@ -132,7 +138,7 @@ export default function KumandaPaneliPage() {
       ...c,
       taranan_adet: c.uretim_durumu === 'yikandi'
         ? c.adet
-        : Math.min(logCountMap.get(c.siparis_detay_id) ?? 0, c.adet - 1),
+        : Math.min(logCountMap.get(c.uretim_emri_detay_id) ?? logCountMap.get(c.siparis_detay_id) ?? 0, c.adet - 1),
     }))
 
     setBatchId(loadBatchId)
@@ -190,7 +196,7 @@ export default function KumandaPaneliPage() {
   const sagListeRef = useRef<HTMLDivElement>(null)
   const [sonGelenKod, setSonGelenKod] = useState<string | null>(null)
 
-  // Gelen cam koduna scroll
+  // Gelen kisa GLS koduna scroll
   useEffect(() => {
     if (!sagListeRef.current || !sonGelenKod) return
     const el = sagListeRef.current.querySelector(`[data-cam-kodu="${sonGelenKod}"]`) as HTMLElement | null
@@ -232,13 +238,20 @@ export default function KumandaPaneliPage() {
         }
         // Sol panelde sayıları güncelle + aktif müşteriyi seç
         setBatchCamlari(prev => prev.map(c => {
-          if (c.cam_kodu !== payload.cam_kodu) return c
+          if (payload.uretim_emri_detay_id
+            ? c.uretim_emri_detay_id !== payload.uretim_emri_detay_id
+            : c.cam_kodu !== payload.cam_kodu
+          ) return c
           const yeniTaranan = c.taranan_adet + 1
           const tamam = yeniTaranan >= c.adet
           return { ...c, taranan_adet: yeniTaranan, uretim_durumu: tamam ? 'yikandi' : c.uretim_durumu }
         }))
         if (payload.musteri) {
-          const cam = batchCamlariRef.current.find(c => c.cam_kodu === payload.cam_kodu)
+          const cam = batchCamlariRef.current.find(c =>
+            payload.uretim_emri_detay_id
+              ? c.uretim_emri_detay_id === payload.uretim_emri_detay_id
+              : c.cam_kodu === payload.cam_kodu
+          )
           const nihai = cam?.nihai_musteri ?? ''
           setAktifMusteri(`${payload.musteri}||${nihai}`)
         }
@@ -380,7 +393,7 @@ export default function KumandaPaneliPage() {
                     <Wifi size={32} className="text-gray-700" />
                   </div>
                   <p className="text-xl font-semibold text-gray-600">Cam bekleniyor...</p>
-                  <p className="text-sm text-gray-700 mt-2">Poz Giriş'ten cam kodu girildiğinde burada görünecek</p>
+                  <p className="text-sm text-gray-700 mt-2">Poz Giriş'ten sıra no girildiğinde burada görünecek</p>
                 </>
               )}
             </div>
@@ -392,7 +405,7 @@ export default function KumandaPaneliPage() {
                   key={`${k.cam_kodu}-${k.zaman}`}
                   className="rounded-xl border p-3 bg-gray-900/70 border-gray-800"
                 >
-                  {/* Üst satır: GLS kodu + Etiket durumu + Tamir butonu */}
+                  {/* Ust satir: kisa GLS + etiket durumu + tamir butonu */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-black tracking-wider text-2xl text-gray-300">

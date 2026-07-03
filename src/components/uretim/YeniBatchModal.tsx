@@ -27,6 +27,7 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
   const [seciliIds, setSeciliIds] = useState<Set<string>>(new Set())
   const [olusturuluyor, setOlusturuluyor] = useState(false)
   const [arama, setArama] = useState('')
+  const [hata, setHata] = useState<string | null>(null)
 
   useEffect(() => {
     verileriGetir()
@@ -34,26 +35,38 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
 
   const verileriGetir = async () => {
     setYukleniyor(true)
+    setHata(null)
 
     // 1. Tüm siparişleri getir (durum dahil)
-    const { data: tumSiparisler } = await supabase
+    const { data: tumSiparisler, error: siparisHata } = await supabase
       .from('siparisler')
-      .select('id, siparis_no, tarih, durum, cari(ad)')
+      .select('id, siparis_no, tarih, durum, cari(ad), siparis_detaylari(id, adet)')
+      .or('durum.in.(beklemede,batchte,eksik_var),durum.is.null')
       .order('created_at', { ascending: false })
 
+    if (siparisHata) { setHata(siparisHata.message); setYukleniyor(false); return }
     if (!tumSiparisler) { setYukleniyor(false); return }
 
-    // 2. Her siparişin cam sayısını getir (adet toplamı)
     const sipIds = tumSiparisler.map((s: any) => s.id)
-    const { data: tumDetaylar } = await supabase
-      .from('siparis_detaylari')
-      .select('id, siparis_id, adet')
-      .in('siparis_id', sipIds)
+    if (sipIds.length === 0) {
+      setSiparisler([])
+      setYukleniyor(false)
+      return
+    }
+    const tumDetaylar = tumSiparisler.flatMap((s: any) =>
+      ((s.siparis_detaylari ?? []) as any[]).map((d) => ({
+        id: d.id,
+        siparis_id: s.id,
+        adet: d.adet,
+      }))
+    )
 
     // 3. Zaten batch'te olan sipariş detaylarını bul
-    const { data: batchDetaylar } = await supabase
+    const { data: batchDetaylar, error: batchHata } = await supabase
       .from('uretim_emri_detaylari')
-      .select('siparis_detay_id, uretim_emirleri(batch_no)')
+      .select('siparis_detay_id, uretim_emirleri!inner(batch_no, durum)')
+      .neq('uretim_emirleri.durum', 'iptal')
+    if (batchHata) { setHata(batchHata.message); setYukleniyor(false); return }
 
     const batchteOlanDetayIds = new Set(
       (batchDetaylar ?? []).map((d: any) => d.siparis_detay_id)
@@ -68,7 +81,8 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
     // siparis_id → cam sayısı (adet toplamı)
     const camSayisiMap = new Map<string, number>()
     for (const d of tumDetaylar ?? []) {
-      const adet = (d as any).adet ?? 1
+      const hamAdet = Number((d as any).adet)
+      const adet = Number.isFinite(hamAdet) && hamAdet > 0 ? hamAdet : 1
       camSayisiMap.set(d.siparis_id, (camSayisiMap.get(d.siparis_id) ?? 0) + adet)
     }
 
@@ -117,6 +131,7 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
   }, [siparisler, arama])
 
   const toggleSecim = (id: string) => {
+    setHata(null)
     setSeciliIds((prev) => {
       const yeni = new Set(prev)
       if (yeni.has(id)) yeni.delete(id)
@@ -128,8 +143,11 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
   const handleOlustur = async () => {
     if (seciliIds.size === 0) return
     setOlusturuluyor(true)
+    setHata(null)
     try {
       await onOlustur(Array.from(seciliIds))
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : 'Batch oluşturulamadı')
     } finally {
       setOlusturuluyor(false)
     }
@@ -169,7 +187,11 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
 
         {/* Liste */}
         <div className="flex-1 overflow-y-auto">
-          {yukleniyor ? (
+          {hata ? (
+            <div className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {hata}
+            </div>
+          ) : yukleniyor ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="h-14 bg-gray-100 animate-pulse rounded-lg" />
@@ -184,7 +206,7 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
             <div className="divide-y divide-gray-50">
               {filtrelenmis.map((s) => {
                 const secili = seciliIds.has(s.id)
-                const disabled = s.batchte || s.cam_sayisi === 0
+                const disabled = s.batchte
                 return (
                   <button
                     key={s.id}

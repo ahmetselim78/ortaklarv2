@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2, GripVertical, Keyboard } from 'lucide-react'
 import { presetsOku, presetleriYaz, yeniPresetId } from '@/lib/aksiyonPresets'
 import type { AksiyonPreset } from '@/lib/aksiyonPresets'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const KISAYOLLAR = ['', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
@@ -12,6 +13,7 @@ export default function AksiyonNotuPresetsPanel() {
   const [duzenlemeId, setDuzenlemeId] = useState<string | null>(null)
   const [duzenlemeMetin, setDuzenlemeMetin] = useState('')
   const [duzenlemeKisayol, setDuzenlemeKisayol] = useState('')
+  const [silinecekPreset, setSilinecekPreset] = useState<AksiyonPreset | null>(null)
 
   const kaydet = (guncellenmis: AksiyonPreset[]) => {
     setPresets(guncellenmis)
@@ -30,7 +32,11 @@ export default function AksiyonNotuPresetsPanel() {
     setYeniKisayol('')
   }
 
-  const sil = (id: string) => kaydet(presets.filter(p => p.id !== id))
+  const sil = () => {
+    if (!silinecekPreset) return
+    kaydet(presets.filter(p => p.id !== silinecekPreset.id))
+    setSilinecekPreset(null)
+  }
 
   const duzenlemeBaslat = (p: AksiyonPreset) => {
     setDuzenlemeId(p.id)
@@ -131,7 +137,7 @@ export default function AksiyonNotuPresetsPanel() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => sil(p.id)}
+                      onClick={() => setSilinecekPreset(p)}
                       className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     >
                       <Trash2 size={14} />
@@ -182,6 +188,17 @@ export default function AksiyonNotuPresetsPanel() {
           </button>
         </div>
       </div>
+
+      {silinecekPreset && (
+        <ConfirmDialog
+          baslik="Hazir cevap silinsin mi?"
+          mesaj={`"${silinecekPreset.metin}" hazir cevabi silinecek.`}
+          onayButon="Sil"
+          onayRenk="red"
+          onOnayla={sil}
+          onKapat={() => setSilinecekPreset(null)}
+        />
+      )}
     </div>
   )
 }

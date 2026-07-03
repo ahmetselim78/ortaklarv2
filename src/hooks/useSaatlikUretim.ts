@@ -201,6 +201,22 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
           )
         },
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'gunluk_uretim_takip',
+          filter: `tarih=eq.${bugun}`,
+        },
+        payload => {
+          setSatirlar(prev => {
+            const yeni = payload.new as GunlukUretimSatiri
+            if (prev.some(s => s.id === yeni.id)) return prev
+            return [...prev, yeni].sort((a, b) => a.sira_no - b.sira_no)
+          })
+        },
+      )
       .subscribe()
 
     return () => {
@@ -214,13 +230,15 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
       const hedefSatir = aktifSatiriBul(satirlar)
       if (!hedefSatir) return
 
-      const yeniAdet = hedefSatir.gerceklesen_adet + 1
-      const { error } = await supabase
-        .from('gunluk_uretim_takip')
-        .update({ gerceklesen_adet: yeniAdet })
-        .eq('id', hedefSatir.id)
+      const { data, error } = await supabase.rpc('saatlik_sayac_arttir', {
+        p_id: hedefSatir.id,
+        p_delta: 1,
+      })
 
-      if (!error) {
+      if (error) {
+        setHata(error.message)
+      } else {
+        const yeniAdet = typeof data === 'number' ? data : hedefSatir.gerceklesen_adet + 1
         setSatirlar(prev =>
           prev.map(s =>
             s.id === hedefSatir.id
@@ -242,13 +260,15 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
 
       if (!hedefSatir) return
 
-      const yeniAdet = hedefSatir.fire_adet + 1
-      const { error } = await supabase
-        .from('gunluk_uretim_takip')
-        .update({ fire_adet: yeniAdet })
-        .eq('id', hedefSatir.id)
+      const { data, error } = await supabase.rpc('saatlik_fire_arttir', {
+        p_id: hedefSatir.id,
+        p_delta: 1,
+      })
 
-      if (!error) {
+      if (error) {
+        setHata(error.message)
+      } else {
+        const yeniAdet = typeof data === 'number' ? data : hedefSatir.fire_adet + 1
         setSatirlar(prev =>
           prev.map(s =>
             s.id === hedefSatir.id ? { ...s, fire_adet: yeniAdet } : s,

@@ -1,8 +1,9 @@
 import { Eye, Ban, Wrench, Trash2 } from 'lucide-react'
-import type { Siparis, SiparisDurum } from '@/types/siparis'
+import type { Siparis } from '@/types/siparis'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
 import { TableSkeleton } from '@/components/ui/Skeleton'
+import StatusBadge from '@/components/ui/StatusBadge'
 
 interface Props {
   siparisler: Siparis[]
@@ -12,24 +13,6 @@ interface Props {
   onIptal: (siparis: Siparis) => void
   onSil?: (siparis: Siparis) => void
   silGoster?: boolean
-}
-
-const DURUM_STIL: Record<SiparisDurum, string> = {
-  beklemede: 'bg-gray-100 text-gray-600',
-  batchte: 'bg-blue-50 text-blue-700',
-  yikamada: 'bg-cyan-50 text-cyan-700',
-  tamamlandi: 'bg-green-50 text-green-700',
-  eksik_var: 'bg-red-50 text-red-600',
-  iptal: 'bg-red-50 text-red-600',
-}
-
-const DURUM_ETIKET: Record<SiparisDurum, string> = {
-  beklemede: 'Beklemede',
-  batchte: 'Batch\'te',
-  yikamada: 'Yıkamada',
-  tamamlandi: 'Tamamlandı',
-  eksik_var: 'Eksik Var',
-  iptal: 'İptal',
 }
 
 export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisIds, onGoruntule, onIptal, onSil, silGoster }: Props) {
@@ -47,7 +30,7 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
             <th className="px-4 py-3">Sipariş No</th>
             <th className="px-4 py-3">Müşteri</th>
             <th className="px-4 py-3">Adet</th>
-            <th className="px-4 py-3">Sipariş No</th>
+            <th className="px-4 py-3">Ref No</th>
             <th className="px-4 py-3">Tarih</th>
             <th className="px-4 py-3">Teslim</th>
             <th className="px-4 py-3">Durum</th>
@@ -77,11 +60,13 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                 {s.alt_musteri && (
                   <div className="text-xs text-blue-600 font-medium mt-0.5">{s.alt_musteri}</div>
                 )}
-                <div className="text-xs text-gray-400">{s.cari?.kod}</div>
               </td>
               <td className="px-4 py-3">
                 {(() => {
-                  const adet = s.siparis_detaylari?.[0]?.count ?? null
+                  const adet = s.siparis_detaylari?.reduce(
+                    (sum, d) => sum + (d.adet ?? d.count ?? 0),
+                    0,
+                  ) ?? null
                   return adet !== null
                     ? <span className="text-xs text-gray-500">{adet} adet</span>
                     : <span className="text-gray-300">—</span>
@@ -93,7 +78,7 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                   : <span className="text-gray-300">—</span>
                 }
               </td>
-              <td className="px-4 py-3 text-gray-600">{formatDate(s.tarih)}</td>
+              <td className="px-4 py-3 text-gray-600">{formatDate(s.created_at)}</td>
               <td className="px-4 py-3 text-gray-600">
                 <div>{s.teslim_tarihi ? formatDate(s.teslim_tarihi) : '—'}</div>
                 {(() => {
@@ -120,19 +105,9 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
               </td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
-                  {s.durum === 'yikamada' ? (
-                    <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-500" />
-                      </span>
-                      {DURUM_ETIKET[s.durum]}
-                    </span>
-                  ) : s.durum === 'tamamlandi' ? (
+                  {s.durum === 'tamamlandi' ? (
                     <div className="flex flex-col items-start gap-0.5">
-                      <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
-                        {DURUM_ETIKET[s.durum]}
-                      </span>
+                      <StatusBadge durum={s.durum} />
                       <span className="text-xs font-medium text-gray-700 pl-0.5">
                         {s.tamamlandi_tarihi
                           ? formatDate(s.tamamlandi_tarihi)
@@ -140,9 +115,7 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                       </span>
                     </div>
                   ) : (
-                    <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[s.durum])}>
-                      {DURUM_ETIKET[s.durum]}
-                    </span>
+                    <StatusBadge durum={s.durum} />
                   )}
                   {tamirdeSiparisIds?.has(s.id) && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200" title="Tamirde cam var">

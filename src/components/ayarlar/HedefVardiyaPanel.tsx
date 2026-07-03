@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Save, Play, ChevronDown, ChevronRight, AlertCircle, Loader2, Clock, CalendarDays, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import type {
   UretimSaatSablonu,
   UretimSaatlikHedef,
@@ -24,7 +25,9 @@ function gunleriOku(): Record<string, number[]> {
   try { return JSON.parse(localStorage.getItem(GUNLER_KEY) ?? '{}') } catch { return {} }
 }
 function gunleriYaz(g: Record<string, number[]>) {
-  try { localStorage.setItem(GUNLER_KEY, JSON.stringify(g)) } catch {}
+  try { localStorage.setItem(GUNLER_KEY, JSON.stringify(g)) } catch {
+    // localStorage can be unavailable in restricted browser contexts.
+  }
 }
 
 /** İki "HH:MM - HH:MM" aralığının çakışıp çakışmadığını kontrol eder */
@@ -69,6 +72,8 @@ export default function HedefVardiyaPanel() {
   const [yeniSablonAraligi, setYeniSablonAraligi] = useState('08:00 - 18:00')
   const [sablonFormAcik, setSablonFormAcik] = useState(false)
   const [sablonGunler, setSablonGunler] = useState<Record<string, number[]>>(() => gunleriOku())
+  const [silinecekSablon, setSilinecekSablon] = useState<UretimSaatSablonu | null>(null)
+  const [sablonSiliniyor, setSablonSiliniyor] = useState(false)
 
   const bugun = toDateStr()
   const bugunGunNo = new Date().getDay() // 0=Paz … 6=Cmt
@@ -148,14 +153,22 @@ export default function HedefVardiyaPanel() {
   }
 
   // ── Şablon sil ───────────────────────────────────────────────────────────
-  const sablonSil = async (id: string) => {
-    const { error } = await supabase.from('uretim_saat_sablonlari').delete().eq('id', id)
-    if (!error) {
-      setSablonlar(prev => prev.filter(s => s.id !== id))
-      if (seciliSablonId === id) {
+  const sablonSil = async () => {
+    if (!silinecekSablon) return
+    setSablonSiliniyor(true)
+    try {
+      const { error } = await supabase.from('uretim_saat_sablonlari').delete().eq('id', silinecekSablon.id)
+      if (error) throw error
+      setSablonlar(prev => prev.filter(s => s.id !== silinecekSablon.id))
+      if (seciliSablonId === silinecekSablon.id) {
         setSeciliSablonId(null)
         setSlotlar([])
       }
+      setSilinecekSablon(null)
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : 'Sablon silinemedi')
+    } finally {
+      setSablonSiliniyor(false)
     }
   }
 
@@ -451,7 +464,7 @@ export default function HedefVardiyaPanel() {
                     )}
                     <button
                       type="button"
-                      onClick={e => { e.stopPropagation(); sablonSil(s.id) }}
+                      onClick={e => { e.stopPropagation(); setSilinecekSablon(s) }}
                       className="p-1 text-gray-300 hover:text-red-500 rounded transition-colors"
                     >
                       <Trash2 size={14} />
@@ -682,6 +695,18 @@ export default function HedefVardiyaPanel() {
             "Bu Şablonu Bugüne Uygula" — Yalnızca seçili şablonu bugün için uygular. Mevcut kayıtlar silinir.
           </p>
         </div>
+      )}
+
+      {silinecekSablon && (
+        <ConfirmDialog
+          baslik="Sablon silinsin mi?"
+          mesaj={`${silinecekSablon.sablon_adi} sablonu ve hedefleri silinecek.`}
+          onayButon="Sil"
+          onayRenk="red"
+          yukleniyor={sablonSiliniyor}
+          onOnayla={sablonSil}
+          onKapat={() => !sablonSiliniyor && setSilinecekSablon(null)}
+        />
       )}
     </div>
   )

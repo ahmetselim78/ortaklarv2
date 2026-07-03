@@ -6,6 +6,15 @@ import CariListesi from '@/components/cari/CariListesi'
 import CariForm from '@/components/cari/CariForm'
 import type { Cari } from '@/types/cari'
 
+type CariFormVeri = {
+  ad: string
+  tipi: Cari['tipi']
+  telefon?: string
+  email?: string
+  adres?: string
+  notlar?: string
+}
+
 export default function CariPage() {
   const { cariler, yukleniyor, hata, ekle, guncelle, sil } = useCari()
   const [formAcik, setFormAcik] = useState(false)
@@ -23,11 +32,19 @@ export default function CariPage() {
     setDuzenlenecek(null)
   }
 
-  const handleKaydet = async (veri: Parameters<typeof ekle>[0]) => {
+  const handleKaydet = async (veri: CariFormVeri) => {
+    const payload: Parameters<typeof ekle>[0] = {
+      ad: veri.ad,
+      tipi: veri.tipi,
+      telefon: veri.telefon || null,
+      email: veri.email || null,
+      adres: veri.adres || null,
+      notlar: veri.notlar || null,
+    }
     if (duzenlenecek) {
-      await guncelle(duzenlenecek.id, veri)
+      await guncelle(duzenlenecek.id, payload)
     } else {
-      await ekle(veri)
+      await ekle(payload)
     }
   }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { generateCamKodulari, generateSiparisNo } from '@/lib/idGenerator'
+import { generateSiparisNo } from '@/lib/idGenerator'
+import { tekilSiparisDetayRows } from '@/lib/siparisDetay'
 import type { Siparis, SiparisDetay, CamFormSatiri, SiparisDurum } from '@/types/siparis'
 
 /* ===== Durum geçiş matrisi ===== */
@@ -35,7 +36,7 @@ export function useSiparis() {
     setHata(null)
     const { data, error } = await supabase
       .from('siparisler')
-      .select('*, cari(ad, kod), siparis_detaylari(count), sevkiyat_planlari(id, tarih)')
+      .select('*, cari(ad, kod), siparis_detaylari(adet), sevkiyat_planlari(id, tarih)')
       .order('created_at', { ascending: false })
 
     if (error) setHata(error.message)
@@ -62,33 +63,15 @@ export function useSiparis() {
         harici_siparis_no: form.harici_siparis_no || null,
         teslimat_tipi: form.teslimat_tipi || 'teslim_alacak',
         kaynak: form.kaynak || 'manuel',
+        durum: 'beklemede',
       })
       .select()
       .single()
 
     if (siparisHata) throw new Error(siparisHata.message)
 
-    // 3. Tüm cam parçaları için toplu GLS kodu üret
-    const kodlar = await generateCamKodulari(form.camlar.length)
-
-    // 4. Cam parçalarını kaydet
-    const detaylar = form.camlar.map((cam, i) => ({
-      siparis_id: siparis.id,
-      stok_id: cam.stok_id || null,
-      cam_kodu: kodlar[i],
-      genislik_mm: Number(cam.genislik_mm),
-      yukseklik_mm: Number(cam.yukseklik_mm),
-      adet: Number(cam.adet),
-      katman_yapisi: cam.katman_yapisi ||
-        (() => { const ab = Number((cam as any).ara_bosluk_mm); return ab > 0 ? `0+${ab}+0` : null })() ||
-        null,
-      cita_stok_id: cam.cita_stok_id || null,
-      kenar_islemi: cam.kenar_islemi || null,
-      notlar: cam.notlar || null,
-      poz: cam.poz || null,
-      menfez_cap_mm: cam.menfez_cap_mm ? Number(cam.menfez_cap_mm) : null,
-      kucuk_cam: cam.kucuk_cam ?? false,
-    }))
+    // 3. Formdaki adetleri fiziksel cam satirlarina genislet.
+    const detaylar = await tekilSiparisDetayRows(siparis.id as string, form.camlar)
 
     const { error: detayHata } = await supabase
       .from('siparis_detaylari')

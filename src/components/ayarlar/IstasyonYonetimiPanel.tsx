@@ -4,6 +4,7 @@ import {
   AlertCircle, CheckCircle2, Pencil, Check, X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 interface Istasyon {
   id: string
@@ -27,6 +28,8 @@ export default function IstasyonYonetimiPanel() {
   // Satır içi düzenleme
   const [duzenlenenId, setDuzenlenenId] = useState<string | null>(null)
   const [duzenlenenAd, setDuzenlenenAd] = useState('')
+  const [silinecek, setSilinecek] = useState<Istasyon | null>(null)
+  const [siliniyor, setSiliniyor] = useState(false)
 
   async function yukle() {
     setYukleniyor(true)
@@ -92,16 +95,20 @@ export default function IstasyonYonetimiPanel() {
     }
   }
 
-  async function sil(id: string) {
-    if (!window.confirm('Bu istasyonu silmek istediğinize emin misiniz?')) return
+  async function sil() {
+    if (!silinecek) return
+    setSiliniyor(true)
     setHata(null)
     try {
-      const { error } = await supabase.from('uretim_istasyonlari').delete().eq('id', id)
+      const { error } = await supabase.from('uretim_istasyonlari').delete().eq('id', silinecek.id)
       if (error) throw error
-      setIstasyonlar(prev => prev.filter(i => i.id !== id))
+      setIstasyonlar(prev => prev.filter(i => i.id !== silinecek.id))
+      setSilinecek(null)
       flash('İstasyon silindi.')
     } catch (err) {
       setHata(err instanceof Error ? err.message : 'Silme hatası.')
+    } finally {
+      setSiliniyor(false)
     }
   }
 
@@ -284,7 +291,7 @@ export default function IstasyonYonetimiPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => sil(ist.id)}
+                    onClick={() => setSilinecek(ist)}
                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     title="Sil"
                   >
@@ -337,6 +344,18 @@ export default function IstasyonYonetimiPanel() {
           </button>
         </div>
       </div>
+
+      {silinecek && (
+        <ConfirmDialog
+          baslik="Istasyon silinsin mi?"
+          mesaj={`${silinecek.ad} kalici olarak silinecek.`}
+          onayButon="Sil"
+          onayRenk="red"
+          yukleniyor={siliniyor}
+          onOnayla={sil}
+          onKapat={() => !siliniyor && setSilinecek(null)}
+        />
+      )}
     </div>
   )
 }

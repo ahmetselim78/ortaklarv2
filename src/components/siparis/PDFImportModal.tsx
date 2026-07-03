@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useEscape } from '@/hooks/useEscape'
 import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, ZoomIn, ZoomOut, Loader2, Truck, PackageCheck, Plus } from 'lucide-react'
 import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
@@ -216,6 +216,54 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
   const [pdfViewerPage, setPdfViewerPage] = useState(1)
   const [pdfViewerTotalPages, setPdfViewerTotalPages] = useState(0)
 
+  const katmanYapisiOlustur = useCallback((satir: PDFCamSatir): string | undefined => {
+    const stokId = satirStokSecimler[satirAnahtari(satir)]?.stokId ?? ''
+    const ic = localStoklar.find(st => st.id === stokId)?.kalinlik_mm ?? null
+    return satir.dis_kalinlik_mm != null && satir.ara_bosluk_mm != null && ic != null
+      ? `${Number(satir.dis_kalinlik_mm)}+${Number(satir.ara_bosluk_mm)}+${Number(ic)}`
+      : undefined
+  }, [localStoklar, satirStokSecimler])
+
+  const eslesmeEksikleri = useMemo(() => {
+    if (!parseResult) return []
+    const eksikler: string[] = []
+    if (!secilenCariId) eksikler.push('Cari eslesmesi secilmedi.')
+
+    const eksikStoklar = new Set<string>()
+    for (const satir of parseResult.satirlar) {
+      const key = satirAnahtari(satir)
+      const stokId = satirStokSecimler[key]?.stokId
+      if (!stokId || !localStoklar.some(s => s.id === stokId)) {
+        const bilgi = satirGrupBilgi(satir)
+        eksikStoklar.add(`${bilgi.kalinlik ?? '?'}mm ${bilgi.tip || bilgi.aciklama}`)
+      }
+    }
+    if (eksikStoklar.size > 0) {
+      eksikler.push(`Stok eslesmesi eksik: ${Array.from(eksikStoklar).slice(0, 3).join(', ')}${eksikStoklar.size > 3 ? '...' : ''}`)
+    }
+
+    const eksikCitalar = [...new Set(
+      parseResult.satirlar
+        .map(s => s.ara_bosluk_mm)
+        .filter((v): v is number => v != null && !citaSecimler[v]),
+    )]
+    if (eksikCitalar.length > 0) {
+      eksikler.push(`Cita eslesmesi eksik: ${eksikCitalar.join(', ')}mm`)
+    }
+    return eksikler
+  }, [citaSecimler, localStoklar, parseResult, satirStokSecimler, secilenCariId])
+
+  const eslesmeGecerli = eslesmeEksikleri.length === 0
+
+  const onizlemeyeGec = () => {
+    if (!eslesmeGecerli) {
+      setHata(eslesmeEksikleri.join(' '))
+      return
+    }
+    setHata(null)
+    setAdim('onizleme')
+  }
+
   /* ===== Adım 1: PDF Yükle ===== */
 
   const handleFileChange = useCallback(async (file: File) => {
@@ -304,7 +352,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
     } finally {
       setYukleniyor(false)
     }
-  }, [cariler, stoklar])
+  }, [cariler, localStoklar, stoklar])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -343,6 +391,10 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
 
   const handleIceAktar = async () => {
     if (!parseResult) return
+    if (!eslesmeGecerli) {
+      setHata(eslesmeEksikleri.join(' '))
+      return
+    }
     setIceAktariliyor(true)
     setHata(null)
 
@@ -357,11 +409,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
 
       const camlar: CamFormSatiri[] = parseResult.satirlar.map((s) => {
         const stokId = satirStokSecimler[satirAnahtari(s)]?.stokId ?? ''
-        const ic = stoklar.find(st => st.id === stokId)?.kalinlik_mm ?? null
-        const katmanYapisi =
-          s.dis_kalinlik_mm != null && s.ara_bosluk_mm != null && ic != null
-            ? `${Number(s.dis_kalinlik_mm)}+${Number(s.ara_bosluk_mm)}+${Number(ic)}`
-            : undefined
+        const katmanYapisi = katmanYapisiOlustur(s)
         return {
           stok_id: stokId,
           genislik_mm: s.genislik_mm,
@@ -881,13 +929,14 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                       {parseResult.satirlar.map((s, i) => {
                         const stokSec = satirStokSecimler[satirAnahtari(s)]
                         const stok = stokSec?.stokId ? localStoklar.find((x) => x.id === stokSec.stokId) : null
+                        const katmanYapisi = katmanYapisiOlustur(s)
                         return (
                           <tr key={i} className="border-b border-gray-50 last:border-0">
                             <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
                             <td className="px-3 py-2 text-gray-700 text-xs">
-                              {s.dis_kalinlik_mm != null && s.ara_bosluk_mm != null && (
+                              {katmanYapisi && (
                                 <span className="font-mono text-gray-500 mr-1">
-                                  {s.dis_kalinlik_mm}+{s.ara_bosluk_mm}+{s.dis_kalinlik_mm}
+                                  {katmanYapisi}
                                 </span>
                               )}
                               {stok ? camTipiAd(stok.ad) : <span className="text-red-500">⚠ stok yok</span>}
@@ -1165,8 +1214,11 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
             )}
             {adim === 'eslestirme' && (
               <button
-                onClick={() => { setHata(null); setAdim('onizleme') }}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
+                onClick={onizlemeyeGec}
+                className={cn(
+                  'px-4 py-2 text-sm font-medium text-white rounded-xl transition-colors',
+                  eslesmeGecerli ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed',
+                )}
               >
                 Devam
               </button>

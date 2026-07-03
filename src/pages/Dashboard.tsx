@@ -12,6 +12,8 @@ import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 import { useStok } from '@/hooks/useStok'
 import { useCari } from '@/hooks/useCari'
 import type { Siparis } from '@/types/siparis'
+import StatusBadge from '@/components/ui/StatusBadge'
+import { CardSkeleton, Skeleton } from '@/components/ui/Skeleton'
 
 /* ===================================================================
    Types
@@ -81,20 +83,6 @@ function toTurkishMonthName(month: number): string {
    Constants
 =================================================================== */
 
-const DURUM_ETIKET: Record<string, string> = {
-  beklemede: 'Beklemede', batchte: "Batch'te", yikamada: 'Yıkamada',
-  tamamlandi: 'Tamamlandı', eksik_var: 'Eksik Var', iptal: 'İptal',
-}
-
-const DURUM_STIL: Record<string, string> = {
-  beklemede: 'bg-gray-100 text-gray-600',
-  batchte: 'bg-blue-50 text-blue-700',
-  yikamada: 'bg-cyan-50 text-cyan-700',
-  tamamlandi: 'bg-green-50 text-green-700',
-  eksik_var: 'bg-red-50 text-red-600',
-  iptal: 'bg-red-50 text-red-600',
-}
-
 // Google Calendar tarzı event pill renkleri
 const DURUM_EVENT: Record<string, string> = {
   beklemede:  'bg-gray-100 text-gray-800 border-gray-300',
@@ -112,6 +100,10 @@ const HAFTA_GUNLERI = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
 =================================================================== */
 
 export default function Dashboard() {
+
+  /* Bugünün tarihi — effect'ler ve handler'lar erken return'den önce
+     tanımlı olsun diye component başında hesaplanır */
+  const today = toDateStr(new Date())
 
   /* ---------- stats ---------- */
   const [istatistikler, setIstatistikler] = useState<Istatistikler | null>(null)
@@ -197,7 +189,7 @@ export default function Dashboard() {
       ] = await Promise.all([
         supabase.from('siparisler').select('*', { count: 'exact', head: true }),
         supabase.from('siparisler').select('*', { count: 'exact', head: true }).in('durum', ['beklemede', 'batchte', 'yikamada']),
-        supabase.from('uretim_emirleri').select('*', { count: 'exact', head: true }).in('durum', ['hazirlaniyor', 'onaylandi', 'export_edildi', 'yikamada']),
+        supabase.from('uretim_emirleri').select('*', { count: 'exact', head: true }).in('durum', ['hazirlaniyor', 'export_edildi', 'yikamada', 'eksik_var']),
         supabase.from('uretim_emirleri').select('*', { count: 'exact', head: true }).eq('durum', 'tamamlandi'),
         supabase.from('cari').select('*', { count: 'exact', head: true }),
         supabase.from('stok').select('*', { count: 'exact', head: true }),
@@ -455,7 +447,28 @@ export default function Dashboard() {
      Render
   =================================================================== */
   if (yukleniyor) {
-    return <div className="flex items-center justify-center min-h-[60vh] text-gray-400">Yükleniyor...</div>
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-40 mb-2" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+          <Skeleton className="h-[520px] rounded-xl" />
+          <div className="space-y-4">
+            <Skeleton className="h-48 rounded-xl" />
+            <Skeleton className="h-28 rounded-xl" />
+            <Skeleton className="h-56 rounded-xl" />
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const kartlar = [
@@ -466,8 +479,6 @@ export default function Dashboard() {
     { baslik: 'Cari Kayıtları', deger: istatistikler?.toplamCari ?? 0, icon: Users, renk: 'text-cyan-600 bg-cyan-50', link: '/cari' },
     { baslik: 'Stok Kayıtları', deger: istatistikler?.toplamStok ?? 0, icon: Package, renk: 'text-orange-600 bg-orange-50', link: '/stok' },
   ]
-
-  const today = toDateStr(new Date())
 
   const siparisMap = new Map<string, TakvimSiparis[]>()
   takvimSiparisler.forEach(s => {
@@ -699,7 +710,6 @@ export default function Dashboard() {
                             {/* Compact pill */}
                             <div
                               draggable
-                              onClick={e => e.stopPropagation()}
                               onDragStart={e => {
                                 e.stopPropagation()
                                 setDragSiparis(s)
@@ -731,11 +741,7 @@ export default function Dashboard() {
                                   <div className="text-gray-500 text-[10px] mt-1">{s.toplam_adet} adet cam</div>
                                 )}
                                 <div className="mt-1.5">
-                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${
-                                    DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
-                                  }`}>
-                                    {DURUM_ETIKET[s.durum] ?? s.durum}
-                                  </span>
+                                  <StatusBadge durum={s.durum} className="text-[9px] px-1.5 py-0.5" />
                                 </div>
                               </div>
                             </div>
@@ -767,7 +773,7 @@ export default function Dashboard() {
             Dış kap 0 yükseklikte → grid satır yüksekliğini takvim belirler.
             İç kap lg:absolute inset-0 → takvimin yüksekliğini doldurur. */}
         <div className="relative">
-        <div className="lg:absolute lg:inset-0 flex flex-col gap-4 overflow-hidden">
+          <div className="lg:absolute lg:inset-0 flex flex-col gap-4 overflow-hidden">
 
           {/* Yıkamada panel — dönen border animasyonu */}
           <div className="relative rounded-xl p-[2px] overflow-hidden">
@@ -856,124 +862,120 @@ export default function Dashboard() {
 
           {/* Sevkiyat Planlaması kartı */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-center">
-            <button
-              onClick={() => setSevkiyatAcik(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              <Truck size={16} />
-              Sevkiyat Planlaması
-            </button>
-          </div>
+              <button
+                onClick={() => setSevkiyatAcik(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                <Truck size={16} />
+                Sevkiyat Planlaması
+              </button>
+            </div>
 
-          {/* Seçili gün / Bugünün Notu */}
-          {selectedDate ? (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col flex-1 min-h-0">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <span className="text-sm font-semibold text-gray-700">{formatDate(selectedDate)}</span>
-                  {selectedSiparisler.length > 0 && (
-                    <span className="ml-2 text-[11px] text-gray-400">— {selectedSiparisler.length} sipariş</span>
-                  )}
+            {/* Seçili gün / Bugünün Notu */}
+            {selectedDate ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col flex-1 min-h-0">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="text-sm font-semibold text-gray-700">{formatDate(selectedDate)}</span>
+                    {selectedSiparisler.length > 0 && (
+                      <span className="ml-2 text-[11px] text-gray-400">— {selectedSiparisler.length} sipariş</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setSelectedDate(null)}
+                    className="p-0.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setSelectedDate(null)}
-                  className="p-0.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={14} />
-                </button>
-              </div>
 
-              {selectedSiparisler.length > 0 ? (
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 mb-3 pr-0.5">
-                  {selectedSiparisler.map(s => (
-                    <div
-                      key={s.id}
-                      draggable
-                      onDragStart={e => {
-                        setDragSiparis(s)
-                        e.dataTransfer.effectAllowed = 'move'
-                      }}
-                      onDragEnd={() => { setDragSiparis(null); setOverDate(null); clearDragNav() }}
-                      className={`flex items-center justify-between px-2.5 py-2 bg-gray-50 rounded-lg border border-gray-100 cursor-grab active:cursor-grabbing select-none transition-opacity hover:bg-gray-100 hover:border-gray-200 ${
-                        dragSiparis?.id === s.id ? 'opacity-40' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-mono text-[11px] font-semibold text-gray-700">{s.siparis_no}</span>
-                          <span className="text-[10px] text-gray-500 truncate">{s.musteri}</span>
-                          {s.alt_musteri && <span className="text-[10px] text-gray-400 truncate">› {s.alt_musteri}</span>}
-                          {s.toplam_adet > 0 && <span className="text-[10px] text-gray-400">{s.toplam_adet} adet cam</span>}
+                {selectedSiparisler.length > 0 ? (
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 mb-3 pr-0.5">
+                    {selectedSiparisler.map(s => (
+                      <div
+                        key={s.id}
+                        draggable
+                        onDragStart={e => {
+                          setDragSiparis(s)
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragEnd={() => { setDragSiparis(null); setOverDate(null); clearDragNav() }}
+                        className={`flex items-center justify-between px-2.5 py-2 bg-gray-50 rounded-lg border border-gray-100 cursor-grab active:cursor-grabbing select-none transition-opacity hover:bg-gray-100 hover:border-gray-200 ${
+                          dragSiparis?.id === s.id ? 'opacity-40' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-mono text-[11px] font-semibold text-gray-700">{s.siparis_no}</span>
+                            <span className="text-[10px] text-gray-500 truncate">{s.musteri}</span>
+                            {s.alt_musteri && <span className="text-[10px] text-gray-400 truncate">› {s.alt_musteri}</span>}
+                            {s.toplam_adet > 0 && <span className="text-[10px] text-gray-400">{s.toplam_adet} adet cam</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <StatusBadge durum={s.durum} className="text-[10px] px-1.5 py-0.5" />
+                          <svg className="w-3 h-3 text-gray-300 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M7 2a2 2 0 110 4 2 2 0 010-4zM13 2a2 2 0 110 4 2 2 0 010-4zM7 8a2 2 0 110 4 2 2 0 010-4zM13 8a2 2 0 110 4 2 2 0 010-4zM7 14a2 2 0 110 4 2 2 0 010-4zM13 14a2 2 0 110 4 2 2 0 010-4z" />
+                          </svg>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                          DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {DURUM_ETIKET[s.durum] ?? s.durum}
-                        </span>
-                        <svg className="w-3 h-3 text-gray-300 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M7 2a2 2 0 110 4 2 2 0 010-4zM13 2a2 2 0 110 4 2 2 0 010-4zM7 8a2 2 0 110 4 2 2 0 010-4zM13 8a2 2 0 110 4 2 2 0 010-4zM7 14a2 2 0 110 4 2 2 0 010-4zM13 14a2 2 0 110 4 2 2 0 010-4z" />
-                        </svg>
-                      </div>
-                    </div>
-                  ))}
-                  <p className="text-[10px] text-gray-300 text-center pt-0.5">Siparişi sürükleyerek tarihi değiştir</p>
+                    ))}
+                    <p className="text-[10px] text-gray-300 text-center pt-0.5">Siparişi sürükleyerek tarihi değiştir</p>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-gray-400 mb-3 italic">Bu gün için teslim siparişi yok.</p>
+                )}
+
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <StickyNote size={12} className="text-yellow-500" />
+                  <span className="text-[11px] font-medium text-gray-600">Günlük Not</span>
                 </div>
-              ) : (
-                <p className="text-[11px] text-gray-400 mb-3 italic">Bu gün için teslim siparişi yok.</p>
-              )}
+                <textarea
+                  value={notDuzenle}
+                  onChange={e => setNotDuzenle(e.target.value)}
+                  placeholder="Bu gün için not ekle..."
+                  rows={2}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 bg-white"
+                />
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    onClick={notiKaydet}
+                    disabled={notKaydiyor}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    <Save size={11} />
+                    {notKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 p-4 flex-1">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <StickyNote size={13} className="text-yellow-500" />
+                  <span className="text-xs font-semibold text-gray-600">Bugünün Notu</span>
+                  <span className="text-[10px] text-gray-300 ml-1">{today}</span>
+                </div>
+                <textarea
+                  value={bugunNot}
+                  onChange={e => setBugunNot(e.target.value)}
+                  placeholder="Bugün için not ekle..."
+                  rows={3}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-yellow-200 focus:border-yellow-300 bg-white"
+                />
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    onClick={bugunNotiKaydet}
+                    disabled={bugunNotKaydiyor}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-xs font-medium hover:bg-yellow-600 disabled:opacity-50 transition-colors"
+                  >
+                    <Save size={11} />
+                    {bugunNotKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
+                  </button>
+                </div>
+              </div>
+            )}
 
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <StickyNote size={12} className="text-yellow-500" />
-                <span className="text-[11px] font-medium text-gray-600">Günlük Not</span>
-              </div>
-              <textarea
-                value={notDuzenle}
-                onChange={e => setNotDuzenle(e.target.value)}
-                placeholder="Bu gün için not ekle..."
-                rows={2}
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 bg-white"
-              />
-              <div className="flex justify-end mt-1.5">
-                <button
-                  onClick={notiKaydet}
-                  disabled={notKaydiyor}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  <Save size={11} />
-                  {notKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 flex-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                <StickyNote size={13} className="text-yellow-500" />
-                <span className="text-xs font-semibold text-gray-600">Bugünün Notu</span>
-                <span className="text-[10px] text-gray-300 ml-1">{today}</span>
-              </div>
-              <textarea
-                value={bugunNot}
-                onChange={e => setBugunNot(e.target.value)}
-                placeholder="Bugün için not ekle..."
-                rows={3}
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-yellow-200 focus:border-yellow-300 bg-white"
-              />
-              <div className="flex justify-end mt-1.5">
-                <button
-                  onClick={bugunNotiKaydet}
-                  disabled={bugunNotKaydiyor}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-xs font-medium hover:bg-yellow-600 disabled:opacity-50 transition-colors"
-                >
-                  <Save size={11} />
-                  {bugunNotKaydiyor ? 'Kaydediliyor…' : 'Kaydet'}
-                </button>
-              </div>
-            </div>
-          )}
-
-        </div>
+          </div>
         </div>
       </div>
 
@@ -996,17 +998,13 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {sonSiparisler.map((s) => (
+              {sonSiparisler.map(s => (
                 <tr key={s.id} className="border-b border-gray-50 last:border-0">
                   <td className="px-4 py-2.5 font-mono font-medium text-gray-800">{s.siparis_no}</td>
                   <td className="px-4 py-2.5 text-gray-700">{s.musteri}</td>
                   <td className="px-4 py-2.5 text-gray-600">{formatDate(s.tarih)}</td>
                   <td className="px-4 py-2.5">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                      DURUM_STIL[s.durum] ?? 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {DURUM_ETIKET[s.durum] ?? s.durum}
-                    </span>
+                    <StatusBadge durum={s.durum} />
                   </td>
                 </tr>
               ))}

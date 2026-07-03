@@ -14,6 +14,7 @@ import type { EtiketVeri } from '@/types/ayarlar'
 import { camTipiAd } from '@/lib/utils'
 import { getCamKompozisyon } from '@/lib/cam'
 import { glsSayacArttir } from '@/lib/saatlikSayac'
+import { fizikselGlsKodu, normalizeBatchSiraInput } from '@/lib/siparisDetay'
 
 /* ========== Tipler ========== */
 
@@ -31,6 +32,7 @@ interface BatchCam {
   siparis_detay_id: string
   siparis_id: string
   cam_kodu: string
+  teknik_cam_kodu: string
   genislik_mm: number
   yukseklik_mm: number
   adet: number
@@ -130,63 +132,83 @@ export default function PozGirisPage() {
   // Batch listesini getir
   const batchleriGetir = useCallback(async () => {
     setBatchYukleniyor(true)
-    const { data: emirler } = await supabase
-      .from('uretim_emirleri')
-      .select('id, batch_no, durum')
-      .in('durum', ['export_edildi', 'yikamada', 'eksik_var'])
-      .order('olusturulma_tarihi', { ascending: false })
+    try {
+      const { data: emirler, error: emirHatasi } = await supabase
+        .from('uretim_emirleri')
+        .select('id, batch_no, durum')
+        .in('durum', ['export_edildi', 'yikamada', 'eksik_var'])
+        .order('olusturulma_tarihi', { ascending: false })
 
-    if (!emirler || emirler.length === 0) {
-      setBatchler([])
-      setBatchYukleniyor(false)
-      return
-    }
-
-    // Tek sorguda tüm batch'lerin detaylarını getir (N+1 yerine)
-    const emirIds = emirler.map(e => e.id)
-    const { data: tumDetaylar } = await supabase
-      .from('uretim_emri_detaylari')
-      .select(`
-        uretim_emri_id, siparis_detay_id,
-        siparis_detaylari ( uretim_durumu, adet, siparisler ( alt_musteri, cari ( ad ) ) )
-      `)
-      .in('uretim_emri_id', emirIds)
-
-    // Gruplama
-    const detayMap = new Map<string, { toplam: number; taranan: number; musteriSet: Set<string> }>()
-    for (const d of tumDetaylar ?? []) {
-      const entry = detayMap.get(d.uretim_emri_id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
-      const adet: number = (d as any).siparis_detaylari?.adet ?? 1
-      entry.toplam += adet
-      if ((d as any).siparis_detaylari?.uretim_durumu === 'yikandi') entry.taranan += adet
-      const musteriAd: string = (d as any).siparis_detaylari?.siparisler?.cari?.ad ?? ''
-      const nihai: string = (d as any).siparis_detaylari?.siparisler?.alt_musteri ?? ''
-      const etiket = musteriEtiket(musteriAd, nihai)
-      if (etiket) entry.musteriSet.add(etiket)
-      detayMap.set(d.uretim_emri_id, entry)
-    }
-
-    const sonuc: BatchSatir[] = emirler.map(e => {
-      const d = detayMap.get(e.id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
-      return {
-        id: e.id,
-        batch_no: e.batch_no,
-        durum: e.durum as UretimEmriDurum,
-        toplam_cam: d.toplam,
-        taranan_cam: d.taranan,
-        musteriler: Array.from(d.musteriSet),
+      if (emirHatasi) {
+        console.error('Batch listesi getirme hatası:', emirHatasi)
+        setBatchYukleniyor(false)
+        return
       }
-    })
 
-    setBatchler(sonuc)
-    setBatchYukleniyor(false)
+      if (!emirler || emirler.length === 0) {
+        setBatchler([])
+        setBatchYukleniyor(false)
+        return
+      }
+
+      // Tek sorguda tüm batch'lerin detaylarını getir (N+1 yerine)
+      const emirIds = emirler.map(e => e.id)
+      const { data: tumDetaylar, error: detayHatasi } = await supabase
+        .from('uretim_emri_detaylari')
+        .select(`
+          uretim_emri_id,
+          siparis_detaylari (
+            id, uretim_durumu, adet,
+            siparisler ( siparis_no, alt_musteri, cari ( ad ) )
+          )
+        `)
+        .in('uretim_emri_id', emirIds)
+
+      if (detayHatasi) {
+        console.error('Batch detay getirme hatası:', detayHatasi)
+        setBatchYukleniyor(false)
+        return
+      }
+
+      // Gruplama
+      const detayMap = new Map<string, { toplam: number; taranan: number; musteriSet: Set<string> }>()
+      for (const d of tumDetaylar ?? []) {
+        const entry = detayMap.get(d.uretim_emri_id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
+        const adet: number = (d as any).siparis_detaylari?.adet ?? 1
+        entry.toplam += adet
+        if ((d as any).siparis_detaylari?.uretim_durumu === 'yikandi') entry.taranan += adet
+        const musteriAd: string = (d as any).siparis_detaylari?.siparisler?.cari?.ad ?? ''
+        const nihai: string = (d as any).siparis_detaylari?.siparisler?.alt_musteri ?? ''
+        const etiket = musteriEtiket(musteriAd, nihai)
+        if (etiket) entry.musteriSet.add(etiket)
+        detayMap.set(d.uretim_emri_id, entry)
+      }
+
+      const sonuc: BatchSatir[] = emirler.map(e => {
+        const d = detayMap.get(e.id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
+        return {
+          id: e.id,
+          batch_no: e.batch_no,
+          durum: e.durum as UretimEmriDurum,
+          toplam_cam: d.toplam,
+          taranan_cam: d.taranan,
+          musteriler: Array.from(d.musteriSet),
+        }
+      })
+
+      setBatchler(sonuc)
+      setBatchYukleniyor(false)
+    } catch (err) {
+      console.error('Batch getirme hata:', err)
+      setBatchYukleniyor(false)
+    }
   }, [])
 
   useEffect(() => { batchleriGetir() }, [batchleriGetir])
 
   // Batch seçildiğinde cam listesini getir
   const batchCamlariniGetir = useCallback(async (batchId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('uretim_emri_detaylari')
       .select(`
         id, siparis_detay_id, sira_no,
@@ -201,25 +223,36 @@ export default function PozGirisPage() {
       .eq('uretim_emri_id', batchId)
       .order('sira_no')
 
-    const camlar: BatchCam[] = (data ?? []).map((d: any) => ({
+    if (error) {
+      console.error('Batch camlari getirilemedi:', error)
+      setBatchCamlari([])
+      return []
+    }
+
+    const camlar: BatchCam[] = (data ?? []).flatMap((d: any) => {
+      const detay = d.siparis_detaylari
+      if (!detay) return []
+      return [{
       uretim_emri_detay_id: d.id,
       siparis_detay_id: d.siparis_detay_id,
-      siparis_id: d.siparis_detaylari.siparis_id,
-      cam_kodu: d.siparis_detaylari.cam_kodu,
-      genislik_mm: d.siparis_detaylari.genislik_mm,
-      yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
-      adet: d.siparis_detaylari.adet ?? 1,
+      siparis_id: detay.siparis_id,
+      cam_kodu: fizikselGlsKodu(d.sira_no, detay.cam_kodu),
+      teknik_cam_kodu: detay.cam_kodu,
+      genislik_mm: detay.genislik_mm,
+      yukseklik_mm: detay.yukseklik_mm,
+      adet: detay.adet ?? 1,
       taranan_adet: 0,  // aşağıda yikama_loglari ile doldurulacak
-      katman_yapisi: d.siparis_detaylari.katman_yapisi ?? null,
-      ic_kalinlik_mm: d.siparis_detaylari.stok?.kalinlik_mm ?? null,
-      cita_kalinlik_mm: d.siparis_detaylari.cita_stok?.kalinlik_mm ?? null,
+      katman_yapisi: detay.katman_yapisi ?? null,
+      ic_kalinlik_mm: detay.stok?.kalinlik_mm ?? null,
+      cita_kalinlik_mm: detay.cita_stok?.kalinlik_mm ?? null,
       sira_no: d.sira_no ?? null,
-      uretim_durumu: d.siparis_detaylari.uretim_durumu,
-      stok_ad: d.siparis_detaylari.stok?.ad ?? '',
-      musteri: d.siparis_detaylari.siparisler?.cari?.ad ?? '',
-      nihai_musteri: d.siparis_detaylari.siparisler?.alt_musteri ?? '',
-      siparis_no: d.siparis_detaylari.siparisler?.siparis_no ?? '',
-    }))
+      uretim_durumu: detay.uretim_durumu,
+      stok_ad: detay.stok?.ad ?? '',
+      musteri: detay.siparisler?.cari?.ad ?? '',
+      nihai_musteri: detay.siparisler?.alt_musteri ?? '',
+      siparis_no: detay.siparisler?.siparis_no ?? '',
+      }]
+    })
 
     // Yıkama log sayısını her cam için çek (kısmi adet takibi için)
     const detayIds = camlar.map(c => c.siparis_detay_id)
@@ -227,11 +260,12 @@ export default function PozGirisPage() {
     if (detayIds.length > 0) {
       const { data: loglar } = await supabase
         .from('yikama_loglari')
-        .select('siparis_detay_id')
+        .select('siparis_detay_id, uretim_emri_detay_id')
         .in('siparis_detay_id', detayIds)
       for (const log of loglar ?? []) {
-        const prev = logCountMap.get((log as any).siparis_detay_id) ?? 0
-        logCountMap.set((log as any).siparis_detay_id, prev + 1)
+        const key = (log as any).uretim_emri_detay_id ?? (log as any).siparis_detay_id
+        const prev = logCountMap.get(key) ?? 0
+        logCountMap.set(key, prev + 1)
       }
     }
 
@@ -240,7 +274,7 @@ export default function PozGirisPage() {
       ...c,
       taranan_adet: c.uretim_durumu === 'yikandi'
         ? c.adet
-        : Math.min(logCountMap.get(c.siparis_detay_id) ?? 0, c.adet - 1),
+        : Math.min(logCountMap.get(c.uretim_emri_detay_id) ?? logCountMap.get(c.siparis_detay_id) ?? 0, c.adet - 1),
     }))
 
     setBatchCamlari(camlarFinal)
@@ -283,8 +317,11 @@ export default function PozGirisPage() {
 
   const handleBatchDegistir = async () => {
     if (seciliBatch && seciliBatch.durum === 'yikamada') {
-      const taranan = batchCamlari.filter(c => c.uretim_durumu === 'yikandi').length
-      const toplam = batchCamlari.length
+      const taranan = batchCamlari.reduce(
+        (sum, c) => sum + (c.uretim_durumu === 'yikandi' ? c.adet : c.taranan_adet),
+        0,
+      )
+      const toplam = batchCamlari.reduce((sum, c) => sum + c.adet, 0)
       if (taranan > 0 && taranan < toplam) {
         await supabase
           .from('uretim_emirleri')
@@ -339,6 +376,12 @@ export default function PozGirisPage() {
     }, ms)
   }
 
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
+    }
+  }, [])
+
   const tarananSayisi = useMemo(
     () => batchCamlari.reduce((sum, c) => sum + (c.uretim_durumu === 'yikandi' ? c.adet : c.taranan_adet), 0),
     [batchCamlari]
@@ -382,14 +425,16 @@ export default function PozGirisPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!seciliBatch) return
-    let kod = input.trim().toUpperCase()
-    if (/^\d+$/.test(kod)) kod = `GLS-${kod}`
+    const kod = input.trim()
+    const siraNo = normalizeBatchSiraInput(kod)
     if (!kod) return
     setInput('')
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
     setDurum('yukleniyor')
 
-    const cam = batchCamlari.find(c => c.cam_kodu === kod)
+    const cam = siraNo != null
+      ? batchCamlari.find(c => c.sira_no === siraNo)
+      : batchCamlari.find(c => c.cam_kodu === kod || c.teknik_cam_kodu.toUpperCase() === kod.toUpperCase())
 
     if (!cam) {
       beep('error')
@@ -440,13 +485,16 @@ export default function PozGirisPage() {
         body: JSON.stringify(fetchBody),
       }).catch(() => { /* sessiz hata — tarama akışını bozma */ })
     }
-    await supabase.from('yikama_loglari').insert({
-      cam_kodu: cam.cam_kodu,
-      siparis_detay_id: cam.siparis_detay_id,
-    })
+    if (!tekrar) {
+      await supabase.from('yikama_loglari').insert({
+        cam_kodu: cam.cam_kodu,
+        siparis_detay_id: cam.siparis_detay_id,
+        uretim_emri_detay_id: cam.uretim_emri_detay_id,
+      })
+    }
 
     // Saatlik üretim sayacını arttır (tekrar taramalarda sayma)
-    if (!tekrar) glsSayacArttir()
+    if (!tekrar) glsSayacArttir().catch(err => console.error('Saatlik sayaç artırılamadı:', err))
 
     // Adet takibi: her tarama 1 adet sayar
     const yeniTarananadet = cam.taranan_adet + 1
@@ -461,14 +509,14 @@ export default function PozGirisPage() {
           .eq('id', cam.siparis_detay_id)
 
         setBatchCamlari(prev => prev.map(c =>
-          c.siparis_detay_id === cam.siparis_detay_id
+          c.uretim_emri_detay_id === cam.uretim_emri_detay_id
             ? { ...c, uretim_durumu: 'yikandi', taranan_adet: yeniTarananadet }
             : c
         ))
       } else {
         // Kısmi tamamlama — sadece lokal sayacı güncelle
         setBatchCamlari(prev => prev.map(c =>
-          c.siparis_detay_id === cam.siparis_detay_id
+          c.uretim_emri_detay_id === cam.uretim_emri_detay_id
             ? { ...c, taranan_adet: yeniTarananadet }
             : c
         ))
@@ -499,6 +547,10 @@ export default function PozGirisPage() {
       event: 'yeni_cam',
       payload: {
         cam_kodu: cam.cam_kodu,
+        teknik_cam_kodu: cam.teknik_cam_kodu,
+        siparis_detay_id: cam.siparis_detay_id,
+        uretim_emri_detay_id: cam.uretim_emri_detay_id,
+        sira_no: cam.sira_no,
         musteri: cam.musteri,
         siparis_no: cam.siparis_no,
         cam_tipi: camTipiTam,
@@ -751,8 +803,8 @@ export default function PozGirisPage() {
             <div className={`w-full border-2 rounded-2xl p-6 text-center transition-colors ${durumRenk(durum)}`}>
               {durum === 'bos' && !tamirGonderildi && (
                 <>
-                  <p className="text-gray-300 text-xl font-semibold mb-1">GLS kodunu girin</p>
-                  <p className="text-gray-500 text-sm">Numara veya tam GLS-XXXX formatı</p>
+                  <p className="text-gray-300 text-xl font-semibold mb-1">Sıra numarasını girin</p>
+                  <p className="text-gray-500 text-sm">Seçili batch içindeki kısa GLS numarası</p>
                 </>
               )}
               {durum === 'bos' && tamirGonderildi && (
@@ -826,7 +878,7 @@ export default function PozGirisPage() {
                     setTamirCam(sonTarananCam)
                   }
                 }}
-                placeholder="GLS kodu girin..."
+                placeholder="Sıra no girin..."
                 className="w-full text-center text-2xl font-mono bg-gray-900 border-2 border-gray-700 rounded-xl px-6 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                 autoComplete="off"
                 disabled={durum === 'tamamlandi'}
@@ -892,7 +944,7 @@ export default function PozGirisPage() {
                 <p className="text-gray-500 text-sm leading-relaxed">
                   {aktifMusteri
                     ? 'Bu müşteriye ait cam bulunamadı.'
-                    : 'Sol listeden müşteri seçin veya GLS kodu girin.'}
+                    : 'Sol listeden müşteri seçin veya sıra no girin.'}
                 </p>
               </div>
             ) : (

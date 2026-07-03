@@ -3,6 +3,7 @@ import { Truck, X, PackageCheck } from 'lucide-react'
 import { useAraclar, sevkiyatKaydet } from '@/hooks/useSevkiyat'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
+import { supabase } from '@/lib/supabase'
 
 interface Props {
   siparisId: string
@@ -35,6 +36,29 @@ export default function SevkiyatPlanModal({ siparisId, siparisNo, teslimTarihi, 
     }
   }
 
+  const handleTeslimAlacak = async () => {
+    setKaydediliyor(true)
+    setHata(null)
+    try {
+      const { error: planSilHata } = await supabase
+        .from('sevkiyat_planlari')
+        .delete()
+        .eq('siparis_id', siparisId)
+      if (planSilHata) throw new Error(planSilHata.message)
+
+      const { error } = await supabase
+        .from('siparisler')
+        .update({ teslimat_tipi: 'teslim_alacak' })
+        .eq('id', siparisId)
+      if (error) throw new Error(error.message)
+      onKapat()
+    } catch (e: unknown) {
+      setHata(e instanceof Error ? e.message : 'Teslimat tipi kaydedilemedi')
+    } finally {
+      setKaydediliyor(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
@@ -53,6 +77,8 @@ export default function SevkiyatPlanModal({ siparisId, siparisNo, teslimTarihi, 
             <X size={16} />
           </button>
         </div>
+
+        {hata && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">{hata}</p>}
 
         {/* Seçim Kartları */}
         {!teslimatTipi && (
@@ -106,10 +132,11 @@ export default function SevkiyatPlanModal({ siparisId, siparisNo, teslimTarihi, 
                 Geri
               </button>
               <button
-                onClick={onKapat}
+                onClick={handleTeslimAlacak}
+                disabled={kaydediliyor}
                 className="flex-1 px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
               >
-                Tamam
+                {kaydediliyor ? 'Kaydediliyor...' : 'Tamam'}
               </button>
             </div>
           </div>
@@ -162,8 +189,6 @@ export default function SevkiyatPlanModal({ siparisId, siparisNo, teslimTarihi, 
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-
-            {hata && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{hata}</p>}
 
             <div className="flex gap-2 pt-1">
               <button

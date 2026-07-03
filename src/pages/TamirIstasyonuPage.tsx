@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import {
-  ArrowLeft, Wrench, CheckCircle2, AlertTriangle,
+  ArrowLeft, Wrench, CheckCircle2,
   Clock, Trash2, RefreshCw, XCircle, MapPin, X,
 } from 'lucide-react'
 import type { TamirDurum, TamirKayit } from '@/types/tamir'

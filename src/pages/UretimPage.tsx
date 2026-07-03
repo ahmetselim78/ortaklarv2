@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useUretim } from '@/hooks/useUretim'
 import { useStok } from '@/hooks/useStok'
+import { useCari } from '@/hooks/useCari'
 import { supabase } from '@/lib/supabase'
 import UretimListesi from '@/components/uretim/UretimListesi'
 import UretimDetayModal from '@/components/uretim/UretimDetayModal'
@@ -23,6 +24,7 @@ const FILTRELER: { deger: string; etiket: string }[] = [
 export default function UretimPage() {
   const { emirler, yukleniyor, hata, yeniBatch, durumGuncelle, sil, iptalEt, yenile } = useUretim()
   const { stoklar } = useStok()
+  const { cariler } = useCari()
   const [aktifFiltre, setAktifFiltre] = useState('hepsi')
   const [seciliEmir, setSeciliEmir] = useState<UretimEmri | null>(null)
   const [seciliSiparis, setSeciliSiparis] = useState<Siparis | null>(null)
@@ -222,6 +224,7 @@ export default function UretimPage() {
         <SiparisDetayModal
           siparis={seciliSiparis}
           stoklar={stoklar}
+          cariler={cariler}
           onKapat={() => setSeciliSiparis(null)}
         />
       )}

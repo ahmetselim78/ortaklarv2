@@ -16,14 +16,11 @@ const personelSchema = z.object({
     .refine(
       v => v === '' || /^https?:\/\/.+/.test(v),
       'Geçerli bir URL giriniz (http/https ile başlamalı)',
-    )
-    .default(''),
-  rol: z.enum(['Direkt', 'Endirekt'], {
-    errorMap: () => ({ message: 'Rol seçiniz' }),
-  }),
-  is_aktif: z.boolean().default(true),
-  kullanici_adi: z.string().optional().default(''),
-  giris_sifresi: z.string().optional().default(''),
+    ),
+  rol: z.enum(['Direkt', 'Endirekt'], { message: 'Rol seciniz' }),
+  is_aktif: z.boolean(),
+  kullanici_adi: z.string(),
+  giris_sifresi: z.string(),
 })
 
 type PersonelFormDegerleri = z.infer<typeof personelSchema>
@@ -93,9 +90,7 @@ function FotoAlani({ deger, onDegisim, hata }: FotoAlanıProps) {
       publicBaseUrl: r2PublicUrlGeçerli ? '✅ Var' : '❌ Yok/Hatalı',
       açıklama: !r2PublicUrlGeçerli ? `Public URL: "${publicBaseUrl}" (geçerli olmalı: https://pub-xxx.r2.dev)` : '',
     })
-  } 
-                !!import.meta.env.VITE_R2_PUBLIC_BASE_URL && 
-                !import.meta.env.VITE_R2_PUBLIC_BASE_URL.includes('placeholder')
+  }
 
   const dosyaSec = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const dosya = e.target.files?.[0]

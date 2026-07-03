@@ -13,7 +13,7 @@ export interface Siparis {
   harici_siparis_no: string | null
   created_at: string
   cari?: { ad: string; kod: string }
-  siparis_detaylari?: { count: number }[]
+  siparis_detaylari?: { count?: number; adet?: number }[]
   sevkiyat_planlari?: { id: string; tarih: string }[]
   teslimat_tipi?: string
   tamamlandi_tarihi?: string | null

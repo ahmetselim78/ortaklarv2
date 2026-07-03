@@ -24,10 +24,11 @@ export async function glsSayacArttir(): Promise<void> {
 
   const { data, error } = await supabase
     .from('gunluk_uretim_takip')
-    .select('id, saat_araligi, gerceklesen_adet')
+    .select('id, saat_araligi')
     .eq('tarih', bugun)
 
-  if (error || !data || data.length === 0) return
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) return
 
   const aktif = data.find(s => {
     const parts = (s.saat_araligi as string).split(' - ').map((x: string) => x.trim())
@@ -37,8 +38,9 @@ export async function glsSayacArttir(): Promise<void> {
 
   if (!aktif) return
 
-  await supabase
-    .from('gunluk_uretim_takip')
-    .update({ gerceklesen_adet: (aktif.gerceklesen_adet as number) + 1 })
-    .eq('id', aktif.id)
+  const { error: rpcError } = await supabase.rpc('saatlik_sayac_arttir', {
+    p_id: aktif.id,
+    p_delta: 1,
+  })
+  if (rpcError) throw new Error(rpcError.message)
 }

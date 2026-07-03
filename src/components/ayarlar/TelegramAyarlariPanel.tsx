@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Send, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, Clock, ToggleLeft, ToggleRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { TelegramAyarlari, TelegramRaporSaati } from '@/types/saatlikUretim'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 // ── Yardımcı ─────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,8 @@ export default function TelegramAyarlariPanel() {
   // Yeni saat ekleme
   const [yeniSaat, setYeniSaat] = useState('')
   const [saatHata, setSaatHata] = useState<string | null>(null)
+  const [silinecekSaat, setSilinecekSaat] = useState<TelegramRaporSaati | null>(null)
+  const [saatSiliniyor, setSaatSiliniyor] = useState(false)
 
   // ── Veri yükle ───────────────────────────────────────────────────────────
   const getir = useCallback(async () => {
@@ -111,9 +114,19 @@ export default function TelegramAyarlariPanel() {
   }
 
   // ── Saat sil ─────────────────────────────────────────────────────────────
-  const saatSil = async (id: string) => {
-    await supabase.from('telegram_rapor_saatleri').delete().eq('id', id)
-    setSaatler(prev => prev.filter(s => s.id !== id))
+  const saatSil = async () => {
+    if (!silinecekSaat) return
+    setSaatSiliniyor(true)
+    try {
+      const { error } = await supabase.from('telegram_rapor_saatleri').delete().eq('id', silinecekSaat.id)
+      if (error) throw error
+      setSaatler(prev => prev.filter(s => s.id !== silinecekSaat.id))
+      setSilinecekSaat(null)
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : 'Saat silinemedi')
+    } finally {
+      setSaatSiliniyor(false)
+    }
   }
 
   // ── Saat aktiflik toggle ─────────────────────────────────────────────────
@@ -347,7 +360,7 @@ export default function TelegramAyarlariPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => saatSil(s.id)}
+                  onClick={() => setSilinecekSaat(s)}
                   title="Sil"
                   className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
                 >
@@ -358,6 +371,18 @@ export default function TelegramAyarlariPanel() {
           </div>
         )}
       </div>
+
+      {silinecekSaat && (
+        <ConfirmDialog
+          baslik="Rapor saati silinsin mi?"
+          mesaj={`${silinecekSaat.saat} rapor saati silinecek.`}
+          onayButon="Sil"
+          onayRenk="red"
+          yukleniyor={saatSiliniyor}
+          onOnayla={saatSil}
+          onKapat={() => !saatSiliniyor && setSilinecekSaat(null)}
+        />
+      )}
 
       {/* ── Kurulum Notu ── */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-xs text-amber-800 space-y-2">

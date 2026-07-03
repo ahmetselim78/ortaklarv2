@@ -81,10 +81,14 @@ export function useUretim() {
       .from('siparis_detaylari')
       .select('id')
       .in('siparis_id', siparisIds)
-      .in('uretim_durumu', ['bekliyor', 'kesildi'])
+      .or('uretim_durumu.in.(bekliyor,kesildi),uretim_durumu.is.null')
       .order('created_at')
 
     if (detayHata) throw new Error(detayHata.message)
+    if ((detaylar ?? []).length === 0) {
+      await supabase.from('uretim_emirleri').delete().eq('id', uretimEmriId)
+      throw new Error('Seçilen siparişlerde üretime alınacak cam detayı bulunamadı.')
+    }
 
     // Aynı cam başka bir aktif batch'e zaten eklenmiş olabilir
     // (örn. eksik_var senaryosu). Bu detayları hariç tut — bir cam yalnızca tek batch'te bulunabilir.
@@ -93,8 +97,9 @@ export function useUretim() {
       const detayIdleri = eklenecekDetaylar.map(d => d.id)
       const { data: zatenBatchte, error: kontrolHata } = await supabase
         .from('uretim_emri_detaylari')
-        .select('siparis_detay_id')
+        .select('siparis_detay_id, uretim_emirleri!inner(durum)')
         .in('siparis_detay_id', detayIdleri)
+        .neq('uretim_emirleri.durum', 'iptal')
       if (kontrolHata) throw new Error(kontrolHata.message)
       const batchtekiSet = new Set((zatenBatchte ?? []).map(d => d.siparis_detay_id))
       eklenecekDetaylar = eklenecekDetaylar.filter(d => !batchtekiSet.has(d.id))
@@ -120,17 +125,19 @@ export function useUretim() {
     // Sadece bu batch'e gerçekten cam eklenen siparişlerin durumunu 'batchte' yap.
     // (Tüm camları zaten başka batch'te olan siparişlerin durumunu değiştirme.)
     const eklenenDetayIds = eklenecekDetaylar.map(d => d.id)
-    const { data: eklenenSipDetaylari } = await supabase
+    const { data: eklenenSipDetaylari, error: sipDetayHata } = await supabase
       .from('siparis_detaylari')
       .select('siparis_id')
       .in('id', eklenenDetayIds)
+    if (sipDetayHata) throw new Error(sipDetayHata.message)
     const guncellenecekSipIds = [...new Set((eklenenSipDetaylari ?? []).map(d => d.siparis_id))]
     if (guncellenecekSipIds.length > 0) {
-      await supabase
+      const { error: siparisGuncelleHata } = await supabase
         .from('siparisler')
         .update({ durum: 'batchte' })
         .in('id', guncellenecekSipIds)
-        .eq('durum', 'beklemede')
+        .or('durum.eq.beklemede,durum.eq.eksik_var,durum.is.null')
+      if (siparisGuncelleHata) throw new Error(siparisGuncelleHata.message)
     }
 
     await getir()
@@ -139,12 +146,20 @@ export function useUretim() {
 
   const durumGuncelle = async (id: string, durum: UretimEmriDurum) => {
     // Durum geçiş kontrolü
-    const mevcut = emirler.find(e => e.id === id)
-    if (mevcut) {
-      const gecerli = GECERLI_GECISLER[mevcut.durum]
-      if (!gecerli.includes(durum)) {
-        throw new Error(`Geçersiz durum geçişi: ${mevcut.durum} → ${durum}`)
-      }
+    let mevcut = emirler.find(e => e.id === id)
+    if (!mevcut) {
+      const { data, error } = await supabase
+        .from('uretim_emirleri')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle()
+      if (error) throw new Error(error.message)
+      if (!data) throw new Error('Üretim emri bulunamadı.')
+      mevcut = data as UretimEmri
+    }
+    const gecerli = GECERLI_GECISLER[mevcut.durum]
+    if (!gecerli.includes(durum)) {
+      throw new Error(`Geçersiz durum geçişi: ${mevcut.durum} → ${durum}`)
     }
     const { error } = await supabase.from('uretim_emirleri').update({ durum }).eq('id', id)
     if (error) throw new Error(error.message)
@@ -153,20 +168,22 @@ export function useUretim() {
 
   const sil = async (id: string) => {
     // 1. Batch'teki sipariş ID'lerini bul
-    const { data: batchDetaylar } = await supabase
+    const { data: batchDetaylar, error: batchDetayHata } = await supabase
       .from('uretim_emri_detaylari')
       .select('siparis_detay_id')
       .eq('uretim_emri_id', id)
+    if (batchDetayHata) throw new Error(batchDetayHata.message)
 
     const detayIds = (batchDetaylar ?? []).map(d => d.siparis_detay_id)
 
     // Sipariş ID'lerini bul
     let siparisIds: string[] = []
     if (detayIds.length > 0) {
-      const { data: sipDetaylar } = await supabase
+      const { data: sipDetaylar, error: sipDetayHata } = await supabase
         .from('siparis_detaylari')
         .select('siparis_id')
         .in('id', detayIds)
+      if (sipDetayHata) throw new Error(sipDetayHata.message)
       siparisIds = [...new Set((sipDetaylar ?? []).map(d => d.siparis_id))]
     }
 
@@ -177,20 +194,23 @@ export function useUretim() {
     // 3. Artık başka batch'te olmayan siparişleri 'beklemede'ye döndür
     if (siparisIds.length > 0) {
       // Tüm siparis_detaylari al
-      const { data: tumDetaylar } = await supabase
+      const { data: tumDetaylar, error: tumDetayHata } = await supabase
         .from('siparis_detaylari')
         .select('id, siparis_id')
         .in('siparis_id', siparisIds)
+      if (tumDetayHata) throw new Error(tumDetayHata.message)
 
       const tumDetayIds = (tumDetaylar ?? []).map(d => d.id)
 
       // Hâlâ başka batch'te olan detayları bul
-      const { data: halaBatchte } = tumDetayIds.length > 0
+      const { data: halaBatchte, error: halaBatchHata } = tumDetayIds.length > 0
         ? await supabase
             .from('uretim_emri_detaylari')
-            .select('siparis_detay_id')
+            .select('siparis_detay_id, uretim_emirleri!inner(durum)')
             .in('siparis_detay_id', tumDetayIds)
+            .neq('uretim_emirleri.durum', 'iptal')
         : { data: [] }
+      if (halaBatchHata) throw new Error(halaBatchHata.message)
 
       const halaBatchDetayIds = new Set((halaBatchte ?? []).map(d => d.siparis_detay_id))
 
@@ -201,11 +221,12 @@ export function useUretim() {
       })
 
       if (resetSiparisIds.length > 0) {
-        await supabase
+        const { error: resetHata } = await supabase
           .from('siparisler')
           .update({ durum: 'beklemede' })
           .in('id', resetSiparisIds)
           .eq('durum', 'batchte')
+        if (resetHata) throw new Error(resetHata.message)
       }
     }
 
@@ -213,20 +234,38 @@ export function useUretim() {
   }
 
   const iptalEt = async (id: string) => {
+    let mevcut = emirler.find(e => e.id === id)
+    if (!mevcut) {
+      const { data, error } = await supabase
+        .from('uretim_emirleri')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle()
+      if (error) throw new Error(error.message)
+      if (!data) throw new Error('Üretim emri bulunamadı.')
+      mevcut = data as UretimEmri
+    }
+    const gecerli = GECERLI_GECISLER[mevcut.durum]
+    if (!gecerli.includes('iptal')) {
+      throw new Error(`Geçersiz durum geçişi: ${mevcut.durum} → iptal`)
+    }
+
     // 1. Batch'teki sipariş ID'lerini bul
-    const { data: batchDetaylar } = await supabase
+    const { data: batchDetaylar, error: batchDetayHata } = await supabase
       .from('uretim_emri_detaylari')
       .select('siparis_detay_id')
       .eq('uretim_emri_id', id)
+    if (batchDetayHata) throw new Error(batchDetayHata.message)
 
     const detayIds = (batchDetaylar ?? []).map(d => d.siparis_detay_id)
 
     let siparisIds: string[] = []
     if (detayIds.length > 0) {
-      const { data: sipDetaylar } = await supabase
+      const { data: sipDetaylar, error: sipDetayHata } = await supabase
         .from('siparis_detaylari')
         .select('siparis_id')
         .in('id', detayIds)
+      if (sipDetayHata) throw new Error(sipDetayHata.message)
       siparisIds = [...new Set((sipDetaylar ?? []).map(d => d.siparis_id))]
     }
 
@@ -236,11 +275,12 @@ export function useUretim() {
 
     // 3. Siparişleri 'beklemede'ye döndür
     if (siparisIds.length > 0) {
-      await supabase
+      const { error: siparisGuncelleHata } = await supabase
         .from('siparisler')
         .update({ durum: 'beklemede' })
         .in('id', siparisIds)
         .eq('durum', 'batchte')
+      if (siparisGuncelleHata) throw new Error(siparisGuncelleHata.message)
     }
 
     await getir()
@@ -266,7 +306,7 @@ export async function getBatchDetaylari(uretimEmriId: string): Promise<UretimEmr
     .order('sira_no')
 
   if (error) throw new Error(error.message)
-  return data as UretimEmriDetay[]
+  return data as unknown as UretimEmriDetay[]
 }
 
 /** Batch'e sipariş_detay ekler */

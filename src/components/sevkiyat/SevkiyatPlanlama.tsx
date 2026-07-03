@@ -6,6 +6,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 interface Arac {
   id: string; plaka: string; ad: string | null; kapasite_m2: number | null; aktif: boolean
@@ -84,6 +85,9 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const dragPayloadRef = useRef<DragPayload | null>(null)
   const [overZone, setOverZone] = useState<string | null>(null)
+  const [kaldirilacakPlan, setKaldirilacakPlan] = useState<PlanliSiparis | null>(null)
+  const [planKaldiriliyor, setPlanKaldiriliyor] = useState(false)
+  const [planKaldirHata, setPlanKaldirHata] = useState<string | null>(null)
 
   // Load aktif araçlar
   useEffect(() => {
@@ -223,10 +227,25 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
     })
   }
 
-  async function planKaldir(plan: PlanliSiparis) {
-    const { error } = await supabase.from('sevkiyat_planlari').delete().eq('id', plan.plan_id)
-    if (error) { console.error('[Sevkiyat] plan kaldırılamadı:', error); return }
-    setTumPlanlar(prev => prev.filter(p => p.plan_id !== plan.plan_id))
+  function planKaldirIste(plan: PlanliSiparis) {
+    setPlanKaldirHata(null)
+    setKaldirilacakPlan(plan)
+  }
+
+  async function planKaldirOnayla() {
+    if (!kaldirilacakPlan) return
+    setPlanKaldiriliyor(true)
+    setPlanKaldirHata(null)
+    const { error } = await supabase.from('sevkiyat_planlari').delete().eq('id', kaldirilacakPlan.plan_id)
+    if (error) {
+      console.error('[Sevkiyat] plan kaldırılamadı:', error)
+      setPlanKaldirHata(error.message)
+      setPlanKaldiriliyor(false)
+      return
+    }
+    setTumPlanlar(prev => prev.filter(p => p.plan_id !== kaldirilacakPlan.plan_id))
+    setPlanKaldiriliyor(false)
+    setKaldirilacakPlan(null)
   }
 
   async function onDropToList(e: React.DragEvent) {
@@ -638,7 +657,7 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
                                 draggable: true,
                                 onDragStartFn: e => onSiparisDragStart(e, { kind: 'plan', plan_id: plan.plan_id, siparis_id: plan.siparis_id, from_arac_id: plan.arac_id }, plan.plan_id),
                                 onDragEndFn: onDragEnd,
-                                onRemove: () => planKaldir(plan),
+                                onRemove: () => planKaldirIste(plan),
                               })}
                             </Fragment>
                           ))}
@@ -763,7 +782,7 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
                                     )}
                                   </div>
                                   <button
-                                    onClick={() => planKaldir(plan)}
+                                    onClick={() => planKaldirIste(plan)}
                                     className="shrink-0 p-1 mt-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover/card:opacity-100 transition-all"
                                     title="Atamayı kaldır"
                                   >
@@ -783,6 +802,25 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        acik={!!kaldirilacakPlan}
+        baslik="Atama kaldırılsın mı?"
+        mesaj={
+          kaldirilacakPlan
+            ? `${kaldirilacakPlan.siparis_no} numaralı sevkiyat ataması kaldırılacak.${planKaldirHata ? ` Hata: ${planKaldirHata}` : ''}`
+            : ''
+        }
+        onayButon="Kaldır"
+        onayRenk="red"
+        yukleniyor={planKaldiriliyor}
+        onOnayla={planKaldirOnayla}
+        onKapat={() => {
+          if (planKaldiriliyor) return
+          setPlanKaldirHata(null)
+          setKaldirilacakPlan(null)
+        }}
+      />
 
       {/* Status bar */}
       <div className="px-5 py-2 border-t border-gray-100 shrink-0 flex items-center gap-3 text-xs text-gray-400">

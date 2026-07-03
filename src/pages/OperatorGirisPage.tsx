@@ -1,7 +1,6 @@
-// @ts-nocheck — dosya komple yeniden yazıldı, geçici
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
-  Sun, Moon, Eye, EyeOff, Factory, LogOut, Save, Plus, Trash2,
+  Sun, Moon, Eye, EyeOff, Factory, LogOut, Plus, Trash2,
   AlertCircle, CheckCircle2, Loader2, ChevronRight, UserCheck, Truck, Users,
   History, ArrowLeft, FileText, Pencil,
 } from 'lucide-react'
@@ -81,6 +80,19 @@ function txtMuted(dk: boolean) { return dk ? 'text-gray-600' : 'text-gray-400' }
 function inputCls(dk: boolean) {
   return `w-full px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-colors ${dk ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400'}`
 }
+/** Sayı input'larına odaklanınca mevcut değeri (ör. 0) seçili hale getirir,
+ *  böylece kullanıcı elle silmeden yeni değeri yazabilir. */
+function odaklaninceSec(e: React.FocusEvent<HTMLInputElement>) {
+  e.target.select()
+}
+
+/** Mobilde sadece rakam tuşlarının olduğu klavyeyi açmak için ortak prop'lar. */
+const sayiInputProps = {
+  inputMode: 'numeric' as const,
+  pattern: '[0-9]*',
+  onFocus: odaklaninceSec,
+}
+
 function inputSmCls(dk: boolean) {
   return `w-full px-3 py-2 rounded-lg border text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-colors ${dk ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'}`
 }
@@ -93,10 +105,6 @@ function btnSecCls(dk: boolean) {
 function errBoxCls(dk: boolean) {
   return `flex items-start gap-2 text-sm rounded-xl px-4 py-3 border ${dk ? 'text-red-400 bg-red-950/40 border-red-800/40' : 'text-red-600 bg-red-50 border-red-200'}`
 }
-function okBoxCls(dk: boolean) {
-  return `flex items-center gap-2 text-sm rounded-xl px-4 py-3 border ${dk ? 'text-green-400 bg-green-950/40 border-green-800/40' : 'text-green-600 bg-green-50 border-green-200'}`
-}
-
 // ─── Paylaşılan Header ────────────────────────────────────────────────────────
 function PageHeader({
   tema,
@@ -115,7 +123,7 @@ function PageHeader({
           <Factory size={15} className="text-amber-500" />
         </div>
         <span className={`font-black text-sm tracking-tight ${txtPrimary(dk)}`}>
-          Üretim <span className="text-amber-500">Takip</span> Çizelgesi
+          Üretim <span className="text-amber-500">Takip</span> <span className="hidden sm:inline">Çizelgesi</span>
         </span>
       </div>
       <div className="flex items-center gap-1.5">
@@ -453,7 +461,7 @@ function AracEkleForm({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <div>
             <label className={labelCls}>Plaka *</label>
             <input type="text" value={disPlaka} onChange={e => setDisPlaka(e.target.value.toUpperCase())} placeholder="34ABC123" className={inpCls} />
@@ -473,6 +481,7 @@ function AracEkleForm({
           value={adet}
           onChange={e => setAdet(Math.max(1, parseInt(e.target.value) || 1))}
           className={inpCls}
+          {...sayiInputProps}
         />
       </div>
 
@@ -614,10 +623,10 @@ function GunlukRaporFormu({
         rightContent={
           <div className="flex items-center gap-2">
             <button type="button" onClick={onSonKayitlar} className={btnSecCls(dk)}>
-              <History size={14} /> Son Kayıtlar
+              <History size={14} /> <span className="hidden sm:inline">Son Kayıtlar</span>
             </button>
             <button type="button" onClick={onCikis} className={btnSecCls(dk)}>
-              <LogOut size={14} /> Çıkış
+              <LogOut size={14} /> <span className="hidden sm:inline">Çıkış</span>
             </button>
           </div>
         }
@@ -629,7 +638,7 @@ function GunlukRaporFormu({
           {/* Tarih + Operatör */}
           <div className={sectionCls(dk)}>
             <h1 className={`text-base font-bold mb-4 ${txtPrimary(dk)}`}>Günlük Üretim Girişi</h1>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <p className={`text-xs font-medium mb-1 ${txtMuted(dk)}`}>Tarih</p>
                 <p className={`text-sm font-semibold ${txtPrimary(dk)}`}>{bugunGoster()}</p>
@@ -664,7 +673,7 @@ function GunlukRaporFormu({
             {istasyonlar.length === 0 ? (
               <p className={`text-sm text-center py-6 ${txtMuted(dk)}`}>Aktif istasyon bulunamadı.</p>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {istasyonlar.map(ist => (
                   <div key={ist.id} className={`rounded-xl p-3.5 border ${dk ? 'bg-gray-800/50 border-gray-700/60' : 'bg-gray-50 border-gray-200'}`}>
                     <p className="text-xs font-bold uppercase tracking-wide text-amber-500 mb-3">{ist.ad}</p>
@@ -677,6 +686,7 @@ function GunlukRaporFormu({
                           value={ist.adet}
                           onChange={e => istasyonGuncelle(ist.id, 'adet', e.target.value)}
                           className={inputSmCls(dk)}
+                          {...sayiInputProps}
                         />
                       </div>
                       {ist.fire_var && (
@@ -688,6 +698,7 @@ function GunlukRaporFormu({
                             value={ist.fire_adet}
                             onChange={e => istasyonGuncelle(ist.id, 'fire_adet', e.target.value)}
                             className={inputFireCls(dk)}
+                            {...sayiInputProps}
                           />
                         </div>
                       )}
@@ -767,6 +778,7 @@ function GunlukRaporFormu({
                   value={toplamPersonel}
                   onChange={e => setToplamPersonel(Math.max(0, parseInt(e.target.value) || 0))}
                   className={inputCls(dk)}
+                  {...sayiInputProps}
                 />
               </div>
               <div>
@@ -848,7 +860,7 @@ function OzetEkrani({
             notlar: veri.notlar.trim() || null,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'tarih' },
+          { onConflict: 'tarih,operator_id' },
         )
         .select()
         .single()
@@ -893,10 +905,10 @@ function OzetEkrani({
         rightContent={
           <div className="flex items-center gap-2">
             <button type="button" onClick={onSonKayitlar} className={btnSecCls(dk)}>
-              <History size={14} /> Son Kayıtlar
+              <History size={14} /> <span className="hidden sm:inline">Son Kayıtlar</span>
             </button>
             <button type="button" onClick={onCikis} className={btnSecCls(dk)}>
-              <LogOut size={14} /> Çıkış
+              <LogOut size={14} /> <span className="hidden sm:inline">Çıkış</span>
             </button>
           </div>
         }
@@ -920,7 +932,7 @@ function OzetEkrani({
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <p className={`text-xs font-medium mb-1 ${txtMuted(dk)}`}>Tarih</p>
                 <p className={`text-sm font-semibold ${txtPrimary(dk)}`}>{bugunGoster()}</p>
@@ -942,7 +954,7 @@ function OzetEkrani({
           )}
 
           {/* Özet Kartlar */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { label: 'Toplam Üretim', val: toplamUretim, cls: 'text-amber-500', bg: dk ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-100' },
               { label: 'Toplam Fire', val: toplamFire, cls: 'text-red-400', bg: dk ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-100' },
@@ -1053,6 +1065,85 @@ function OzetEkrani({
 }
 
 // ─── SON KAYITLAR EKRANI ──────────────────────────────────────────────────────
+type SonKayitPersonel = { ad_soyad: string; foto_url?: string | null }
+
+type SonKayitRaporu = {
+  id: string
+  tarih: string
+  created_at?: string
+  toplam_personel: number | null
+  hr_personel: SonKayitPersonel | SonKayitPersonel[] | null
+  gunluk_uretim_istasyon_kayitlari?: { adet: number | null; fire_adet: number | null }[] | null
+  gunluk_uretim_arac_yuklemeleri?: { id: string }[] | null
+}
+
+type SonGunKaydi = {
+  tarih: string
+  kayitlar: SonKayitRaporu[]
+}
+
+type SonKayitOperatorOzeti = { ad: string; foto_url: string | null; count: number }
+
+function sonKayitlariGunlereGrupla(kayitlar: SonKayitRaporu[]): SonGunKaydi[] {
+  const map = new Map<string, SonKayitRaporu[]>()
+  kayitlar.forEach(k => {
+    if (!map.has(k.tarih)) map.set(k.tarih, [])
+    map.get(k.tarih)!.push(k)
+  })
+  return Array.from(map.entries())
+    .map(([tarih, gunKayitlari]) => ({ tarih, kayitlar: gunKayitlari }))
+    .sort((a, b) => b.tarih.localeCompare(a.tarih))
+    .slice(0, 10)
+}
+
+function sonKayitPersoneli(kayit: SonKayitRaporu): SonKayitPersonel | null {
+  if (Array.isArray(kayit.hr_personel)) return kayit.hr_personel[0] ?? null
+  return kayit.hr_personel
+}
+
+function operatorleriOzetle(kayitlar: SonKayitRaporu[]) {
+  const map = new Map<string, SonKayitOperatorOzeti>()
+  kayitlar.forEach(k => {
+    const personel = sonKayitPersoneli(k)
+    const ad = personel?.ad_soyad ?? 'Bilinmiyor'
+    const mevcut = map.get(ad)
+    if (mevcut) {
+      mevcut.count += 1
+    } else {
+      map.set(ad, { ad, foto_url: personel?.foto_url ?? null, count: 1 })
+    }
+  })
+  return Array.from(map.values())
+}
+
+function OperatorAvatarStack({ operatorlar, dk }: { operatorlar: SonKayitOperatorOzeti[]; dk: boolean }) {
+  const gorunenler = operatorlar.slice(0, 4)
+  const kalan = operatorlar.length - gorunenler.length
+
+  return (
+    <div className="flex items-center -space-x-2 shrink-0" title={operatorlar.map(op => op.ad).join(', ')}>
+      {gorunenler.map(op => (
+        <div key={op.ad} className={`relative w-9 h-9 rounded-xl ring-2 overflow-hidden flex items-center justify-center text-sm font-bold ${dk ? 'ring-gray-900 bg-amber-500/10 text-amber-400' : 'ring-white bg-amber-50 text-amber-600'}`}>
+          <span>{op.ad.charAt(0).toUpperCase()}</span>
+          {op.foto_url && (
+            <img
+              src={op.foto_url}
+              alt={op.ad}
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            />
+          )}
+        </div>
+      ))}
+      {kalan > 0 && (
+        <div className={`w-9 h-9 rounded-xl ring-2 flex items-center justify-center text-[10px] font-bold ${dk ? 'ring-gray-900 bg-blue-500/10 text-blue-300' : 'ring-white bg-blue-50 text-blue-600'}`}>
+          +{kalan}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SonKayitlarEkrani({
   tema,
   onGeri,
@@ -1065,7 +1156,7 @@ function SonKayitlarEkrani({
   onTemaDegistir: () => void
 }) {
   const dk = tema === 'dark'
-  const [kayitlar, setKayitlar] = useState<any[]>([])
+  const [gunler, setGunler] = useState<SonGunKaydi[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [hata, setHata] = useState<string | null>(null)
 
@@ -1076,11 +1167,12 @@ function SonKayitlarEkrani({
       try {
         const { data, error } = await supabase
           .from('gunluk_uretim_raporlari')
-          .select('id, tarih, toplam_personel, hr_personel(ad_soyad, foto_url), gunluk_uretim_istasyon_kayitlari(adet, fire_adet), gunluk_uretim_arac_yuklemeleri(id)')
+          .select('id, tarih, created_at, toplam_personel, hr_personel(ad_soyad, foto_url), gunluk_uretim_istasyon_kayitlari(adet, fire_adet), gunluk_uretim_arac_yuklemeleri(id)')
           .order('tarih', { ascending: false })
-          .limit(10)
+          .order('created_at', { ascending: false })
+          .limit(100)
         if (error) throw error
-        setKayitlar(data ?? [])
+        setGunler(sonKayitlariGunlereGrupla((data ?? []) as unknown as SonKayitRaporu[]))
       } catch (err) {
         setHata(err instanceof Error ? err.message : 'Kayıtlar yüklenemedi.')
       } finally {
@@ -1127,33 +1219,53 @@ function SonKayitlarEkrani({
               <AlertCircle size={14} className="shrink-0 mt-0.5" />{hata}
             </div>
           )}
-          {!yukleniyor && kayitlar.length === 0 && (
+          {!yukleniyor && gunler.length === 0 && (
             <p className={`text-center py-12 text-sm ${txtMuted(dk)}`}>Henüz kaydedilmiş rapor bulunamadı.</p>
           )}
 
           <div className="space-y-3">
-            {kayitlar.map((k: any) => {
-              const istKayitlar = k.gunluk_uretim_istasyon_kayitlari ?? []
+            {gunler.map(g => {
+              const istKayitlar = g.kayitlar.flatMap(k => k.gunluk_uretim_istasyon_kayitlari ?? [])
               const toplamUretim = istKayitlar.reduce((a: number, s: any) => a + (s.adet || 0), 0)
               const toplamFire = istKayitlar.reduce((a: number, s: any) => a + (s.fire_adet || 0), 0)
-              const aracSayisi = (k.gunluk_uretim_arac_yuklemeleri ?? []).length
-              const opAd = k.hr_personel?.ad_soyad ?? 'Bilinmiyor'
-              const opFoto = k.hr_personel?.foto_url ?? null
+              const aracSayisi = g.kayitlar.reduce((a, k) => a + (k.gunluk_uretim_arac_yuklemeleri ?? []).length, 0)
+              const toplamPersonel = g.kayitlar.reduce((a, k) => Math.max(a, k.toplam_personel ?? 0), 0)
+              const operatorlar = operatorleriOzetle(g.kayitlar)
+              const operatorMetni = operatorlar.map(op => op.count > 1 ? `${op.ad} (${op.count})` : op.ad).join(', ')
+              const tekOperator = operatorlar.length === 1 ? operatorlar[0] : null
+              const tekOperatorMetni = tekOperator
+                ? (tekOperator.count > 1 ? `${tekOperator.ad} (${tekOperator.count})` : tekOperator.ad)
+                : ''
               return (
-                <div key={k.id} className={`rounded-2xl border p-4 ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className={`text-sm font-semibold ${txtPrimary(dk)}`}>{tarihGoster(k.tarih)}</p>
-                    <div className="flex items-center gap-2">
-                      <PersonelAvatar personel={{ ad_soyad: opAd, foto_url: opFoto }} boyut="sm" dk={dk} />
-                      <p className={`text-xs ${txtSub(dk)}`}>{opAd}</p>
+                <div key={g.tarih} className={`rounded-2xl border p-4 ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+                    <div>
+                      <p className={`text-sm font-semibold ${txtPrimary(dk)}`}>{tarihGoster(g.tarih)}</p>
+                      {g.kayitlar.length > 1 && (
+                        <p className={`text-[10px] mt-0.5 ${txtMuted(dk)}`}>{g.kayitlar.length} giriş birleştirildi</p>
+                      )}
                     </div>
+                    {tekOperator ? (
+                      <div className="flex items-center gap-2 min-w-0 sm:justify-end">
+                        <PersonelAvatar personel={{ ad_soyad: tekOperator.ad, foto_url: tekOperator.foto_url }} boyut="sm" dk={dk} />
+                        <p className={`text-xs truncate max-w-full sm:max-w-[180px] ${txtSub(dk)}`} title={tekOperatorMetni}>{tekOperatorMetni}</p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 min-w-0 sm:justify-end">
+                        <OperatorAvatarStack operatorlar={operatorlar} dk={dk} />
+                        <div className="min-w-0 max-w-full sm:max-w-[180px] sm:text-right">
+                          <p className={`text-xs ${txtSub(dk)}`}>{operatorlar.length} operatör</p>
+                          <p className={`text-[10px] truncate ${txtMuted(dk)}`} title={operatorMetni}>{operatorMetni}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {[
                       { val: toplamUretim, lbl: 'Üretim', cls: 'text-amber-500', bg: dk ? 'bg-amber-500/10' : 'bg-amber-50' },
                       { val: toplamFire, lbl: 'Fire', cls: 'text-red-400', bg: dk ? 'bg-red-500/10' : 'bg-red-50' },
                       { val: aracSayisi, lbl: 'Araç', cls: dk ? 'text-blue-400' : 'text-blue-600', bg: dk ? 'bg-blue-500/10' : 'bg-blue-50' },
-                      { val: k.toplam_personel ?? 0, lbl: 'Personel', cls: dk ? 'text-violet-400' : 'text-violet-600', bg: dk ? 'bg-violet-500/10' : 'bg-violet-50' },
+                      { val: toplamPersonel, lbl: 'Personel', cls: dk ? 'text-violet-400' : 'text-violet-600', bg: dk ? 'bg-violet-500/10' : 'bg-violet-50' },
                     ].map(({ val, lbl, cls, bg }) => (
                       <div key={lbl} className={`text-center p-2 rounded-xl ${bg}`}>
                         <p className={`text-base font-bold ${cls}`}>{val}</p>
@@ -1212,6 +1324,7 @@ export default function OperatorGirisPage() {
           .from('gunluk_uretim_raporlari')
           .select('*, gunluk_uretim_istasyon_kayitlari(*), gunluk_uretim_arac_yuklemeleri(*)')
           .eq('tarih', tarih)
+          .eq('operator_id', p.id)
           .maybeSingle(),
         supabase.from('uretim_istasyonlari').select('*').eq('aktif', true).order('sira_no'),
         supabase.from('araclar').select('id, plaka, ad').eq('aktif', true).order('plaka'),
@@ -1323,450 +1436,3 @@ export default function OperatorGirisPage() {
     />
   )
 }
-
-
-function saatAktiMi(aralik: string): boolean {
-  const simdi = simdiTrSaat()
-  const [baslangic, bitis] = aralik.split('-').map(s => s.trim())
-  if (!baslangic || !bitis) return false
-  return simdi >= baslangic && simdi < bitis
-}
-
-// ── Şifre Giriş Ekranı ────────────────────────────────────────────────────────
-
-interface SifreGirisProps {
-  onGiris: (personel: HrPersonel) => void
-}
-
-function SifreGirisEkrani({ onGiris }: SifreGirisProps) {
-  const [sifre, setSifre] = useState('')
-  const [sifreGoster, setSifreGoster] = useState(false)
-  const [yukleniyor, setYukleniyor] = useState(false)
-  const [hata, setHata] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
-  const girisYap = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    if (!sifre.trim()) return
-
-    setYukleniyor(true)
-    setHata(null)
-    try {
-      const { data, error } = await supabase
-        .from('hr_personel')
-        .select('*')
-        .eq('giris_sifresi', sifre.trim())
-        .eq('is_aktif', true)
-        .maybeSingle()
-
-      if (error) throw error
-      if (!data) {
-        setHata('Geçersiz şifre veya hesap pasif. Lütfen tekrar deneyin.')
-        setSifre('')
-        inputRef.current?.focus()
-        return
-      }
-      onGiris(data as HrPersonel)
-    } catch (err) {
-      setHata(err instanceof Error ? err.message : 'Giriş hatası oluştu')
-    } finally {
-      setYukleniyor(false)
-    }
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-4">
-      {/* Logo / Başlık */}
-      <div className="text-center mb-10">
-        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 mb-5">
-          <Factory size={36} className="text-amber-500" />
-        </div>
-        <h1 className="text-3xl font-black tracking-tight text-white">
-          ISICAM <span className="text-amber-500">PROV2</span>
-        </h1>
-        <p className="text-gray-500 mt-2 text-sm">Operatör Üretim Paneli</p>
-      </div>
-
-      {/* Giriş Kutusu */}
-      <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
-        <h2 className="text-white font-semibold text-lg mb-1">Giriş Yap</h2>
-        <p className="text-gray-500 text-sm mb-6">Şifrenizi girerek devam edin.</p>
-
-        <form onSubmit={girisYap} className="space-y-4">
-          <div className="relative">
-            <input
-              ref={inputRef}
-              type={sifreGoster ? 'text' : 'password'}
-              value={sifre}
-              onChange={e => setSifre(e.target.value)}
-              placeholder="Şifrenizi girin…"
-              autoComplete="current-password"
-              className="w-full px-4 py-3.5 pr-12 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 text-base focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-colors"
-            />
-            <button
-              type="button"
-              onClick={() => setSifreGoster(v => !v)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
-              tabIndex={-1}
-            >
-              {sifreGoster ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          </div>
-
-          {hata && (
-            <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/40 border border-red-800/40 rounded-xl px-4 py-3">
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
-              {hata}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={yukleniyor || !sifre.trim()}
-            className="w-full flex items-center justify-center gap-2 py-3.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl text-base transition-colors"
-          >
-            {yukleniyor ? <Loader2 size={18} className="animate-spin" /> : null}
-            {yukleniyor ? 'Kontrol ediliyor…' : 'Giriş Yap'}
-          </button>
-        </form>
-      </div>
-
-      <p className="text-gray-700 text-xs mt-6">
-        Şifrenizi bilmiyorsanız yöneticinize başvurun.
-      </p>
-    </div>
-  )
-}
-
-// ── Üretim Veri Girişi ────────────────────────────────────────────────────────
-
-interface UretimGirisProps {
-  personel: HrPersonel
-  onCikis: () => void
-}
-
-interface SatirDurum {
-  id?: string
-  saat_araligi: string
-  hedef_adet: number
-  gerceklesen_adet: number
-  fire_adet: number
-  sira_no: number
-  degisti: boolean
-  kaydedildi: boolean
-}
-
-function UretimGirisEkrani({ personel, onCikis }: UretimGirisProps) {
-  const navigate = useNavigate()
-  const tarih = bugunTarih()
-  const [satirlar, setSatirlar] = useState<SatirDurum[]>([])
-  const [yukleniyor, setYukleniyor] = useState(true)
-  const [kaydediyor, setKaydediyor] = useState(false)
-  const [genelHata, setGenelHata] = useState<string | null>(null)
-  const [basariMesaj, setBasariMesaj] = useState<string | null>(null)
-
-  const verileriYukle = useCallback(async () => {
-    setYukleniyor(true)
-    setGenelHata(null)
-    try {
-      const { data, error } = await supabase
-        .from('gunluk_uretim_takip')
-        .select('*')
-        .eq('tarih', tarih)
-        .order('sira_no', { ascending: true })
-
-      if (error) throw error
-      if (!data || data.length === 0) {
-        setGenelHata('Bugün için henüz üretim takip satırı oluşturulmamış. Yöneticiniz Hedef & Vardiya bölümünden bugüne vardiya uygulamalıdır.')
-        setSatirlar([])
-        return
-      }
-
-      setSatirlar(
-        (data as GunlukUretimSatiri[]).map(s => ({
-          id: s.id,
-          saat_araligi: s.saat_araligi,
-          hedef_adet: s.hedef_adet,
-          gerceklesen_adet: s.gerceklesen_adet,
-          fire_adet: s.fire_adet,
-          sira_no: s.sira_no,
-          degisti: false,
-          kaydedildi: false,
-        })),
-      )
-    } catch (err) {
-      setGenelHata(err instanceof Error ? err.message : 'Veriler yüklenemedi')
-    } finally {
-      setYukleniyor(false)
-    }
-  }, [tarih])
-
-  useEffect(() => {
-    verileriYukle()
-  }, [verileriYukle])
-
-  const satirGuncelle = (idx: number, alan: 'gerceklesen_adet' | 'fire_adet', deger: string) => {
-    const sayi = parseInt(deger, 10)
-    const temiz = isNaN(sayi) || sayi < 0 ? 0 : sayi
-    setSatirlar(prev => prev.map((s, i) =>
-      i === idx ? { ...s, [alan]: temiz, degisti: true, kaydedildi: false } : s,
-    ))
-  }
-
-  const kaydet = async () => {
-    setKaydediyor(true)
-    setGenelHata(null)
-    setBasariMesaj(null)
-    try {
-      const degismisSatirlar = satirlar.filter(s => s.degisti && s.id)
-      if (degismisSatirlar.length === 0) {
-        setBasariMesaj('Değişiklik yok.')
-        setKaydediyor(false)
-        return
-      }
-
-      for (const satir of degismisSatirlar) {
-        const { error } = await supabase
-          .from('gunluk_uretim_takip')
-          .update({
-            gerceklesen_adet: satir.gerceklesen_adet,
-            fire_adet: satir.fire_adet,
-          })
-          .eq('id', satir.id!)
-        if (error) throw error
-      }
-
-      setSatirlar(prev => prev.map(s => ({ ...s, degisti: false, kaydedildi: s.degisti ? true : s.kaydedildi })))
-      setBasariMesaj(`${degismisSatirlar.length} satır başarıyla kaydedildi.`)
-
-      // 3 saniye sonra mesajı kaldır
-      setTimeout(() => setBasariMesaj(null), 3000)
-    } catch (err) {
-      setGenelHata(err instanceof Error ? err.message : 'Kayıt hatası oluştu')
-    } finally {
-      setKaydediyor(false)
-    }
-  }
-
-  const degisiklikVar = satirlar.some(s => s.degisti)
-  const toplamHedef = satirlar.reduce((a, s) => a + s.hedef_adet, 0)
-  const toplamGercek = satirlar.reduce((a, s) => a + s.gerceklesen_adet, 0)
-  const toplamFire = satirlar.reduce((a, s) => a + s.fire_adet, 0)
-  const performans = toplamHedef > 0 ? ((toplamGercek / toplamHedef) * 100).toFixed(1) : '—'
-
-  return (
-    <div className="min-h-screen bg-gray-950 flex flex-col">
-      {/* ── Üst Bar ── */}
-      <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-800 shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-            title="Geri dön"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-            <Factory size={18} className="text-amber-500" />
-          </div>
-          <div>
-            <p className="text-white font-semibold text-sm leading-tight">{personel.ad_soyad}</p>
-            <p className="text-gray-500 text-xs">{personel.rol} · {tarih}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Kaydet */}
-          <button
-            type="button"
-            onClick={kaydet}
-            disabled={kaydediyor || !degisiklikVar}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-gray-950 font-semibold text-sm rounded-xl transition-colors"
-          >
-            {kaydediyor
-              ? <Loader2 size={14} className="animate-spin" />
-              : <Save size={14} />}
-            {kaydediyor ? 'Kaydediliyor…' : 'Kaydet'}
-          </button>
-
-          {/* Çıkış */}
-          <button
-            type="button"
-            onClick={onCikis}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium text-sm rounded-xl transition-colors"
-          >
-            <LogOut size={14} />
-            Çıkış
-          </button>
-        </div>
-      </div>
-
-      {/* ── Özet Kartlar ── */}
-      <div className="grid grid-cols-3 gap-3 px-6 py-4 shrink-0">
-        {[
-          { label: 'Toplam Hedef', deger: toplamHedef, icon: Target, renk: 'text-blue-400', bg: 'bg-blue-500/10' },
-          { label: 'Gerçekleşen', deger: toplamGercek, icon: CheckCircle2, renk: 'text-green-400', bg: 'bg-green-500/10' },
-          { label: 'Fire', deger: toplamFire, icon: AlertCircle, renk: 'text-red-400', bg: 'bg-red-500/10' },
-        ].map(({ label, deger, icon: Icon, renk, bg }) => (
-          <div key={label} className={`${bg} border border-white/5 rounded-xl p-4 flex items-center gap-3`}>
-            <Icon size={20} className={renk} />
-            <div>
-              <p className="text-gray-500 text-xs">{label}</p>
-              <p className={`text-xl font-bold ${renk}`}>{deger}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Performans çubuğu ── */}
-      {toplamHedef > 0 && (
-        <div className="px-6 pb-4 shrink-0">
-          <div className="flex items-center justify-between mb-1.5 text-xs text-gray-500">
-            <span>Genel Performans</span>
-            <span className={`font-semibold ${parseFloat(performans) >= 95 ? 'text-green-400' : parseFloat(performans) >= 80 ? 'text-amber-400' : 'text-red-400'}`}>
-              %{performans}
-            </span>
-          </div>
-          <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${parseFloat(performans) >= 95 ? 'bg-green-500' : parseFloat(performans) >= 80 ? 'bg-amber-500' : 'bg-red-500'}`}
-              style={{ width: `${Math.min(parseFloat(performans) || 0, 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ── Bildirimler ── */}
-      {basariMesaj && (
-        <div className="mx-6 mb-3 flex items-center gap-2 text-sm text-green-400 bg-green-950/40 border border-green-800/40 rounded-xl px-4 py-3">
-          <CheckCircle2 size={15} className="shrink-0" />
-          {basariMesaj}
-        </div>
-      )}
-      {genelHata && (
-        <div className="mx-6 mb-3 flex items-start gap-2 text-sm text-red-400 bg-red-950/40 border border-red-800/40 rounded-xl px-4 py-3">
-          <AlertCircle size={15} className="shrink-0 mt-0.5" />
-          {genelHata}
-        </div>
-      )}
-
-      {/* ── Saat Dilimi Tablosu ── */}
-      <div className="flex-1 overflow-auto px-6 pb-6">
-        {yukleniyor ? (
-          <div className="flex items-center justify-center py-20 text-gray-500 gap-2">
-            <Loader2 size={18} className="animate-spin" />
-            <span>Yükleniyor…</span>
-          </div>
-        ) : satirlar.length === 0 && !genelHata ? (
-          <div className="text-center py-20 text-gray-600 text-sm">
-            Bugün için kayıt bulunamadı.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* Tablo başlığı */}
-            <div className="hidden sm:grid grid-cols-[1fr_100px_140px_140px_80px] gap-3 px-4 py-2 text-xs text-gray-600 font-medium uppercase tracking-wide">
-              <span>Saat Aralığı</span>
-              <span className="text-right">Hedef</span>
-              <span className="text-center">Gerçekleşen</span>
-              <span className="text-center">Fire</span>
-              <span className="text-center">Durum</span>
-            </div>
-
-            {satirlar.map((satir, idx) => {
-              const aktif = saatAktiMi(satir.saat_araligi)
-              const performansSatir = satir.hedef_adet > 0
-                ? Math.round((satir.gerceklesen_adet / satir.hedef_adet) * 100)
-                : null
-
-              return (
-                <div
-                  key={satir.saat_araligi}
-                  className={`grid grid-cols-1 sm:grid-cols-[1fr_100px_140px_140px_80px] gap-3 items-center px-4 py-3.5 rounded-xl border transition-all ${
-                    aktif
-                      ? 'bg-amber-500/10 border-amber-500/30 ring-1 ring-amber-500/20'
-                      : satir.kaydedildi
-                      ? 'bg-gray-900/60 border-green-800/20'
-                      : 'bg-gray-900/40 border-gray-800/60'
-                  }`}
-                >
-                  {/* Saat aralığı */}
-                  <div className="flex items-center gap-2">
-                    {aktif && (
-                      <span className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                    )}
-                    <div>
-                      <p className={`font-semibold text-sm ${aktif ? 'text-amber-300' : 'text-gray-200'}`}>
-                        {satir.saat_araligi}
-                      </p>
-                      {aktif && (
-                        <p className="text-xs text-amber-500/70 flex items-center gap-1">
-                          <Clock size={10} />
-                          Aktif dilim
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Hedef */}
-                  <div className="flex sm:justify-end items-center gap-1">
-                    <span className="text-xs text-gray-600 sm:hidden">Hedef:</span>
-                    <span className="text-gray-400 text-sm font-mono">{satir.hedef_adet}</span>
-                  </div>
-
-                  {/* Gerçekleşen input */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-600 sm:hidden w-24 shrink-0">Gerçekleşen:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={satir.gerceklesen_adet}
-                      onChange={e => satirGuncelle(idx, 'gerceklesen_adet', e.target.value)}
-                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  {/* Fire input */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-600 sm:hidden w-24 shrink-0">Fire:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={satir.fire_adet}
-                      onChange={e => satirGuncelle(idx, 'fire_adet', e.target.value)}
-                      className="w-full px-3 py-2 bg-gray-800 border border-red-900/40 rounded-lg text-red-300 text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  {/* Durum */}
-                  <div className="flex sm:justify-center items-center gap-2">
-                    {satir.degisti ? (
-                      <span className="px-2 py-1 rounded-lg bg-amber-500/15 text-amber-400 text-xs font-medium">
-                        Değişti
-                      </span>
-                    ) : satir.kaydedildi ? (
-                      <CheckCircle2 size={16} className="text-green-500" />
-                    ) : performansSatir !== null ? (
-                      <span className={`text-xs font-mono font-semibold ${performansSatir >= 95 ? 'text-green-400' : performansSatir >= 80 ? 'text-amber-400' : 'text-red-400'}`}>
-                        %{performansSatir}
-                      </span>
-                    ) : (
-                      <span className="text-gray-700 text-xs">—</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Ana Sayfa ──────────────────────────────────────────────────────────────────
-

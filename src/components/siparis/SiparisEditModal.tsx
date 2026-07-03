@@ -4,8 +4,8 @@ import type { Siparis, SiparisDetay } from '@/types/siparis'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { supabase } from '@/lib/supabase'
-import { generateCamKodulari } from '@/lib/idGenerator'
 import { isValidKatmanYapisi, normalizeKatmanYapisi, getCamKompozisyon } from '@/lib/cam'
+import { fizikselCamAdedi, tekilSiparisDetayRows } from '@/lib/siparisDetay'
 import { useKatmanYapilari } from '@/hooks/useKatmanYapilari'
 import { useEscape } from '@/hooks/useEscape'
 import KatmanCombobox from '@/components/ui/KatmanCombobox'
@@ -26,6 +26,8 @@ interface CamSatiri {
   kenar_islemi: string
   notlar: string
   poz: string
+  menfez_cap_mm?: number | null
+  kucuk_cam?: boolean
 }
 
 interface Hatalar {
@@ -64,6 +66,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
   const [adim, setAdim] = useState<1 | 2 | 3>(1)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [hatalar, setHatalar] = useState<Hatalar>({})
+  const [kayitHata, setKayitHata] = useState<string | null>(null)
 
   // Step 1 state
   const [cariId, setCariId] = useState(siparis.cari_id ?? '')
@@ -94,6 +97,8 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       kenar_islemi: d.kenar_islemi ?? '',
       notlar: d.notlar ?? '',
       poz: d.poz ?? '',
+      menfez_cap_mm: d.menfez_cap_mm ?? null,
+      kucuk_cam: d.kucuk_cam ?? false,
     }))
   )
   const [silinenIds, setSilinenIds] = useState<string[]>([])
@@ -241,6 +246,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       return
     }
     setKaydediliyor(true)
+    setKayitHata(null)
     try {
       // 1. Sipariş bilgilerini güncelle
       const { error: sipErr } = await supabase
@@ -276,7 +282,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
             stok_id: c.stok_id || null,
             genislik_mm: Number(c.genislik_mm) || 0,
             yukseklik_mm: Number(c.yukseklik_mm) || 0,
-            adet: Number(c.adet) || 1,
+            adet: 1,
             katman_yapisi: normalizeKatmanYapisi(c.katman_yapisi) || null,
             kenar_islemi: c.kenar_islemi || null,
             notlar: c.notlar || null,
@@ -290,20 +296,12 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
 
         // 4. Yeni satırları ekle (tek istek)
         const yeniler = camlar.filter(c => !c.id)
-        if (yeniler.length > 0) {
-          const kodlar = await generateCamKodulari(yeniler.length)
-          const rows = yeniler.map((c, i) => ({
-            siparis_id: siparis.id,
-            cam_kodu: kodlar[i],
-            stok_id: c.stok_id || null,
-            genislik_mm: Number(c.genislik_mm) || 0,
-            yukseklik_mm: Number(c.yukseklik_mm) || 0,
-            adet: Number(c.adet) || 1,
-            katman_yapisi: normalizeKatmanYapisi(c.katman_yapisi) || null,
-            kenar_islemi: c.kenar_islemi || null,
-            notlar: c.notlar || null,
-            poz: c.poz || null,
-          }))
+        const mevcutEkleri = mevcutlar
+          .map(c => ({ ...c, adet: String(Math.max(fizikselCamAdedi(c.adet) - 1, 0)) }))
+          .filter(c => fizikselCamAdedi(c.adet) > 0)
+        const eklenecekCamlar = [...mevcutEkleri, ...yeniler]
+        if (eklenecekCamlar.length > 0) {
+          const rows = await tekilSiparisDetayRows(siparis.id, eklenecekCamlar)
           const { error } = await supabase.from('siparis_detaylari').insert(rows)
           if (error) throw new Error(error.message)
         }
@@ -311,12 +309,20 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
 
       // 5. Sevkiyat planını güncelle
       if (mevcutSevkiyatId && teslimatTipi === 'teslim_alacak') {
-        await supabase.from('sevkiyat_planlari').delete().eq('id', mevcutSevkiyatId)
+        const { error } = await supabase.from('sevkiyat_planlari').delete().eq('id', mevcutSevkiyatId)
+        if (error) throw new Error(error.message)
+      } else if (mevcutSevkiyatId && teslimatTipi === 'sevkiyat' && teslimTarihi) {
+        const { error } = await supabase
+          .from('sevkiyat_planlari')
+          .update({ tarih: teslimTarihi })
+          .eq('id', mevcutSevkiyatId)
+        if (error) throw new Error(error.message)
       }
 
       onKaydet()
     } catch (e) {
       console.error(e)
+      setKayitHata(e instanceof Error ? e.message : 'Kayit sirasinda hata olustu.')
     } finally {
       setKaydediliyor(false)
     }
@@ -759,6 +765,11 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
         </div>
 
         {/* Alt Butonlar */}
+        {kayitHata && (
+          <div className="px-6 py-3 border-t border-red-100 bg-red-50 text-sm text-red-700">
+            {kayitHata}
+          </div>
+        )}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 shrink-0">
           <button
             onClick={adim === 1 ? onKapat : () => setAdim((adim - 1) as 1 | 2 | 3)}

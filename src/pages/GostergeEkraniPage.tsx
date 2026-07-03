@@ -2,24 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { beepAlert } from '@/lib/audio'
-import { ArrowLeft, Wifi, WifiOff, Settings, Volume2, VolumeX, AlertTriangle, Keyboard, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Wifi, WifiOff, Volume2, VolumeX, AlertTriangle, Keyboard, ArrowRight } from 'lucide-react'
 
 /* ========== Tipler ========== */
-
-interface MusteriBilgi {
-  ad: string
-  toplam: number
-  tamamlanan: number
-}
-
-interface AktifBatch {
-  id: string
-  batch_no: string
-  durum: string
-  toplam: number
-  tamamlanan: number
-  musteriler: MusteriBilgi[]
-}
 
 /* ========== Bileşen ========== */
 
@@ -35,69 +20,12 @@ export default function GostergeEkraniPage() {
   const [onayBekliyor, setOnayBekliyor] = useState(false)
   const [flash, setFlash] = useState(false)
 
-  // Batch bilgisi
-  const [_aktifBatch, setAktifBatch] = useState<AktifBatch | null>(null)
-
   const sesRef = useRef(sesAcik)
   useEffect(() => { sesRef.current = sesAcik }, [sesAcik])
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const mevcutDegerRef = useRef<number | null>(null)
   useEffect(() => { mevcutDegerRef.current = mevcutDeger }, [mevcutDeger])
-
-  // Aktif batch verisini getir
-  const fetchAktifBatch = useCallback(async () => {
-    const { data: emirler } = await supabase
-      .from('uretim_emirleri')
-      .select('id, batch_no, durum')
-      .in('durum', ['export_edildi', 'yikamada', 'eksik_var'])
-      .order('olusturulma_tarihi', { ascending: false })
-      .limit(1)
-
-    if (!emirler || emirler.length === 0) {
-      setAktifBatch(null)
-      return
-    }
-
-    const emri = emirler[0]
-    const { data: detaylar } = await supabase
-      .from('uretim_emri_detaylari')
-      .select(`
-        siparis_detay_id,
-        siparis_detaylari ( uretim_durumu, siparisler ( cari ( ad ) ) )
-      `)
-      .eq('uretim_emri_id', emri.id)
-
-    const musteriMap: Record<string, { toplam: number; tamamlanan: number }> = {}
-    for (const d of (detaylar ?? [])) {
-      const ad = (d as any).siparis_detaylari?.siparisler?.cari?.ad ?? 'Bilinmiyor'
-      const dur = (d as any).siparis_detaylari?.uretim_durumu ?? ''
-      if (!musteriMap[ad]) musteriMap[ad] = { toplam: 0, tamamlanan: 0 }
-      musteriMap[ad].toplam++
-      if (dur === 'yikandi' || dur === 'tamamlandi') musteriMap[ad].tamamlanan++
-    }
-
-    const musteriler: MusteriBilgi[] = Object.entries(musteriMap)
-      .map(([ad, v]) => ({ ad, ...v }))
-      .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'))
-
-    const toplamCam = musteriler.reduce((s, m) => s + m.toplam, 0)
-    const tamamlananCam = musteriler.reduce((s, m) => s + m.tamamlanan, 0)
-
-    setAktifBatch({
-      id: emri.id,
-      batch_no: emri.batch_no,
-      durum: emri.durum,
-      toplam: toplamCam,
-      tamamlanan: tamamlananCam,
-      musteriler,
-    })
-  }, [])
-
-  const fetchRef = useRef(fetchAktifBatch)
-  useEffect(() => { fetchRef.current = fetchAktifBatch }, [fetchAktifBatch])
-
-  useEffect(() => { fetchAktifBatch() }, [fetchAktifBatch])
 
   // Saat
   useEffect(() => {
@@ -131,23 +59,18 @@ export default function GostergeEkraniPage() {
   useEffect(() => {
     const channel = supabase
       .channel('uretim-istasyonlar')
-      .on('broadcast', { event: 'batch_secildi' }, () => {
-        fetchRef.current()
-      })
       .on('broadcast', { event: 'yeni_cam' }, async ({ payload }) => {
         const p = payload as any
 
-        // Batch tamamlanma sayısını güncelle
-        fetchRef.current()
-
         // Çıta kalınlığını doğrudan DB'den çek (broadcast payload'a bağımsız)
         let gelenMm: number | null = null
-        if (p.cam_kodu) {
-          const { data } = await supabase
+        if (p.siparis_detay_id || p.teknik_cam_kodu || p.cam_kodu) {
+          let sorgu = supabase
             .from('siparis_detaylari')
             .select('katman_yapisi, cita_stok:stok!cita_stok_id(kalinlik_mm)')
-            .eq('cam_kodu', p.cam_kodu)
-            .maybeSingle()
+          if (p.siparis_detay_id) sorgu = sorgu.eq('id', p.siparis_detay_id)
+          else sorgu = sorgu.eq('cam_kodu', p.teknik_cam_kodu ?? p.cam_kodu)
+          const { data } = await sorgu.maybeSingle()
           if (data) {
             // 1) cita_stok.kalinlik_mm
             gelenMm = (data as any).cita_stok?.kalinlik_mm ?? null
@@ -208,9 +131,6 @@ export default function GostergeEkraniPage() {
               <span>{connected ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'}</span>
             </div>
           </div>
-          <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-800 text-gray-400 hover:text-white transition-colors">
-            <Settings size={18} />
-          </button>
           <button
             onClick={handleSesToggle}
             className="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-800 text-gray-400 hover:text-white transition-colors"
@@ -241,7 +161,7 @@ export default function GostergeEkraniPage() {
             </div>
             <p className="text-2xl font-semibold text-gray-600">Değer bekleniyor...</p>
             <p className="text-sm text-gray-700 mt-2">
-              Poz Giriş'ten cam kodu girildiğinde çıta kalınlığı burada görünecek
+              Poz Giriş'ten sıra no girildiğinde çıta kalınlığı burada görünecek
             </p>
           </div>
         ) : onayBekliyor && yeniDeger != null ? (

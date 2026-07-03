@@ -8,9 +8,12 @@ import {
 import { exportDetaylariCSV, exportCitaBukumCSV, exportTarihiGuncelle } from '@/services/exportService'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { fizikselGlsKodu } from '@/lib/siparisDetay'
 import { useEscape } from '@/hooks/useEscape'
 import { useStok } from '@/hooks/useStok'
+import { useCari } from '@/hooks/useCari'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
+import StatusBadge from '@/components/ui/StatusBadge'
 
 interface Props {
   emir: UretimEmri
@@ -19,25 +22,7 @@ interface Props {
   onGuncellendi: () => void
 }
 
-const DURUM_STIL: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'bg-gray-100 text-gray-600',
-  export_edildi: 'bg-orange-50 text-orange-700',
-  yikamada: 'bg-cyan-50 text-cyan-700',
-  tamamlandi: 'bg-green-50 text-green-700',
-  eksik_var: 'bg-red-50 text-red-700',
-  iptal: 'bg-gray-100 text-gray-400',
-}
-
-const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'Hazırlanıyor',
-  export_edildi: 'Export Edildi',
-  yikamada: 'Yıkamada',
-  tamamlandi: 'Tamamlandı',
-  eksik_var: 'Eksik Var',
-  iptal: 'İptal',
-}
-
-export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGuncellendi }: Props) {
+export default function UretimDetayModal({ emir, onKapat, onGuncellendi }: Props) {
   useEscape(onKapat)
   const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
@@ -46,6 +31,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [secilenSiparis, setSecilenSiparis] = useState<Siparis | null>(null)
   const { stoklar } = useStok()
+  const { cariler } = useCari()
 
   const handleSiparisAc = async (e: React.MouseEvent, siparisId: string) => {
     e.stopPropagation()
@@ -147,9 +133,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
           </div>
           <div className="flex items-center gap-3">
             {/* Durum badge */}
-            <span className={cn('rounded-lg px-3 py-1.5 text-sm font-medium', DURUM_STIL[emir.durum])}>
-              {DURUM_ETIKET[emir.durum]}
-            </span>
+            <StatusBadge durum={emir.durum} tip="uretim" boyut="sm" className="rounded-lg" />
 
             {/* Export Butonu */}
             <button
@@ -203,7 +187,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
                 {/* Tablo başlığı */}
                 <div className="flex bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
                   <div className="w-8 px-3 py-2 shrink-0">#</div>
-                  <div className="w-32 px-3 py-2 shrink-0">Cam Kodu</div>
+                  <div className="w-32 px-3 py-2 shrink-0">Sıra No</div>
                   <div className="flex-1 px-3 py-2">Cam Cinsi</div>
                   <div className="w-28 px-3 py-2 shrink-0">Boyut (mm)</div>
                   <div className="w-14 px-3 py-2 shrink-0">Adet</div>
@@ -260,7 +244,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
                                 <div className="w-8 px-3 py-2 text-gray-400 text-xs shrink-0">{satirNo}</div>
                                 <div className="w-32 px-3 py-2 shrink-0">
                                   <span className={cn('font-mono font-semibold px-2 py-0.5 rounded text-xs', renk.badge)}>
-                                    {cam?.cam_kodu}
+                                    {fizikselGlsKodu(d.sira_no, cam?.cam_kodu)}
                                   </span>
                                 </div>
                                 <div className="flex-1 px-3 py-2 text-xs text-gray-600">{cam?.stok?.ad ?? '—'}</div>
@@ -327,6 +311,7 @@ export default function UretimDetayModal({ emir, onDurumDegisti, onKapat, onGunc
           <SiparisDetayModal
             siparis={secilenSiparis}
             stoklar={stoklar}
+            cariler={cariler}
             onKapat={() => setSecilenSiparis(null)}
           />
         )}

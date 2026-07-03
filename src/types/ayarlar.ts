@@ -1,7 +1,7 @@
 /** Etiket üzerinde basılacak içerik alanları */
 export interface EtiketIcerik {
   barkod: boolean         // Cam kodu barkodu (Code 128)
-  cam_kodu: boolean       // Cam kodu metni (GLS-XXXX)
+  cam_kodu: boolean       // Kisa GLS / batch ici sira no
   cam_tipi: boolean       // Cam tipi (örn. "4+16+4 Temp Isıcam")
   musteri_adi: boolean    // Müşteri / nihai müşteri adı
   boyut: boolean          // Genişlik x Yükseklik (mm)
@@ -59,10 +59,10 @@ export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
   icerik: {
     barkod: true,
     cam_kodu: true,
-    cam_tipi: true,
-    musteri_adi: true,
-    boyut: true,
-    sira_no: true,
+    cam_tipi: false,
+    musteri_adi: false,
+    boyut: false,
+    sira_no: false,
     siparis_no: false,
     tarih: false,
   },
@@ -129,7 +129,7 @@ export function dplUret(ayarlar: EtiketAyarlari, veri: EtiketVeri): string {
     satir += 105
   }
 
-  // Cam Kodu — font=1, hmult=2, wmult=2
+  // Kisa GLS — font=1, hmult=2, wmult=2
   if (ic.cam_kodu) {
     satirlar.push(`1A122${r(satir)}${r(col)}${ascii(veri.cam_kodu)}\r\n`)
     satir += 40

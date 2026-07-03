@@ -33,4 +33,10 @@ export async function sevkiyatKaydet(siparis_id: string, arac_id: string, tarih:
     .from('sevkiyat_planlari')
     .upsert({ siparis_id, arac_id, tarih, notlar: notlar || null }, { onConflict: 'siparis_id,tarih' })
   if (error) throw new Error(error.message)
+
+  const { error: siparisError } = await supabase
+    .from('siparisler')
+    .update({ teslimat_tipi: 'sevkiyat', teslim_tarihi: tarih })
+    .eq('id', siparis_id)
+  if (siparisError) throw new Error(siparisError.message)
 }

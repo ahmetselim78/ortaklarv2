@@ -41,7 +41,6 @@ export default function App() {
           <Route path="/saatlik-takip" element={<SaatlikTakipPage />} />
           <Route path="/ayarlar" element={<AyarlarPage />} />
           <Route path="/admin" element={<AdminPage />} />
-          <Route path="/operator-giris" element={<OperatorGirisPage />} />
         </Route>
 
         {/* 404 */}

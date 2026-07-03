@@ -1,7 +1,10 @@
-import { Eye, Trash2, Download, Ban } from 'lucide-react'
+import { Eye, Trash2, Download, Ban, Inbox } from 'lucide-react'
 import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
+import { TableSkeleton } from '@/components/ui/Skeleton'
+import EmptyState from '@/components/ui/EmptyState'
+import StatusBadge from '@/components/ui/StatusBadge'
 
 interface Props {
   emirler: UretimEmri[]
@@ -11,16 +14,6 @@ interface Props {
   onSil: (emir: UretimEmri) => void
   onIptal: (emir: UretimEmri) => void
   onSiparisAc: (siparisId: string) => void
-}
-
-// Takvim (Dashboard DURUM_EVENT) ile aynı renk sistemi
-const DURUM_STIL: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'bg-gray-100 text-gray-800 border border-gray-300',
-  export_edildi: 'bg-orange-100 text-orange-900 border border-orange-400',
-  yikamada:     'bg-cyan-100 text-cyan-900 border border-cyan-400',
-  tamamlandi:   'bg-green-100 text-green-900 border border-green-400',
-  eksik_var:    'bg-red-100 text-red-900 border border-red-400',
-  iptal:        'bg-red-50 text-red-500 border border-red-300 line-through',
 }
 
 // Satır sol kenar rengi
@@ -43,25 +36,14 @@ const DURUM_SATIR_BG: Record<UretimEmriDurum, string> = {
   iptal:        'bg-gray-50/60 opacity-70',
 }
 
-const DURUM_ETIKET: Record<UretimEmriDurum, string> = {
-  hazirlaniyor: 'Hazırlanıyor',
-  export_edildi: 'Export Edildi',
-  yikamada: 'Yıkamada',
-  tamamlandi: 'Tamamlandı',
-  eksik_var: 'Eksik Var',
-  iptal: 'İptal',
-}
-
 export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoruntule, onSil, onIptal, onSiparisAc }: Props) {
 
   if (yukleniyor) {
-    return <div className="flex items-center justify-center py-20 text-gray-400">Yükleniyor...</div>
+    return <TableSkeleton satir={6} kolon={7} />
   }
 
   if (emirler.length === 0) return (
-    <div className="flex items-center justify-center py-20 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
-      Bu filtrede kayıt yok
-    </div>
+    <EmptyState icon={Inbox} baslik="Bu filtrede kayit yok" boyut="md" className="border-2 border-dashed border-gray-200 rounded-xl" />
   )
 
   return (
@@ -92,9 +74,7 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
               <td className="px-4 py-3 font-mono font-semibold text-gray-800">{emir.batch_no}</td>
               <td className="px-4 py-3 text-gray-600">{formatDate(emir.olusturulma_tarihi)}</td>
               <td className="px-4 py-3">
-                <span className={cn('inline-block px-2 py-0.5 rounded-full text-xs font-medium', DURUM_STIL[emir.durum])}>
-                  {DURUM_ETIKET[emir.durum]}
-                </span>
+                <StatusBadge durum={emir.durum} tip="uretim" />
               </td>
               <td className="px-4 py-3 text-gray-600">
                 {emir.export_tarihi ? (

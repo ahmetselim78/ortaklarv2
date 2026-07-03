@@ -386,8 +386,6 @@ function UretimSatiri({ satir, bugunMu, T, onNotClick, onTooltip }: SatirProps) 
 
   const aktif    = bugunMu && satir.zamanDurumu === 'aktif'
   const gecmis   = satir.zamanDurumu === 'gecmis'
-  const gelecek  = satir.zamanDurumu === 'gelecek'
-
   const satirBg = aktif
     ? T.satirAktif
     : gecmis

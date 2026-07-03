@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { X, Pencil, Wrench, Plus, Trash2, Replace } from 'lucide-react'
-import type { Siparis, SiparisDetay, SiparisDurum, UretimDurumu } from '@/types/siparis'
+import type { Siparis, SiparisDetay, UretimDurumu } from '@/types/siparis'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { getSiparisDetaylari } from '@/hooks/useSiparis'
 import { supabase } from '@/lib/supabase'
-import { generateCamKodulari } from '@/lib/idGenerator'
+import { fizikselGlsKodu, tekilSiparisDetayRows } from '@/lib/siparisDetay'
 import { cn, formatDate, camTipiAd } from '@/lib/utils'
 import { getCamKompozisyon, getKompozisyonKey, isValidKatmanYapisi, normalizeKatmanYapisi } from '@/lib/cam'
 import { useKatmanYapilari } from '@/hooks/useKatmanYapilari'
 import { useEscape } from '@/hooks/useEscape'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
 import SiparisEditModal from './SiparisEditModal'
+import StatusBadge from '@/components/ui/StatusBadge'
 
 interface Props {
   siparis: Siparis
@@ -20,24 +21,6 @@ interface Props {
   onKapat: () => void
   onStokYenile?: () => Promise<void> | void
   onGuncelle?: (id: string, form: { tarih?: string; teslim_tarihi?: string | null; alt_musteri?: string | null; notlar?: string | null }) => Promise<void>
-}
-
-const SIPARIS_DURUM_STIL: Record<SiparisDurum, string> = {
-  beklemede: 'bg-gray-100 text-gray-600',
-  batchte: 'bg-blue-50 text-blue-700',
-  yikamada: 'bg-cyan-50 text-cyan-700',
-  tamamlandi: 'bg-green-50 text-green-700',
-  eksik_var: 'bg-red-50 text-red-600',
-  iptal: 'bg-red-50 text-red-600',
-}
-
-const SIPARIS_DURUM_ETIKET: Record<SiparisDurum, string> = {
-  beklemede: 'Beklemede',
-  batchte: 'Batch\'te',
-  yikamada: 'Yıkamada',
-  tamamlandi: 'Tamamlandı',
-  eksik_var: 'Eksik Var',
-  iptal: 'İptal',
 }
 
 const URETIM_DURUM_STIL: Record<UretimDurumu, string> = {
@@ -90,10 +73,11 @@ interface TamirBilgi {
 
 interface DetayWithBatch extends SiparisDetay {
   batch_no?: string | null
+  sira_no?: number | null
   aktif_tamir?: TamirBilgi | null
 }
 
-export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, onStokYenile }: Props) {
+export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }: Props) {
   useEscape(onKapat)
   const { yapilar: populerKatmanYapilari } = useKatmanYapilari()
   const [detaylar, setDetaylar] = useState<DetayWithBatch[]>([])
@@ -113,6 +97,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
     poz: '', kenar_islemi: '', notlar: '',
   })
   const [rowSaving, setRowSaving] = useState(false)
+  const [rowHata, setRowHata] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [rowDeleting, setRowDeleting] = useState(false)
   const [camEkleniyor, setCamEkleniyor] = useState(false)
@@ -208,12 +193,15 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
       const { data: batchData } = await supabase
         .from('uretim_emri_detaylari')
-        .select('siparis_detay_id, uretim_emirleri(batch_no)')
+        .select('siparis_detay_id, sira_no, uretim_emirleri(batch_no)')
         .in('siparis_detay_id', camIds)
 
-      const batchMap = new Map<string, string>()
+      const batchMap = new Map<string, { batch_no: string; sira_no: number | null }>()
       for (const b of batchData ?? []) {
-        batchMap.set(b.siparis_detay_id, (b as any).uretim_emirleri?.batch_no ?? '')
+        batchMap.set(b.siparis_detay_id, {
+          batch_no: (b as any).uretim_emirleri?.batch_no ?? '',
+          sira_no: (b as any).sira_no ?? null,
+        })
       }
 
       const { data: tamirData } = await supabase
@@ -231,7 +219,8 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
       setDetaylar(camlar.map(c => ({
         ...c,
-        batch_no: batchMap.get(c.id) || null,
+        batch_no: batchMap.get(c.id)?.batch_no || null,
+        sira_no: batchMap.get(c.id)?.sira_no ?? null,
         aktif_tamir: tamirMap.get(c.id) ?? null,
       })))
     } else {
@@ -248,6 +237,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
   const startEditRow = (d: DetayWithBatch) => {
     setEditingDetayId(d.id)
+    setRowHata(null)
     setEditRowForm({
       stok_id: d.stok_id ?? '',
       genislik_mm: String(d.genislik_mm),
@@ -261,21 +251,47 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
   const saveEditRow = async () => {
     if (!editingDetayId) return
+    const genislik = Number(editRowForm.genislik_mm)
+    const yukseklik = Number(editRowForm.yukseklik_mm)
+    const adet = Number(editRowForm.adet)
+    if (!Number.isFinite(genislik) || genislik <= 0 || !Number.isFinite(yukseklik) || yukseklik <= 0 || !Number.isFinite(adet) || adet <= 0) {
+      setRowHata('Genislik, yukseklik ve adet 0dan buyuk olmali.')
+      return
+    }
     setRowSaving(true)
+    setRowHata(null)
     try {
+      const mevcut = detaylar.find(d => d.id === editingDetayId)
       const { error } = await supabase
         .from('siparis_detaylari')
         .update({
           stok_id: editRowForm.stok_id || null,
-          genislik_mm: Number(editRowForm.genislik_mm) || 0,
-          yukseklik_mm: Number(editRowForm.yukseklik_mm) || 0,
-          adet: Number(editRowForm.adet) || 1,
+          genislik_mm: genislik,
+          yukseklik_mm: yukseklik,
+          adet: 1,
           poz: editRowForm.poz || null,
           kenar_islemi: editRowForm.kenar_islemi || null,
           notlar: editRowForm.notlar || null,
         })
         .eq('id', editingDetayId)
       if (error) throw error
+      if (adet > 1) {
+        const rows = await tekilSiparisDetayRows(siparis.id, [{
+          stok_id: editRowForm.stok_id || null,
+          genislik_mm: genislik,
+          yukseklik_mm: yukseklik,
+          adet: adet - 1,
+          poz: editRowForm.poz || null,
+          kenar_islemi: editRowForm.kenar_islemi || null,
+          notlar: editRowForm.notlar || null,
+          cita_stok_id: mevcut?.cita_stok_id ?? null,
+          menfez_cap_mm: mevcut?.menfez_cap_mm ?? null,
+          kucuk_cam: mevcut?.kucuk_cam ?? false,
+          katman_yapisi: mevcut?.katman_yapisi ?? null,
+        }])
+        const { error: ekHata } = await supabase.from('siparis_detaylari').insert(rows)
+        if (ekHata) throw ekHata
+      }
       setEditingDetayId(null)
       await yukleDetaylar()
     } finally {
@@ -301,18 +317,17 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
   const addNewRow = async () => {
     setCamEkleniyor(true)
+    setRowHata(null)
     try {
-      const kodlar = await generateCamKodulari(1)
+      const rows = await tekilSiparisDetayRows(siparis.id, [{
+        stok_id: null,
+        genislik_mm: 1,
+        yukseklik_mm: 1,
+        adet: 1,
+      }])
       const { data, error } = await supabase
         .from('siparis_detaylari')
-        .insert({
-          siparis_id: siparis.id,
-          cam_kodu: kodlar[0],
-          stok_id: null,
-          genislik_mm: 0,
-          yukseklik_mm: 0,
-          adet: 1,
-        })
+        .insert(rows[0])
         .select()
         .single()
       if (error) throw error
@@ -370,12 +385,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
             )}
             {/* Durum badge (readonly) */}
             <div className="flex flex-col items-end gap-0.5">
-              <span className={cn(
-                'rounded-lg px-3 py-1.5 text-sm font-medium',
-                SIPARIS_DURUM_STIL[siparis.durum]
-              )}>
-                {SIPARIS_DURUM_ETIKET[siparis.durum]}
-              </span>
+              <StatusBadge durum={siparis.durum} boyut="sm" className="rounded-lg" />
               {siparis.durum === 'tamamlandi' && (
                 <span className="text-xs font-medium text-gray-700 pr-1">
                   {siparis.tamamlandi_tarihi
@@ -614,7 +624,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
-                    <th className="px-3 py-2.5">Cam Kodu</th>
+                    <th className="px-3 py-2.5">Kod</th>
                     <th className="px-3 py-2.5">Poz</th>
                     <th className="px-3 py-2.5">Açıklama</th>
                     <th className="px-3 py-2.5">Boyut (mm)</th>
@@ -638,7 +648,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                       <tr key={d.id} className="border-b border-blue-100 bg-blue-50/40">
                         <td className="px-3 py-2">
                           <span className="font-mono text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
-                            {d.cam_kodu}
+                            {fizikselGlsKodu(d.sira_no, d.cam_kodu)}
                           </span>
                         </td>
                         <td className="px-2 py-2">
@@ -664,6 +674,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
+                              min={1}
                               value={editRowForm.genislik_mm}
                               onChange={e => setEditRowForm(p => ({ ...p, genislik_mm: e.target.value }))}
                               className="w-16 rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -672,6 +683,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                             <span className="text-gray-400 text-xs">×</span>
                             <input
                               type="number"
+                              min={1}
                               value={editRowForm.yukseklik_mm}
                               onChange={e => setEditRowForm(p => ({ ...p, yukseklik_mm: e.target.value }))}
                               className="w-16 rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -698,12 +710,13 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                               {rowSaving ? '...' : 'Kaydet'}
                             </button>
                             <button
-                              onClick={() => setEditingDetayId(null)}
+                              onClick={() => { setEditingDetayId(null); setRowHata(null) }}
                               className="px-2 py-1 text-xs rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
                             >
                               Vazgeç
                             </button>
                           </div>
+                          {rowHata && <p className="mt-1 text-xs text-red-600">{rowHata}</p>}
                         </td>
                       </tr>
                     ) : (
@@ -711,7 +724,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                       <tr key={d.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
                         <td className="px-3 py-2.5">
                           <span className="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">
-                            {d.cam_kodu}
+                            {fizikselGlsKodu(d.sira_no, d.cam_kodu)}
                           </span>
                         </td>
                         <td className="px-3 py-2.5 text-gray-500 text-xs">

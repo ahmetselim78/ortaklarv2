@@ -2,6 +2,7 @@ import Papa from 'papaparse'
 import { supabase } from '@/lib/supabase'
 import type { UretimEmriDetay } from '@/types/uretim'
 import { getEtiketCamTipi } from '@/lib/cam'
+import { fizikselGlsKodu } from '@/lib/siparisDetay'
 
 interface ExportRow {
   cam_kodu: string
@@ -24,7 +25,7 @@ export function exportDetaylariCSV(detaylar: UretimEmriDetay[], batchNo: string)
   const rows: ExportRow[] = detaylar.map((item) => {
     const d = item.siparis_detaylari!
     return {
-      cam_kodu: d.cam_kodu,
+      cam_kodu: fizikselGlsKodu(item.sira_no, d.cam_kodu),
       siparis_no: d.siparisler?.siparis_no ?? '',
       musteri: d.siparisler?.cari?.ad ?? '',
       genislik_mm: d.genislik_mm,
@@ -57,9 +58,13 @@ export async function exportTarihiGuncelle(uretimEmriId: string) {
     .from('uretim_emirleri')
     .update({ export_tarihi: new Date().toISOString(), durum: 'export_edildi' })
     .eq('id', uretimEmriId)
+    .in('durum', ['hazirlaniyor', 'onaylandi', 'eksik_var'])
     .select('id')
 
   if (error) throw new Error(`Export tarihi güncellenemedi: ${error.message}`)
+  if (!data || data.length === 0) {
+    throw new Error('Batch durumu export icin uygun degil veya kayit guncellenemedi.')
+  }
 }
 
 /**

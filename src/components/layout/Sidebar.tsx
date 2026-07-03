@@ -20,7 +20,7 @@ type NavGroup = {
 const navGroups: NavGroup[] = [
   {
     items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/', label: 'Ana Sayfa', icon: LayoutDashboard, end: true },
       { to: '/saatlik-takip', label: 'Saatlik Takip', icon: GaugeCircle },
     ],
   },

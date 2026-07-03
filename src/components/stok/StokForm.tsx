@@ -20,13 +20,20 @@ const schema = z.object({
   marka: z.string().optional(),
 })
 
-type FormVeri = z.infer<typeof schema>
+type FormGirdi = z.input<typeof schema>
+type FormVeri = z.output<typeof schema>
+type StokPayload = Omit<FormVeri, 'tedarikci_id' | 'marka' | 'kalinlik_mm' | 'birim_fiyat'> & {
+  tedarikci_id: string | null
+  marka: string | null
+  kalinlik_mm: number | null
+  birim_fiyat: number | null
+}
 
 interface Props {
   duzenlenecek?: Stok | null
   cariler: Cari[]
   defaultKategori?: StokKategori
-  onKaydet: (veri: FormVeri) => Promise<void>
+  onKaydet: (veri: StokPayload) => Promise<void>
   onKapat: () => void
 }
 
@@ -42,7 +49,7 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
     watch,
     setValue,
     formState: { errors },
-  } = useForm<FormVeri>({
+  } = useForm<FormGirdi, unknown, FormVeri>({
     resolver: zodResolver(schema),
     defaultValues: {
       kategori: defaultKategori ?? 'cam',
@@ -98,14 +105,14 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
     setKaydediliyor(true)
     setSunucuHata(null)
     try {
-      const payload = {
+      const payload: StokPayload = {
         ...veri,
         tedarikci_id: veri.tedarikci_id || null,
         marka: veri.marka || null,
         kalinlik_mm: typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null,
         birim_fiyat: typeof veri.birim_fiyat === 'number' ? veri.birim_fiyat : null,
       }
-      await onKaydet(payload as any)
+      await onKaydet(payload)
       onKapat()
     } catch (e: unknown) {
       setSunucuHata(e instanceof Error ? e.message : 'Bir hata oluştu')
