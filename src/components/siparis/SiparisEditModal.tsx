@@ -8,6 +8,7 @@ import { fizikselCamAdedi, tekilSiparisDetayRows } from '@/lib/siparisDetay'
 import { useEscape } from '@/hooks/useEscape'
 import { cn } from '@/lib/utils'
 import CamStokPicker from '@/components/siparis/CamStokPicker'
+import { aktifCitaStoklari, citaEslestir, getAraBoslukMm } from '@/lib/cam'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
@@ -17,6 +18,7 @@ interface CamSatiri {
   id?: string
   cam_kodu?: string
   stok_id: string
+  cita_stok_id: string
   genislik_mm: string
   yukseklik_mm: string
   adet: string
@@ -78,6 +80,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       id: d.id,
       cam_kodu: d.cam_kodu,
       stok_id: d.stok_id ?? '',
+      cita_stok_id: d.cita_stok_id ?? '',
       genislik_mm: String(d.genislik_mm),
       yukseklik_mm: String(d.yukseklik_mm),
       adet: String(d.adet ?? 1),
@@ -103,6 +106,20 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
     setCamlar(prev => prev.map((c, i) => {
       if (i !== idx) return c
       return { ...c, [field]: value }
+    }))
+  }
+
+  const camSecildi = (idx: number, stokId: string) => {
+    const stok = stoklar.find((s) => s.id === stokId)
+    const mm = getAraBoslukMm(stok ?? null)
+    const eslesme = mm != null ? citaEslestir(mm, aktifCitaStoklari(stoklar)) : null
+    setCamlar((prev) => prev.map((c, i) => {
+      if (i !== idx) return c
+      return {
+        ...c,
+        stok_id: stokId,
+        cita_stok_id: eslesme?.id ?? '',
+      }
     }))
   }
 
@@ -132,6 +149,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
     setCamlar(prev => [...prev, {
       _key: newKey(),
       stok_id: last?.stok_id ?? '',
+      cita_stok_id: last?.cita_stok_id ?? '',
       genislik_mm: '',
       yukseklik_mm: '',
       adet: '1',
@@ -272,6 +290,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
               siparis_id: siparis.id,
               cam_kodu: c.cam_kodu,            // NOT NULL — upsert için zorunlu
               stok_id: c.stok_id || null,
+              cita_stok_id: c.cita_stok_id || null,
               genislik_mm: Number(c.genislik_mm) || 0,
               yukseklik_mm: Number(c.yukseklik_mm) || 0,
               adet: 1,
@@ -534,7 +553,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                               <CamStokPicker
                                 stoklar={stokSecenekleri}
                                 value={cam.stok_id}
-                                onChange={v => updateCam(index, 'stok_id', v)}
+                                onChange={v => camSecildi(index, v)}
                                 invalid={!!rowH?.stok_id}
                                 pasifEtiketi
                               />

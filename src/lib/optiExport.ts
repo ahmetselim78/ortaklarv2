@@ -162,6 +162,7 @@ export function optiParcalariUret(
   item: UretimEmriDetay,
   hedefFam: string,
   famHaritasi: OptiFamEsleme[] = [],
+  citaDusme = 0,
 ): OptiParca[] {
   const d = item.siparis_detaylari
   if (!d) return []
@@ -170,6 +171,9 @@ export function optiParcalariUret(
   const adet = Math.max(1, d.adet ?? 1)
   const cl = musteriEtiketi(d)
   const ord = d.siparisler?.siparis_no ?? ''
+  const dusme = Math.max(0, Math.round(citaDusme))
+  const b = Math.max(1, d.genislik_mm - dusme)
+  const h = Math.max(1, d.yukseklik_mm - dusme)
   const parcalar: OptiParca[] = []
 
   if (isicamMi(stok)) {
@@ -180,7 +184,7 @@ export function optiParcalariUret(
       const fam = optiPaneFamKodu(kal, paneTip)
       if (fam !== hedefFam) continue
       for (let i = 0; i < adet; i++) {
-        parcalar.push({ b: d.genislik_mm, h: d.yukseklik_mm, cl, ord, fam })
+        parcalar.push({ b, h, cl, ord, fam })
       }
     }
     return parcalar
@@ -190,7 +194,7 @@ export function optiParcalariUret(
   if (fam !== hedefFam) return []
 
   for (let i = 0; i < adet; i++) {
-    parcalar.push({ b: d.genislik_mm, h: d.yukseklik_mm, cl, ord, fam })
+    parcalar.push({ b, h, cl, ord, fam })
   }
   return parcalar
 }
@@ -200,8 +204,9 @@ export function optiTumParcalar(
   detaylar: UretimEmriDetay[],
   hedefFam: string,
   famHaritasi: OptiFamEsleme[] = [],
+  citaDusme = 0,
 ): OptiParca[] {
-  return detaylar.flatMap((item) => optiParcalariUret(item, hedefFam, famHaritasi))
+  return detaylar.flatMap((item) => optiParcalariUret(item, hedefFam, famHaritasi, citaDusme))
 }
 
 /** Batch içinde export edilebilir cam türlerini listeler. */

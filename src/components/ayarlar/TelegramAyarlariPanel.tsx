@@ -7,6 +7,7 @@ import {
   Pencil, X, Pause, Play,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { telegramEdgeConfigSenkronize, telegramEdgeConfigVarMi } from '@/lib/telegramEdgeConfig'
 import { cn } from '@/lib/utils'
 import type {
   TelegramAyarlari,
@@ -462,6 +463,7 @@ export default function TelegramAyarlariPanel() {
   const [editTip, setEditTip] = useState<TelegramRaporTipi>('saatlik')
   const [editHata, setEditHata] = useState<string | null>(null)
   const [editKaydediyor, setEditKaydediyor] = useState(false)
+  const [cronHazir, setCronHazir] = useState<boolean | null>(null)
 
   const getir = useCallback(async () => {
     setYukleniyor(true)
@@ -489,6 +491,17 @@ export default function TelegramAyarlariPanel() {
         ...s,
         rapor_tipi: (s.rapor_tipi ?? 'saatlik') as TelegramRaporTipi,
       })) as TelegramRaporSaati[])
+
+      const cronOk = await telegramEdgeConfigVarMi()
+      setCronHazir(cronOk)
+      if (!cronOk && ayarRes.data?.aktif) {
+        try {
+          await telegramEdgeConfigSenkronize()
+          setCronHazir(true)
+        } catch {
+          setCronHazir(false)
+        }
+      }
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Veriler yüklenemedi')
     } finally {
@@ -542,6 +555,11 @@ export default function TelegramAyarlariPanel() {
       } else {
         const { error } = await supabase.from('telegram_ayarlari').update(payload).eq('id', ayar.id)
         if (error) throw error
+      }
+
+      if (kapsam === 'baglanti' || kapsam === 'hepsi') {
+        await telegramEdgeConfigSenkronize()
+        setCronHazir(true)
       }
 
       basariGoster(
@@ -871,6 +889,17 @@ export default function TelegramAyarlariPanel() {
               </button>
             </div>
           </div>
+
+          {cronHazir === false && (
+            <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-900">
+              Otomatik rapor zamanlayıcısı yapılandırılmamış. Bağlantı ayarlarını bir kez kaydedin; cron kurulumu otomatik tamamlanır.
+            </div>
+          )}
+          {cronHazir === true && aktif && (
+            <div className="p-4 rounded-xl border border-teal-200 bg-teal-50 text-sm text-teal-900">
+              Otomatik rapor zamanlayıcısı hazır. Zamanlama sekmesindeki saatlerde mesaj gönderilir.
+            </div>
+          )}
         </div>
       )}
 

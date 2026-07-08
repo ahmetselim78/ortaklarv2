@@ -192,3 +192,17 @@ export async function eskiStokReferansSayisi(): Promise<number> {
 
   return (data ?? []).filter((row) => eskiAileStokMu(stokFromJoin(row.stok))).length
 }
+
+/** Tek sipariş detay satırının stok / çıta referansını manuel günceller. */
+export async function detayStokReferansiGuncelle(
+  detayId: string,
+  alan: 'stok_id' | 'cita_stok_id',
+  yeniStokId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('siparis_detaylari')
+    .update({ [alan]: yeniStokId })
+    .eq('id', detayId)
+
+  if (error) throw new Error(error.message)
+}

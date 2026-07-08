@@ -1,12 +1,21 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Plus, Package, AlertTriangle, RefreshCw } from 'lucide-react'
 import { useStok } from '@/hooks/useStok'
 import { useCari } from '@/hooks/useCari'
 import EmptyState from '@/components/ui/EmptyState'
 import StokListesi from '@/components/stok/StokListesi'
 import StokForm, { type StokFormOnDegerleri, type StokPayload } from '@/components/stok/StokForm'
+import CamStokPicker from '@/components/siparis/CamStokPicker'
+import CitaStokSelect from '@/components/siparis/CitaStokSelect'
 import { supabase } from '@/lib/supabase'
-import { eskiStokReferanslariniMigrate, eskiStokReferansSayisi, pasifCitaReferanslariniMigrate, pasifCitaReferansSayisi } from '@/lib/stokMigrasyon'
+import {
+  detayStokReferansiGuncelle,
+  eskiStokReferanslariniMigrate,
+  eskiStokReferansSayisi,
+  pasifCitaReferanslariniMigrate,
+  pasifCitaReferansSayisi,
+  type MigrasyonKayit,
+} from '@/lib/stokMigrasyon'
 import { citaKodOnerisi, citaStokAdi, eksikCitaBoyutlari } from '@/lib/cam'
 import type { Stok, StokKategori } from '@/types/stok'
 
@@ -46,6 +55,16 @@ export default function StokPage() {
   const [eksikCitaEkleniyor, setEksikCitaEkleniyor] = useState(false)
   const [migrasyonSonuc, setMigrasyonSonuc] = useState<string | null>(null)
   const [citaMigrasyonSonuc, setCitaMigrasyonSonuc] = useState<string | null>(null)
+  const [eslesmeyenCamlar, setEslesmeyenCamlar] = useState<MigrasyonKayit[]>([])
+  const [eslesmeyenCitalar, setEslesmeyenCitalar] = useState<MigrasyonKayit[]>([])
+  const [manuelSecimler, setManuelSecimler] = useState<Record<string, string>>({})
+  const [manuelKaydediliyor, setManuelKaydediliyor] = useState<string | null>(null)
+  const [manuelHata, setManuelHata] = useState<string | null>(null)
+
+  const aktifCamStoklar = useMemo(
+    () => stoklar.filter((s) => s.kategori === 'cam' && s.aktif !== false),
+    [stoklar],
+  )
 
   useEffect(() => {
     if (aktifSekme === 'cam') {
@@ -181,8 +200,11 @@ export default function StokPage() {
   const handleTopluMigrasyon = async () => {
     setMigrasyonCalisiyor(true)
     setMigrasyonSonuc(null)
+    setManuelHata(null)
     try {
       const sonuc = await eskiStokReferanslariniMigrate()
+      setEslesmeyenCamlar(sonuc.eslesmeyen)
+      setManuelSecimler({})
       setMigrasyonSonuc(
         `${sonuc.guncellenen} kayıt güncellendi.` +
         (sonuc.eslesmeyen.length > 0 ? ` ${sonuc.eslesmeyen.length} kayıt manuel müdahale gerektiriyor.` : '')
@@ -199,8 +221,11 @@ export default function StokPage() {
   const handleCitaMigrasyon = async () => {
     setCitaMigrasyonCalisiyor(true)
     setCitaMigrasyonSonuc(null)
+    setManuelHata(null)
     try {
       const sonuc = await pasifCitaReferanslariniMigrate()
+      setEslesmeyenCitalar(sonuc.eslesmeyen)
+      setManuelSecimler({})
       setCitaMigrasyonSonuc(
         `${sonuc.guncellenen} kayıt güncellendi.` +
         (sonuc.eslesmeyen.length > 0 ? ` ${sonuc.eslesmeyen.length} kayıt manuel müdahale gerektiriyor.` : '')
@@ -211,6 +236,37 @@ export default function StokPage() {
       setCitaMigrasyonSonuc(err instanceof Error ? err.message : 'Migrasyon başarısız')
     } finally {
       setCitaMigrasyonCalisiyor(false)
+    }
+  }
+
+  const handleManuelEsle = async (
+    kayit: MigrasyonKayit,
+    alan: 'stok_id' | 'cita_stok_id',
+  ) => {
+    const hedefId = manuelSecimler[kayit.detay_id]
+    if (!hedefId) return
+    setManuelKaydediliyor(kayit.detay_id)
+    setManuelHata(null)
+    try {
+      await detayStokReferansiGuncelle(kayit.detay_id, alan, hedefId)
+      if (alan === 'stok_id') {
+        setEslesmeyenCamlar((prev) => prev.filter((k) => k.detay_id !== kayit.detay_id))
+        const kalan = await eskiStokReferansSayisi()
+        setMigrasyonSayisi(kalan)
+      } else {
+        setEslesmeyenCitalar((prev) => prev.filter((k) => k.detay_id !== kayit.detay_id))
+        const kalan = await pasifCitaReferansSayisi()
+        setCitaMigrasyonSayisi(kalan)
+      }
+      setManuelSecimler((prev) => {
+        const next = { ...prev }
+        delete next[kayit.detay_id]
+        return next
+      })
+    } catch (err: unknown) {
+      setManuelHata(err instanceof Error ? err.message : 'Manuel eşleştirme başarısız')
+    } finally {
+      setManuelKaydediliyor(null)
     }
   }
 
@@ -378,6 +434,110 @@ export default function StokPage() {
             <RefreshCw size={14} className={migrasyonCalisiyor ? 'animate-spin' : ''} />
             {migrasyonCalisiyor ? 'Aktarılıyor...' : 'Referansları Düzelt'}
           </button>
+        </div>
+      )}
+
+      {aktifSekme === 'cam' && eslesmeyenCamlar.length > 0 && (
+        <div className="mb-4 rounded-xl border border-orange-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
+            <p className="text-sm font-medium text-orange-900">
+              Manuel eşleştirme gereken cam satırları ({eslesmeyenCamlar.length})
+            </p>
+            <p className="text-xs text-orange-700 mt-0.5">
+              Otomatik eşleşmeyen satırlar için hedef kombinasyon kartını seçin.
+            </p>
+            {manuelHata && <p className="text-xs text-red-600 mt-1">{manuelHata}</p>}
+          </div>
+          <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
+            {eslesmeyenCamlar.map((kayit) => (
+              <div
+                key={kayit.detay_id}
+                className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-800">
+                    <span className="font-mono font-semibold">{kayit.eski_stok_kod || '—'}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    {kayit.eski_stok_ad}
+                  </p>
+                  {kayit.katman_yapisi && (
+                    <p className="text-xs text-gray-500 mt-0.5">Katman: {kayit.katman_yapisi}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <CamStokPicker
+                    stoklar={aktifCamStoklar}
+                    value={manuelSecimler[kayit.detay_id] ?? ''}
+                    onChange={(id) =>
+                      setManuelSecimler((prev) => ({ ...prev, [kayit.detay_id]: id }))
+                    }
+                    placeholder="Hedef cam seçin..."
+                    className="min-w-[200px] max-w-[280px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={!manuelSecimler[kayit.detay_id] || manuelKaydediliyor === kayit.detay_id}
+                    onClick={() => handleManuelEsle(kayit, 'stok_id')}
+                    className="px-3 py-2 text-xs font-medium rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {manuelKaydediliyor === kayit.detay_id ? '...' : 'Aktar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {aktifSekme === 'cita' && eslesmeyenCitalar.length > 0 && (
+        <div className="mb-4 rounded-xl border border-orange-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
+            <p className="text-sm font-medium text-orange-900">
+              Manuel eşleştirme gereken çıta satırları ({eslesmeyenCitalar.length})
+            </p>
+            <p className="text-xs text-orange-700 mt-0.5">
+              Aynı mm değerine sahip aktif çıta kartı bulunamayan satırlar.
+            </p>
+            {manuelHata && <p className="text-xs text-red-600 mt-1">{manuelHata}</p>}
+          </div>
+          <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
+            {eslesmeyenCitalar.map((kayit) => (
+              <div
+                key={kayit.detay_id}
+                className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-800">
+                    <span className="font-mono font-semibold">{kayit.eski_stok_kod || '—'}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    {kayit.eski_stok_ad}
+                  </p>
+                  {kayit.katman_yapisi && (
+                    <p className="text-xs text-gray-500 mt-0.5">{kayit.katman_yapisi}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <CitaStokSelect
+                    stoklar={stoklar}
+                    value={manuelSecimler[kayit.detay_id] ?? ''}
+                    onChange={(id) =>
+                      setManuelSecimler((prev) => ({ ...prev, [kayit.detay_id]: id }))
+                    }
+                    placeholder="Hedef çıta"
+                    className="min-w-[160px] py-1.5"
+                  />
+                  <button
+                    type="button"
+                    disabled={!manuelSecimler[kayit.detay_id] || manuelKaydediliyor === kayit.detay_id}
+                    onClick={() => handleManuelEsle(kayit, 'cita_stok_id')}
+                    className="px-3 py-2 text-xs font-medium rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {manuelKaydediliyor === kayit.detay_id ? '...' : 'Aktar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -9,12 +9,14 @@ import type { SiparisTaslakCam, SiparisTaslakVerisi } from '@/types/taslak'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
 import CamStokPicker from '@/components/siparis/CamStokPicker'
+import { aktifCitaStoklari, citaEslestir, getAraBoslukMm } from '@/lib/cam'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
 
 const camSchema = z.object({
   stok_id: z.string().min(1, 'Cam cinsi seçiniz'),
+  cita_stok_id: z.string().optional(),
   genislik_mm: z.coerce.number().positive('Pozitif olmalı'),
   yukseklik_mm: z.coerce.number().positive('Pozitif olmalı'),
   adet: z.coerce.number().int().min(1, 'En az 1'),
@@ -53,6 +55,7 @@ interface Props {
 
 const BOŞ_CAM = {
   stok_id: '',
+  cita_stok_id: '',
   genislik_mm: '' as unknown as number,
   yukseklik_mm: '' as unknown as number,
   adet: 1,
@@ -118,7 +121,20 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     append({
       ...BOŞ_CAM,
       stok_id: src?.stok_id ?? '',
+      cita_stok_id: src?.cita_stok_id ?? '',
     })
+  }
+
+  const camSecildi = (index: number, stokId: string) => {
+    setValue(`camlar.${index}.stok_id`, stokId)
+    const stok = stoklar.find((s) => s.id === stokId)
+    const mm = getAraBoslukMm(stok ?? null)
+    if (mm == null) {
+      setValue(`camlar.${index}.cita_stok_id`, '')
+      return
+    }
+    const eslesme = citaEslestir(mm, aktifCitaStoklari(stoklar))
+    setValue(`camlar.${index}.cita_stok_id`, eslesme?.id ?? '')
   }
 
   const satirEkle = () => {
@@ -234,6 +250,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
         const v = getValues()
         const taslakCamlar: SiparisTaslakCam[] = (v.camlar ?? []).map((cam) => ({
           stok_id: cam.stok_id,
+          cita_stok_id: cam.cita_stok_id,
           genislik_mm: taslakDegeri(cam.genislik_mm),
           yukseklik_mm: taslakDegeri(cam.yukseklik_mm),
           adet: taslakDegeri(cam.adet),
@@ -434,7 +451,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                   <CamStokPicker
                                     stoklar={camStoklar}
                                     value={field.value ?? ''}
-                                    onChange={field.onChange}
+                                    onChange={(id) => camSecildi(index, id)}
                                     invalid={!!errors.camlar?.[index]?.stok_id}
                                   />
                                 )}

@@ -151,7 +151,13 @@ export default function UretimDetayModal({
   const handleOptiExport = async (hedefFam: string) => {
     setExportYapiliyor(true)
     try {
-      exportOptiIMP(detaylar, hedefFam, optiAyarlar.sayac, optiAyarlar.fam_haritasi)
+      exportOptiIMP(
+        detaylar,
+        hedefFam,
+        optiAyarlar.sayac,
+        optiAyarlar.fam_haritasi,
+        optiAyarlar.cita_dusme,
+      )
       await sayacArttir()
       await exportTarihiGuncelle(emir.id)
       onGuncellendi()
