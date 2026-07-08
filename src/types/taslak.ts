@@ -5,6 +5,7 @@
  */
 export interface SiparisTaslakCam {
   stok_id?: string
+  katman_yapisi?: string
   genislik_mm?: number | string
   yukseklik_mm?: number | string
   adet?: number | string

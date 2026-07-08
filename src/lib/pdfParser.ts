@@ -1,5 +1,6 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
 import { supabase } from './supabase'
+import { camAilesiEsit, cozumleOcrCam, extractKatmanYapisiFromText } from '@/lib/cam'
 
 // Worker /public/pdf.worker.js olarak servis edilir (.js uzantısı nginx MIME type sorununu önler).
 // vite.config.ts'deki copyPdfWorkerPlugin her build/dev başlangıcında bu dosyayı oluşturur.
@@ -45,6 +46,11 @@ export interface PDFCamSatir {
 
 /** Progress callback tipi */
 export type PDFProgressCallback = (msg: string) => void
+
+type PdfTextItem = {
+  str?: unknown
+  transform?: number[]
+}
 
 /* ===== PDF → Metin ===== */
 
@@ -317,11 +323,11 @@ async function tryTextExtraction(buffer: ArrayBuffer): Promise<string[]> {
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i)
     const content = await page.getTextContent()
-    const items = content.items as any[]
+    const items = content.items as PdfTextItem[]
 
     const rows: { y: number; items: { x: number; str: string }[] }[] = []
     for (const item of items) {
-      if (typeof item.str !== 'string' || !item.str.trim() || !item.transform) continue
+      if (typeof item.str !== 'string' || !item.str.trim() || !Array.isArray(item.transform)) continue
       const y = Math.round(item.transform[5])
       const x = Math.round(item.transform[4])
       let row = rows.find(r => Math.abs(r.y - y) <= 3)
@@ -359,7 +365,7 @@ function isPimapenFormat(text: string): boolean {
     /sipari.?\s*no/i,
     /cam\s*s\s*no/i,
     /pimapen|ercom|firatpen/i,
-    /\d+[+\-]\d+[+\-]\d+|\d{441644}|441\d{3}/,  // "4+16+4" veya OCR varyantı
+    /\d+[+-]\d+[+-]\d+|\d{441644}|441\d{3}/,  // "4+16+4" veya OCR varyantı
     /cam\s*.*sipari/i,
     /cari\s*.?nvan/i,
     /poz\s*no/i,
@@ -393,6 +399,53 @@ function parseTrFloat(s: string): number {
   return parseFloat(trimmed.replace(',', '.'))
 }
 
+function temizPdfHucre(s: string): string {
+  let out = s
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\\([|*_`])/g, '$1')
+    .trim()
+
+  for (let i = 0; i < 3; i++) {
+    const next = out
+      .replace(/^\*\*([\s\S]*)\*\*$/g, '$1')
+      .replace(/^__([\s\S]*)__$/g, '$1')
+      .replace(/^`([\s\S]*)`$/g, '$1')
+      .trim()
+    if (next === out) break
+    out = next
+  }
+
+  return out.replace(/\s+/g, ' ').trim()
+}
+
+function duzMarkdownSatiri(s: string): string {
+  if (!s.trim().startsWith('|')) return temizPdfHucre(s)
+  return s
+    .trim()
+    .replace(/^\||\|$/g, '')
+    .split('|')
+    .map(temizPdfHucre)
+    .join(' ')
+    .trim()
+}
+
+function m2Degerleri(line: string): number[] {
+  const duz = duzMarkdownSatiri(line)
+    .replace(/\*\*/g, '')
+    .replace(/__/g, '')
+  const matches = [...duz.matchAll(/(\d{1,4}(?:\.\d{3})*,\d{1,3})\s*m\s*(?:[\u00b2²2]|\^\s*\{?\s*2\s*\}?)?\.?/gi)]
+  return matches
+    .map((m) => parseTrFloat(m[1]))
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
+function hucreM2Mi(s: string): boolean {
+  const temiz = temizPdfHucre(s)
+  return /^m\s*(?:[\u00b2²2]|\^\s*\{?\s*2\s*\}?)?\.?$/i.test(temiz) ||
+    m2Degerleri(temiz).length > 0
+}
+
 /**
  * PDF metnindeki "toplam satırı" satırlarından toplam metrekareyi çıkarır.
  * Pimapen/Ercom formatında footer: "66  26,716 m²." veya "74  27,319 m²."
@@ -403,26 +456,9 @@ function parseTrFloat(s: string): number {
  */
 function extractToplamMetrekare(text: string): number | null {
   const candidates: number[] = []
-  for (let rawLine of text.split('\n')) {
-    let trimmed = rawLine.trim()
-    if (!trimmed) continue
-
-    // Markdown tablo satırlarını düzleştir: "| a | b |" → "a b"
-    if (trimmed.startsWith('|')) {
-      trimmed = trimmed.replace(/^\||\|$/g, '').split('|').map((s) => s.trim()).join(' ').trim()
-    }
-
-    // Toplam/ara-toplam satırı tespiti:
-    // Satır "m²." veya "m2." veya "m ." (² ayrı satırda) ile bitiyor olmalı.
-    // \u00b2 = ², \s* opsiyonel boşluk (² ile . arasında), \.? opsiyonel nokta
-    if (!/m[\u00b222]?\s*\.?\s*$/i.test(trimmed)) continue
-
-    // Sadece ondalık (virgüllü) sayıları al — tam sayılar (adet) değil
-    const matches = [...trimmed.matchAll(/(\d+[,]\d+)/g)]
-    for (const m of matches) {
-      const val = parseTrFloat(m[1])
-      if (!isNaN(val) && val > 0) candidates.push(val)
-    }
+  for (const rawLine of text.split('\n')) {
+    const vals = m2Degerleri(rawLine)
+    candidates.push(...vals)
   }
   if (candidates.length === 0) return null
   // En büyük değer genel toplam (her satır toplamından büyük ya da eşit)
@@ -442,7 +478,7 @@ export function extractAraBosluk(aciklama: string): number | null {
 
 function parsePimapenHeader(text: string): PDFSiparisHeader {
   // cariKodu: OCR bazen "Cari Kodu — : C4-00975" şeklinde okur (— em dash)
-  const cariKoduMatch = text.match(/Cari\s*Kodu\s*[—\-:]+\s*:?\s*([A-Z][\w\-]+)/i)
+  const cariKoduMatch = text.match(/Cari\s*Kodu\s*[—:-]+\s*:?\s*([A-Z][\w-]+)/i)
   const cariUnvanMatch = text.match(/Cari\s*.?nvan.?\s*:?\s*(.+)/i)
   const siparisNoMatch = text.match(/Sipari.?\s*No\s*[:\s]+([A-Z0-9]+)/i)
   const adetMatch = text.match(/Adet\s*:?\s*(\d+)/i)
@@ -520,8 +556,9 @@ function detectAraBosluk(text: string): number {
 /** Açıklama stringinden ara boşluk çıkar (normal + OCR varyantı) */
 function extractAraBoslukFromDesc(aciklama: string): number | null {
   // Standart: "4+16+4"
-  const m = aciklama.match(/(\d+)\+(\d+)\+(\d+)/)
-  if (m) return parseInt(m[2], 10)
+  const katman = extractKatmanYapisiFromText(aciklama)
+  const parts = katman ? katman.split('+') : []
+  if (parts.length >= 3) return parseInt(parts[1], 10)
   // OCR bozulmuş: "441644"
   const m2 = aciklama.match(/\b(\d{5,8})\b/)
   if (m2) {
@@ -536,12 +573,11 @@ function extractAraBoslukFromDesc(aciklama: string): number | null {
 /** Açıklama stringinden dış cam kalınlığını çıkar.
  *  "4+16+4 Çift Cam" → 4 ; "6+22+6 Sinerji" → 6 ; OCR "441644" → 4 ; "622266" → 6 */
 function extractDisKalinlikFromDesc(aciklama: string): number | null {
-  const m = aciklama.match(/(\d+)\+\d+\+(\d+)/)
-  if (m) {
-    const a = parseInt(m[1], 10)
-    const b = parseInt(m[2], 10)
-    if (a >= 3 && a <= 12 && a === b) return a
-    return a
+  const katman = extractKatmanYapisiFromText(aciklama)
+  const parts = katman ? katman.split('+') : []
+  if (parts.length >= 3) {
+    const a = parseInt(parts[0], 10)
+    if (a >= 3 && a <= 12) return a
   }
   const m2 = aciklama.match(/\b(\d{5,8})\b/)
   if (m2) {
@@ -602,6 +638,7 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
 
     // Markdown tablo header/separator satırlarını atla
     if (/^\|[\s\-|:]+\|$/.test(trimmed)) continue
+    if (!trimmed.startsWith('|')) trimmed = temizPdfHucre(trimmed)
 
     // === STRATEJİ 0: Kolon-bazlı markdown tablo parser (en sağlam) ===
     // "| Açıklama | Adet | Gen | Yük | B m² | T m² | Poz No |" formatında 7 kolon.
@@ -611,7 +648,7 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
       const cells = trimmed
         .replace(/^\||\|$/g, '')
         .split('|')
-        .map(s => s.trim())
+        .map(temizPdfHucre)
 
       // En az 6 hücre olmalı: açıklama, adet, gen, yük, bm², tm² (poz opsiyonel)
       if (cells.length >= 6) {
@@ -621,7 +658,7 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
 
         // Toplam satırı: "| 4+16+4 Çift Cam | 217 | | | 172,623 | m². |" gibi
         // → 5+ hücre var ama gen/yük/Bm² boş veya m² içeriyor.
-        const hasM2Cell = cells.some(c => /^m[²2]\.?$/i.test(c) || /\d[,.]\d+\s*m[²2]/i.test(c))
+        const hasM2Cell = cells.some(hucreM2Mi)
         const emptyCells = cells.filter(c => c === '').length
 
         // Hücre konumlarını tespit et:
@@ -632,21 +669,17 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
 
         // Sondan başlayarak boş ve sayısal-olmayan hücreleri elle: pozNo'yu bul.
         // pozNo: tam sayı VEYA "19 - K5", "4-A", "B5/12" gibi alfanümerik.
-        let pozIdx = cells.length - 1
+        const pozIdx = cells.length - 1
         // Eğer son hücre boş veya "m²" ise → toplam satırıdır, atla
-        if (cells[pozIdx] === '' || /^m[²2]\.?$/i.test(cells[pozIdx])) {
+        if (cells[pozIdx] === '' || hucreM2Mi(cells[pozIdx])) {
           if (hasM2Cell) continue
         }
 
         // Sondan 6 hücreyi bekle: [açıklama-prefix..., adet, gen, yük, bm², tm², pozNo?]
         // Önce pozNo'nun olup olmadığını test et: son hücre Tm² formatında mı?
-        let tm2Idx: number
-        let bm2Idx: number
-        let yukIdx: number
-        let genIdx: number
-        let adetIdx: number
         let pozValue = ''
 
+        let tm2Idx: number
         if (hasOndalik(cells[pozIdx])) {
           // Son hücre Tm² → pozNo yok
           tm2Idx = pozIdx
@@ -656,10 +689,10 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
           pozValue = cells[pozIdx]
           tm2Idx = pozIdx - 1
         }
-        bm2Idx = tm2Idx - 1
-        yukIdx = bm2Idx - 1
-        genIdx = yukIdx - 1
-        adetIdx = genIdx - 1
+        const bm2Idx = tm2Idx - 1
+        const yukIdx = bm2Idx - 1
+        const genIdx = yukIdx - 1
+        const adetIdx = genIdx - 1
 
         if (adetIdx < 0) continue
 
@@ -725,7 +758,7 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
 
       // Markdown tablo satırı kolon parser ile yakalanamadı → düz metne çevir,
       // diğer regex stratejilerine düşsün
-      trimmed = trimmed.replace(/^\||\|$/g, '').split('|').map(s => s.trim()).join(' ')
+      trimmed = duzMarkdownSatiri(trimmed)
     }
 
     const hasCiftCam = /[Çç]ift\s*Cam/i.test(trimmed)
@@ -735,7 +768,7 @@ function parsePimapenSatirlar(text: string): PDFCamSatir[] {
     //   "... 217  172,623 m²."   (yalnızca adet + m² var, gen/yük yok)
     //   "... 5  0,411 m². % 20 den küçük camlar."
     // Tespit: m² işareti var VE 5+ sayı (adet/gen/yük/bm²/tm²) yok
-    const hasM2 = /\d[,.]\d+\s*m[²2]\.?/i.test(trimmed)
+    const hasM2 = m2Degerleri(trimmed).length > 0
     if (hasM2) {
       const numCount = (trimmed.match(/\b\d/g) ?? []).length
       const hasFullRow = /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[,.]\d{3}/.test(trimmed)
@@ -978,83 +1011,25 @@ export function cariEslestir(
   return enIyi
 }
 
-/** Cam tipi anahtar kelimeleri — açıklamada veya stok adında geçen tip kelimeleri */
-const CAM_TIPI_KELIMELER = [
-  'duz', 'cift', 'sinerji', 'konfor', 'temp', 'temperli', 'buzlu', 'fume',
-  'lowe', 'lowemissivity', 'reflekte', 'ayna', 'lamine',
-] as const
-
-/** Açıklamadaki/ad'daki cam tipi anahtar kelimelerini çıkar */
-function camTipiAnahtarlar(s: string): Set<string> {
-  const n = normalize(s)
-  const out = new Set<string>()
-  for (const w of n.split(' ').filter(Boolean)) {
-    if ((CAM_TIPI_KELIMELER as readonly string[]).includes(w)) out.add(w)
-  }
-  return out
-}
-
 /**
- * Stok eşleştirme — açıklamadan cam tipi + dış kalınlık çıkar, stokla karşılaştır.
- *  Stok'un `kalinlik_mm` ile `dis_kalinlik_mm` eşit olması zorunlu (varsa).
- *  Stok adındaki tip kelimeleri açıklama ile çakışmalı; "çift cam" generic
- *  kelimesi tek başına eşleşmez (Sinerji ile karışmasın).
+ * Stok eşleştirme — OCR açıklamasından önce cam ailesi çıkarılır.
+ * "ÇiftCam Konfor" gibi ifadelerde Konfor/Sinerji, genel ÇiftCam bilgisinden
+ * daha güçlüdür. Stok kalınlığı artık eşleşme anahtarı değildir; katman
+ * `siparis_detaylari.katman_yapisi` alanında tutulur.
  */
 export function stokEslestir(
   aciklama: string,
   stoklar: { id: string; ad: string; kalinlik_mm?: number | null }[],
-  disKalinlikMm?: number | null,
+  _disKalinlikMm?: number | null,
 ): { id: string; ad: string; skor: number } | null {
   if (stoklar.length === 0) return null
+  void _disKalinlikMm
 
-  const aciklamaTipler = camTipiAnahtarlar(aciklama)
-  // "cift" generic, tek başına eşleştirme için yetersiz
-  const aciklamaSpesifik = new Set([...aciklamaTipler].filter(w => w !== 'cift'))
+  const cozum = cozumleOcrCam(aciklama)
+  if (!cozum.emin || !cozum.cam_ailesi) return null
 
-  let enIyi: { id: string; ad: string; skor: number } | null = null
-
-  for (const s of stoklar) {
-    // Kalınlık zorunluluğu: ikisi de biliniyorsa eşit olmalı
-    if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) !== disKalinlikMm) {
-      continue
-    }
-
-    const stokTipler = camTipiAnahtarlar(s.ad)
-    const stokSpesifik = new Set([...stokTipler].filter(w => w !== 'cift'))
-
-    let skor = 0
-
-    // Spesifik tip kelimesi kesişimi en güçlü sinyal
-    let kesisim = 0
-    for (const w of stokSpesifik) if (aciklamaSpesifik.has(w)) kesisim++
-
-    if (stokSpesifik.size > 0 && kesisim > 0) {
-      skor = 0.6 + 0.4 * (kesisim / stokSpesifik.size)
-      // Kalınlık da eşleşiyorsa bonus
-      if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) === disKalinlikMm) {
-        skor = Math.min(1, skor + 0.1)
-      }
-    } else if (stokSpesifik.size === 0 && aciklamaSpesifik.size === 0) {
-      // İki taraf da generic ("Düz Cam" gibi) — Jaccard fallback
-      skor = benzerlikSkoru(aciklama, s.ad) * 0.7
-      if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) === disKalinlikMm) {
-        skor = Math.min(1, skor + 0.2)
-      }
-    } else {
-      // Bir tarafta spesifik var diğerinde yok: zayıf eşleşme; sadece kalınlık eşitse al
-      if (disKalinlikMm != null && s.kalinlik_mm != null && Number(s.kalinlik_mm) === disKalinlikMm
-          && stokSpesifik.size === 0) {
-        skor = 0.5
-      }
-    }
-
-    if (!enIyi || skor > enIyi.skor) {
-      enIyi = { id: s.id, ad: s.ad, skor }
-    }
-  }
-
-  if (!enIyi || enIyi.skor < 0.5) return null
-  return enIyi
+  const exact = stoklar.find(s => camAilesiEsit(s.ad, cozum.cam_ailesi))
+  return exact ? { id: exact.id, ad: exact.ad, skor: 1 } : null
 }
 
 /** Çıta eşleştirme — ara boşluk mm değerine göre çıta stok bul */

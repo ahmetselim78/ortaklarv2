@@ -4,12 +4,13 @@ import { useStok } from '@/hooks/useStok'
 import { useCari } from '@/hooks/useCari'
 import EmptyState from '@/components/ui/EmptyState'
 import StokListesi from '@/components/stok/StokListesi'
-import StokForm from '@/components/stok/StokForm'
+import StokForm, { type StokPayload } from '@/components/stok/StokForm'
 import { supabase } from '@/lib/supabase'
+import { normalizeCamAilesiAd } from '@/lib/cam'
 import type { Stok, StokKategori } from '@/types/stok'
 
 const SEKMELER: { key: StokKategori; label: string }[] = [
-  { key: 'cam', label: 'Cam' },
+  { key: 'cam', label: 'Cam Aileleri' },
   { key: 'cita', label: 'Çıta' },
   { key: 'yan_malzeme', label: 'Yan Malzemeler' },
 ]
@@ -38,8 +39,7 @@ export default function StokPage() {
     setDuzenlenecek(null)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleKaydet = async (veri: any) => {
+  const handleKaydet = async (veri: StokPayload) => {
     if (duzenlenecek) {
       await guncelle(duzenlenecek.id, veri)
     } else {
@@ -63,8 +63,8 @@ export default function StokPage() {
     try {
       await sil(silinecek.id)
       handleSilKapat()
-    } catch (err: any) {
-      const msg: string = err?.message ?? ''
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ''
       if (msg.includes('siparis_detaylari')) {
         const [stokRes, citaRes] = await Promise.all([
           supabase.from('siparis_detaylari').select('id', { count: 'exact', head: true }).eq('stok_id', silinecek.id),
@@ -101,14 +101,17 @@ export default function StokPage() {
       }
       await sil(silinecek.id)
       handleSilKapat()
-    } catch (err: any) {
-      setSilHatasi(err?.message ?? 'Aktarım sırasında hata oluştu.')
+    } catch (err: unknown) {
+      setSilHatasi(err instanceof Error ? err.message : 'Aktarım sırasında hata oluştu.')
     } finally {
       setSiliniyor(false)
     }
   }
 
   const aktifStokSayisi = stoklar.filter((s) => s.kategori === aktifSekme).length
+  const stokAd = (stok: Stok | null | undefined) =>
+    stok?.kategori === 'cam' ? normalizeCamAilesiAd(stok.ad) : stok?.ad ?? ''
+  const yeniStokEtiketi = aktifSekme === 'cam' ? 'Yeni Cam Ailesi' : 'Yeni Stok'
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -122,7 +125,7 @@ export default function StokPage() {
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus size={16} />
-          Yeni Stok
+          {yeniStokEtiketi}
         </button>
       </div>
 
@@ -164,14 +167,14 @@ export default function StokPage() {
         <EmptyState
           icon={Package}
           baslik="Henüz stok kaydı yok"
-          aciklama={'Cam, çıta ve yan malzemelerinizi ekleyerek katalogları oluşturun.'}
+          aciklama={'Cam aileleri, çıta ve yan malzemelerinizi ekleyerek katalogları oluşturun.'}
           aksiyon={
             <button
               onClick={() => setFormAcik(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus size={16} />
-              Yeni Stok
+              {yeniStokEtiketi}
             </button>
           }
         />
@@ -200,7 +203,7 @@ export default function StokPage() {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Stok Silinsin mi?</h3>
             <p className="text-sm text-gray-500 mb-5">
-              <span className="font-medium text-gray-700">{silinecek.ad}</span> adlı stok
+              <span className="font-medium text-gray-700">{stokAd(silinecek)}</span> adlı stok
               kalıcı olarak silinecek. Bu işlem geri alınamaz.
             </p>
             {silHatasi && (
@@ -237,7 +240,7 @@ export default function StokPage() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">Stok Kullanımda</h3>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  <span className="font-medium text-gray-700">{silinecek.ad}</span> adlı stok
+                  <span className="font-medium text-gray-700">{stokAd(silinecek)}</span> adlı stok
                   önceki siparişlerde kullanılıyor
                   {kullanimSayisi && (
                     <> ({(kullanimSayisi.stok + kullanimSayisi.cita)} kayıt)</>
@@ -260,7 +263,7 @@ export default function StokPage() {
                 {stoklar
                   .filter((s) => s.id !== silinecek.id && s.kategori === silinecek.kategori)
                   .map((s) => (
-                    <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>
+                    <option key={s.id} value={s.id}>{s.kod} — {stokAd(s)}</option>
                   ))}
               </select>
             </div>
@@ -270,10 +273,10 @@ export default function StokPage() {
                 <p className="text-sm text-amber-800">
                   Tüm referanslar{' '}
                   <span className="font-semibold">
-                    {stoklar.find((s) => s.id === migrasyonHedefId)?.ad}
+                    {stokAd(stoklar.find((s) => s.id === migrasyonHedefId))}
                   </span>{' '}
                   stoğuna aktarılacak ve{' '}
-                  <span className="font-semibold">{silinecek.ad}</span> silinecek.
+                  <span className="font-semibold">{stokAd(silinecek)}</span> silinecek.
                   Bu işlem <span className="font-semibold">geri alınamaz</span>. Emin misiniz?
                 </p>
                 <button

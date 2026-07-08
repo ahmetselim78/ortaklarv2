@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { bugununVardiyaSablonlariniUygula } from '@/lib/saatlikVardiyaAuto'
 import type {
   GunlukUretimSatiri,
   HrPersonel,
@@ -164,7 +165,24 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
       if (satirRes.error) throw satirRes.error
       if (personelRes.error) throw personelRes.error
 
-      setSatirlar((satirRes.data ?? []) as GunlukUretimSatiri[])
+      let gunlukSatirlar = (satirRes.data ?? []) as GunlukUretimSatiri[]
+
+      if (tarih === toDateStr() && gunlukSatirlar.length === 0) {
+        const otomatikSonuc = await bugununVardiyaSablonlariniUygula(tarih)
+
+        if (otomatikSonuc.durum === 'uygulandi') {
+          const { data: yenilenenSatirlar, error: yenilemeError } = await supabase
+            .from('gunluk_uretim_takip')
+            .select('*')
+            .eq('tarih', tarih)
+            .order('sira_no', { ascending: true })
+
+          if (yenilemeError) throw yenilemeError
+          gunlukSatirlar = (yenilenenSatirlar ?? []) as GunlukUretimSatiri[]
+        }
+      }
+
+      setSatirlar(gunlukSatirlar)
       setPersoneller((personelRes.data ?? []) as HrPersonel[])
     } catch (err) {
       setHata(err instanceof Error ? err.message : 'Veri yüklenemedi')

@@ -6,6 +6,17 @@ import { ArrowLeft, Wifi, WifiOff, Volume2, VolumeX, AlertTriangle, Keyboard, Ar
 
 /* ========== Tipler ========== */
 
+type YeniCamPayload = {
+  cam_kodu?: string
+  teknik_cam_kodu?: string
+  siparis_detay_id?: string
+}
+
+type CitaDetayRow = {
+  katman_yapisi: string | null
+  cita_stok?: { kalinlik_mm?: number | null } | { kalinlik_mm?: number | null }[] | null
+}
+
 /* ========== Bileşen ========== */
 
 export default function GostergeEkraniPage() {
@@ -60,7 +71,7 @@ export default function GostergeEkraniPage() {
     const channel = supabase
       .channel('uretim-istasyonlar')
       .on('broadcast', { event: 'yeni_cam' }, async ({ payload }) => {
-        const p = payload as any
+        const p = payload as YeniCamPayload
 
         // Çıta kalınlığını doğrudan DB'den çek (broadcast payload'a bağımsız)
         let gelenMm: number | null = null
@@ -72,11 +83,13 @@ export default function GostergeEkraniPage() {
           else sorgu = sorgu.eq('cam_kodu', p.teknik_cam_kodu ?? p.cam_kodu)
           const { data } = await sorgu.maybeSingle()
           if (data) {
+            const detay = data as CitaDetayRow
+            const citaStok = Array.isArray(detay.cita_stok) ? detay.cita_stok[0] : detay.cita_stok
             // 1) cita_stok.kalinlik_mm
-            gelenMm = (data as any).cita_stok?.kalinlik_mm ?? null
+            gelenMm = citaStok?.kalinlik_mm ?? null
             // 2) katman_yapisi orta sayısı ("4+16+4" → 16)
-            if (gelenMm == null && data.katman_yapisi) {
-              const p2 = data.katman_yapisi.split('+')
+            if (gelenMm == null && detay.katman_yapisi) {
+              const p2 = detay.katman_yapisi.split('+')
               if (p2.length >= 3) gelenMm = Number(p2[1]) || null
               else if (p2.length === 2) gelenMm = Number(p2[1]) || null
             }

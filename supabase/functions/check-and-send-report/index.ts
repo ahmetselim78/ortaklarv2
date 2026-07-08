@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Deno Edge Function — TypeScript project config bu dosyayı kapsamaz
 
 const corsHeaders = {
@@ -20,6 +19,18 @@ function turkiyeSaati(): { tarih: string; saat: string } {
     tarih: `${yil}-${ay}-${gun}`,
     saat: `${saat}:${dakika}`,
   }
+}
+
+function normalizeSaatDegeri(deger: unknown): string | null {
+  if (typeof deger !== 'string') return null
+  const match = deger.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  if (!match) return null
+
+  const saat = Number(match[1])
+  const dakika = Number(match[2])
+  if (saat < 0 || saat > 23 || dakika < 0 || dakika > 59) return null
+
+  return `${String(saat).padStart(2, '0')}:${String(dakika).padStart(2, '0')}`
 }
 
 // ── Türkçe ay adları ──────────────────────────────────────────────────────────
@@ -112,8 +123,23 @@ Deno.serve(async (req) => {
     force = body?.force === true
   } catch { /* body yok veya JSON değil */ }
 
+  let logKaydiEklendi = false
+  let logTarih = ''
+  let logSaat = ''
+  const logKaydiniSil = async () => {
+    if (!logKaydiEklendi || !logTarih || !logSaat) return
+    try {
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/telegram_rapor_log?tarih=eq.${encodeURIComponent(logTarih)}&saat=eq.${encodeURIComponent(logSaat)}`,
+        { method: 'DELETE', headers: supabaseHeaders },
+      )
+    } catch { /* log temizleme hatasi rapor akisini bozmamali */ }
+  }
+
   try {
     const { tarih, saat } = turkiyeSaati()
+    logTarih = tarih
+    logSaat = saat
 
     // ── 1. Telegram ayarlarını çek ───────────────────────────────────────────
     const ayarRes = await fetch(
@@ -151,7 +177,7 @@ Deno.serve(async (req) => {
         { headers: supabaseHeaders },
       )
       const saatler: Array<{ saat: string }> = await saatRes.json()
-      const eslesme = saatler.some(s => s.saat === saat)
+      const eslesme = saatler.some(s => normalizeSaatDegeri(s.saat) === saat)
 
       if (!eslesme) {
         return new Response(
@@ -181,6 +207,8 @@ Deno.serve(async (req) => {
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
+
+      logKaydiEklendi = true
     }
 
     // ── 4. Bugünün üretim verilerini çek ────────────────────────────────────
@@ -210,6 +238,7 @@ Deno.serve(async (req) => {
     const tgData = await tgRes.json()
 
     if (!tgData.ok) {
+      await logKaydiniSil()
       return new Response(
         JSON.stringify({ ok: false, mesaj: 'Telegram API hatası', detay: tgData }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -221,6 +250,7 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (err) {
+    await logKaydiniSil()
     return new Response(
       JSON.stringify({ error: (err as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

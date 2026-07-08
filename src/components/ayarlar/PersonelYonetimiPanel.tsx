@@ -489,28 +489,37 @@ export default function PersonelYonetimiPanel() {
             Henüz personel eklenmemiş.
           </div>
         ) : (
-          <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto px-1">
             {personeller.map(p => (
               <div
                 key={p.id}
-                className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                role="button"
+                tabIndex={0}
+                onClick={() => duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)
+                  }
+                }}
+                className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer focus:outline-none focus:shadow-[inset_0_0_0_2px_rgba(59,130,246,0.35)] ${
                   duzenlePersonel?.id === p.id
-                    ? 'bg-blue-50 border-blue-300'
+                    ? 'bg-blue-50 border-blue-400 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)]'
                     : p.is_aktif
-                    ? 'bg-white border-gray-200'
-                    : 'bg-gray-50 border-gray-100 opacity-60'
+                    ? 'bg-white border-gray-200 hover:border-blue-200 hover:bg-blue-50/30'
+                    : 'bg-gray-50 border-gray-100 opacity-60 hover:border-blue-200'
                 }`}
               >
                 <PersonelAvatar foto_url={p.foto_url} ad_soyad={p.ad_soyad} boyut="md" />
 
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0">
                   <p className={`text-sm font-medium truncate ${p.is_aktif ? 'text-gray-800' : 'text-gray-500'}`}>
                     {p.ad_soyad}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0">
                     {p.rol}
                     {p.kullanici_adi && (
-                      <span className="ml-2 text-violet-500">@{p.kullanici_adi}</span>
+                      <span className="min-w-0 text-violet-500 truncate">@{p.kullanici_adi}</span>
                     )}
                     {p.giris_sifresi && (
                       <span className="ml-1 text-gray-300" title="Şifre tanımlı">
@@ -520,7 +529,7 @@ export default function PersonelYonetimiPanel() {
                   </p>
                 </div>
 
-                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium ${
                   p.rol === 'Direkt' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'
                 }`}>
                   {p.rol}
@@ -529,7 +538,10 @@ export default function PersonelYonetimiPanel() {
                 {/* Düzenle */}
                 <button
                   type="button"
-                  onClick={() => duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)}
+                  onClick={e => {
+                    e.stopPropagation()
+                    duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)
+                  }}
                   title="Düzenle"
                   className={`p-1.5 rounded-lg transition-colors ${
                     duzenlePersonel?.id === p.id
@@ -543,7 +555,10 @@ export default function PersonelYonetimiPanel() {
                 {/* Aktif/Pasif toggle */}
                 <button
                   type="button"
-                  onClick={() => aktiflikDegistir(p)}
+                  onClick={e => {
+                    e.stopPropagation()
+                    aktiflikDegistir(p)
+                  }}
                   title={p.is_aktif ? 'Pasife Al' : 'Aktif Et'}
                   className={`p-1.5 rounded-lg transition-colors ${
                     p.is_aktif ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'
@@ -557,14 +572,20 @@ export default function PersonelYonetimiPanel() {
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => sil(p.id)}
+                      onClick={e => {
+                        e.stopPropagation()
+                        sil(p.id)
+                      }}
                       className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
                     >
                       Evet
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSilmeOnayId(null)}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setSilmeOnayId(null)
+                      }}
                       className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
                     >
                       Hayır
@@ -573,7 +594,10 @@ export default function PersonelYonetimiPanel() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setSilmeOnayId(p.id)}
+                    onClick={e => {
+                      e.stopPropagation()
+                      setSilmeOnayId(p.id)
+                    }}
                     className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     <Trash2 size={14} />

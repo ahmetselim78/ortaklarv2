@@ -77,6 +77,12 @@ interface DetayWithBatch extends SiparisDetay {
   aktif_tamir?: TamirBilgi | null
 }
 
+type BatchJoinRow = {
+  siparis_detay_id: string
+  sira_no: number | null
+  uretim_emirleri?: { batch_no?: string | null } | { batch_no?: string | null }[] | null
+}
+
 export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }: Props) {
   useEscape(onKapat)
   const { yapilar: populerKatmanYapilari } = useKatmanYapilari()
@@ -197,10 +203,11 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat }
         .in('siparis_detay_id', camIds)
 
       const batchMap = new Map<string, { batch_no: string; sira_no: number | null }>()
-      for (const b of batchData ?? []) {
+      for (const b of (batchData ?? []) as BatchJoinRow[]) {
+        const emir = Array.isArray(b.uretim_emirleri) ? b.uretim_emirleri[0] : b.uretim_emirleri
         batchMap.set(b.siparis_detay_id, {
-          batch_no: (b as any).uretim_emirleri?.batch_no ?? '',
-          sira_no: (b as any).sira_no ?? null,
+          batch_no: emir?.batch_no ?? '',
+          sira_no: b.sira_no ?? null,
         })
       }
 

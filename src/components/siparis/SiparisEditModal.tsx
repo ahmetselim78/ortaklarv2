@@ -129,7 +129,8 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
   const toggleGenislet = (idx: number) => {
     setGenisletilmis(prev => {
       const s = new Set(prev)
-      s.has(idx) ? s.delete(idx) : s.add(idx)
+      if (s.has(idx)) s.delete(idx)
+      else s.add(idx)
       return s
     })
   }

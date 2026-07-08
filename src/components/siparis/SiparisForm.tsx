@@ -1,20 +1,21 @@
 import { useState } from 'react'
-import { useForm, useFieldArray, useWatch } from 'react-hook-form'
+import { useForm, useFieldArray, useWatch, type FieldPath } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, PackageCheck, AlertTriangle } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
-import type { SiparisTaslakVerisi } from '@/types/taslak'
+import type { SiparisTaslakCam, SiparisTaslakVerisi } from '@/types/taslak'
 import { cn } from '@/lib/utils'
-import { camTipiAd } from '@/lib/utils'
+import { isValidKatmanYapisi, normalizeCamAilesiAd, normalizeKatmanYapisi } from '@/lib/cam'
 import { useEscape } from '@/hooks/useEscape'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
 
 const camSchema = z.object({
-  stok_id: z.string().min(1, 'Cam cinsi seçiniz'),
+  stok_id: z.string().min(1, 'Cam ailesi seçiniz'),
+  katman_yapisi: z.string().min(1, 'Katman yapısı giriniz').refine(isValidKatmanYapisi, 'Örn: 4+16+4'),
   genislik_mm: z.coerce.number().positive('Pozitif olmalı'),
   yukseklik_mm: z.coerce.number().positive('Pozitif olmalı'),
   adet: z.coerce.number().int().min(1, 'En az 1'),
@@ -34,7 +35,8 @@ const schema = z.object({
   camlar: z.array(camSchema).min(1, 'En az 1 cam parçası eklenmelidir'),
 })
 
-type FormVeri = z.infer<typeof schema>
+type FormGirdi = z.input<typeof schema>
+type FormVeri = z.output<typeof schema>
 
 interface Props {
   cariler: Cari[]
@@ -53,6 +55,7 @@ interface Props {
 
 const BOŞ_CAM = {
   stok_id: '',
+  katman_yapisi: '',
   genislik_mm: '' as unknown as number,
   yukseklik_mm: '' as unknown as number,
   adet: 1,
@@ -60,6 +63,10 @@ const BOŞ_CAM = {
   kenar_islemi: '',
   notlar: '',
   poz: '',
+}
+
+function taslakDegeri(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined
 }
 
 export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initialTaslak, onTaslakKaydet }: Props) {
@@ -76,7 +83,11 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
   const toggleGenislet = (idx: number) => {
     setGenisletilmis(prev => {
       const s = new Set(prev)
-      s.has(idx) ? s.delete(idx) : s.add(idx)
+      if (s.has(idx)) {
+        s.delete(idx)
+      } else {
+        s.add(idx)
+      }
       return s
     })
   }
@@ -89,8 +100,8 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     trigger,
     getValues,
     formState: { errors },
-  } = useForm<FormVeri>({    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(schema) as any,
+  } = useForm<FormGirdi, unknown, FormVeri>({
+    resolver: zodResolver(schema),
     defaultValues: {
       tarih: initialTaslak?.tarih || new Date().toISOString().split('T')[0],
       cari_id: initialTaslak?.cari_id ?? '',
@@ -98,8 +109,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
       alt_musteri: initialTaslak?.alt_musteri ?? '',
       notlar: initialTaslak?.notlar ?? '',
       teslimat_tipi: initialTaslak?.teslimat_tipi || 'teslim_alacak',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      camlar: (initialTaslak?.camlar?.length ? initialTaslak.camlar : [{ ...BOŞ_CAM }]) as any,
+      camlar: initialTaslak?.camlar?.length ? initialTaslak.camlar : [{ ...BOŞ_CAM }],
     },
   })
 
@@ -112,6 +122,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     append({
       ...BOŞ_CAM,
       stok_id: src?.stok_id ?? '',
+      katman_yapisi: src?.katman_yapisi ?? '',
       ara_bosluk_mm: src?.ara_bosluk_mm ?? ('' as unknown as number),
     })
   }
@@ -178,13 +189,14 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
       const ok = await trigger(['cari_id', 'tarih'])
       if (ok) setAdim(2)
     } else if (adim === 2) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ok = await trigger(fields.flatMap((_, i) => [
+      const alanlar = fields.flatMap((_, i) => [
         `camlar.${i}.stok_id`,
+        `camlar.${i}.katman_yapisi`,
         `camlar.${i}.genislik_mm`,
         `camlar.${i}.yukseklik_mm`,
         `camlar.${i}.adet`,
-      ]) as any)
+      ] as FieldPath<FormGirdi>[])
+      const ok = await trigger(alanlar)
       if (ok) {
         setAdim(3)
       }
@@ -218,8 +230,18 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
   const kapat = () => {
     if (!basariliKayit && onTaslakKaydet) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const v = getValues() as any
+        const v = getValues()
+        const taslakCamlar: SiparisTaslakCam[] = (v.camlar ?? []).map((cam) => ({
+          stok_id: cam.stok_id,
+          katman_yapisi: cam.katman_yapisi,
+          genislik_mm: taslakDegeri(cam.genislik_mm),
+          yukseklik_mm: taslakDegeri(cam.yukseklik_mm),
+          adet: taslakDegeri(cam.adet),
+          ara_bosluk_mm: taslakDegeri(cam.ara_bosluk_mm),
+          kenar_islemi: cam.kenar_islemi,
+          notlar: cam.notlar,
+          poz: cam.poz,
+        }))
         onTaslakKaydet({
           cari_id: v.cari_id,
           tarih: v.tarih,
@@ -227,7 +249,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
           alt_musteri: v.alt_musteri,
           notlar: v.notlar,
           teslimat_tipi: v.teslimat_tipi,
-          camlar: v.camlar,
+          camlar: taslakCamlar,
         })
       } catch {
         // veri okunamazsa sessizce geç
@@ -238,21 +260,6 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
   useEscape(kapat, !kaydediliyor)
 
   const camStoklar = stoklar.filter(s => s.kategori === 'cam')
-
-  // Kalınlık + Cam Tipi ayrı seçim için yardımcılar
-  const benzersizKalinliklar = [...new Set(
-    camStoklar.map(s => s.kalinlik_mm).filter((k): k is number => k != null)
-  )].sort((a, b) => a - b)
-  const benzersizTipler = [...new Set(
-    camStoklar.map(s => camTipiAd(s.ad)).filter(Boolean)
-  )]
-  const stokFromKalinlikTip = (kalinlik: number | null, tip: string | null): Stok | undefined => {
-    return camStoklar.find(s =>
-      (kalinlik == null || Number(s.kalinlik_mm) === kalinlik) &&
-      (tip == null || camTipiAd(s.ad) === tip)
-    )
-  }
-  const stokById = (id: string | undefined) => camStoklar.find(s => s.id === id)
 
   const ADIMLAR = [
     { no: 1, etiket: 'Müşteri Bilgileri' },
@@ -295,7 +302,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit as any)} className="hidden" />
+        <form onSubmit={handleSubmit(onSubmit)} className="hidden" />
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 py-5">
 
@@ -386,8 +393,8 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                         <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
                           <th className="px-2 py-2 text-center text-gray-300 w-7">#</th>
                           <th className="px-2 py-2">Poz</th>
-                          <th className="px-2 py-2">Kalınlık *</th>
-                          <th className="px-2 py-2">Cam Cinsi *</th>
+                          <th className="px-2 py-2">Katman *</th>
+                          <th className="px-2 py-2">Cam Ailesi *</th>
                           <th className="px-2 py-2">Gen. (mm)</th>
                           <th className="px-2 py-2">Yük. (mm)</th>
                           <th className="px-2 py-2">Adet</th>
@@ -416,57 +423,33 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                               />
                             </td>
                             <td className="px-1.5 py-1.5">
-                              {(() => {
-                                const cur = stokById(watchedCamlar?.[index]?.stok_id)
-                                const curK = cur?.kalinlik_mm ?? ''
-                                return (
-                                  <select
-                                    value={curK === '' ? '' : String(curK)}
-                                    onChange={(e) => {
-                                      const k = e.target.value ? Number(e.target.value) : null
-                                      const tip = cur ? camTipiAd(cur.ad) : null
-                                      const yeni = stokFromKalinlikTip(k, tip) ?? (k != null ? stokFromKalinlikTip(k, null) : undefined)
-                                      setValue(`camlar.${index}.stok_id`, yeni?.id ?? '')
-                                    }}
-                                    className={cn(
-                                      'w-16 rounded border px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
-                                      errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
-                                    )}
-                                  >
-                                    <option value="">—</option>
-                                    {benzersizKalinliklar.map(k => (
-                                      <option key={k} value={k}>{k}mm</option>
-                                    ))}
-                                  </select>
-                                )
-                              })()}
+                              <input
+                                type="text"
+                                {...register(`camlar.${index}.katman_yapisi`, {
+                                  setValueAs: (v) => normalizeKatmanYapisi(String(v ?? '')) || String(v ?? '').replace(/\s+/g, ''),
+                                })}
+                                className={cn(
+                                  'w-24 rounded border px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                  errors.camlar?.[index]?.katman_yapisi ? 'border-red-300' : 'border-gray-200'
+                                )}
+                                placeholder="4+16+4"
+                              />
                             </td>
                             <td className="px-1.5 py-1.5">
-                              {(() => {
-                                const cur = stokById(watchedCamlar?.[index]?.stok_id)
-                                const curTip = cur ? camTipiAd(cur.ad) : ''
-                                return (
-                                  <select
-                                    value={curTip}
-                                    onChange={(e) => {
-                                      const tip = e.target.value || null
-                                      const k = cur?.kalinlik_mm ?? null
-                                      const yeni = stokFromKalinlikTip(k, tip) ?? (tip != null ? stokFromKalinlikTip(null, tip) : undefined)
-                                      setValue(`camlar.${index}.stok_id`, yeni?.id ?? '')
-                                    }}
-                                    className={cn(
-                                      'w-32 rounded border px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
-                                      errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
-                                    )}
-                                  >
-                                    <option value="">Seçiniz...</option>
-                                    {benzersizTipler.map(t => (
-                                      <option key={t} value={t}>{t}</option>
-                                    ))}
-                                  </select>
-                                )
-                              })()}
-                              <input type="hidden" {...register(`camlar.${index}.stok_id`)} />
+                              <select
+                                {...register(`camlar.${index}.stok_id`)}
+                                className={cn(
+                                  'w-40 rounded border px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                  errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
+                                )}
+                              >
+                                <option value="">Seçiniz...</option>
+                                {camStoklar.map(s => (
+                                  <option key={s.id} value={s.id}>
+                                    {normalizeCamAilesiAd(s.ad)}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             <td className="px-1.5 py-1.5">
                               <input
@@ -710,7 +693,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                   </button>
                 ) : (
                   <button
-                    onClick={handleSubmit(onSubmit as any)}
+                    onClick={handleSubmit(onSubmit)}
                     disabled={kaydediliyor}
                     className="px-5 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
                   >

@@ -7,8 +7,10 @@ import type { Stok, StokKategori } from '@/types/stok'
 import type { Cari } from '@/types/cari'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
+import { normalizeCamAilesiAd, varsayilanCamAileleri } from '@/lib/cam'
 
 const CITA_BOYUTLARI = [9, 11, 12, 14, 15, 16, 20, 22]
+const CAM_AILELERI = varsayilanCamAileleri()
 
 const schema = z.object({
   kategori: z.enum(['cam', 'cita', 'yan_malzeme']),
@@ -22,7 +24,7 @@ const schema = z.object({
 
 type FormGirdi = z.input<typeof schema>
 type FormVeri = z.output<typeof schema>
-type StokPayload = Omit<FormVeri, 'tedarikci_id' | 'marka' | 'kalinlik_mm' | 'birim_fiyat'> & {
+export type StokPayload = Omit<FormVeri, 'tedarikci_id' | 'marka' | 'kalinlik_mm' | 'birim_fiyat'> & {
   tedarikci_id: string | null
   marka: string | null
   kalinlik_mm: number | null
@@ -74,15 +76,17 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
       setValue('kalinlik_mm', '')
     } else {
       setValue('birim', 'm2')
+      setValue('kalinlik_mm', '')
     }
   }, [kategori, duzenlenecek, setValue])
 
   useEffect(() => {
     if (duzenlenecek) {
+      const stokKategori = duzenlenecek.kategori ?? 'cam'
       reset({
-        kategori: duzenlenecek.kategori ?? 'cam',
-        ad: duzenlenecek.ad,
-        kalinlik_mm: duzenlenecek.kalinlik_mm ?? '',
+        kategori: stokKategori,
+        ad: stokKategori === 'cam' ? normalizeCamAilesiAd(duzenlenecek.ad) : duzenlenecek.ad,
+        kalinlik_mm: stokKategori === 'cam' ? '' : duzenlenecek.kalinlik_mm ?? '',
         birim: duzenlenecek.birim,
         birim_fiyat: duzenlenecek.birim_fiyat ?? '',
         tedarikci_id: duzenlenecek.tedarikci_id ?? '',
@@ -105,11 +109,13 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
     setKaydediliyor(true)
     setSunucuHata(null)
     try {
+      const camMi = veri.kategori === 'cam'
       const payload: StokPayload = {
         ...veri,
-        tedarikci_id: veri.tedarikci_id || null,
-        marka: veri.marka || null,
-        kalinlik_mm: typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null,
+        ad: camMi ? normalizeCamAilesiAd(veri.ad) : veri.ad.trim(),
+        tedarikci_id: camMi ? null : veri.tedarikci_id || null,
+        marka: camMi ? null : veri.marka || null,
+        kalinlik_mm: camMi ? null : typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null,
         birim_fiyat: typeof veri.birim_fiyat === 'number' ? veri.birim_fiyat : null,
       }
       await onKaydet(payload)
@@ -124,6 +130,12 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
   const handleCitaBoyut = (boyut: number) => {
     setValue('ad', `Alüminyum Çıta ${boyut}mm`)
     setValue('kalinlik_mm', boyut)
+  }
+
+  const handleCamAilesiSec = (ad: string) => {
+    setValue('ad', ad)
+    setValue('birim', 'm2')
+    setValue('kalinlik_mm', '')
   }
 
   const tedarikciListesi = cariler.filter(c => c.tipi === 'tedarikci')
@@ -174,6 +186,30 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
             </div>
           </div>
 
+          {/* Cam aile preset */}
+          {kategori === 'cam' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cam Ailesi</label>
+              <div className="flex flex-wrap gap-2">
+                {CAM_AILELERI.map((aile) => (
+                  <button
+                    key={aile}
+                    type="button"
+                    onClick={() => handleCamAilesiSec(aile)}
+                    className={cn(
+                      'px-3 py-1.5 text-xs rounded-lg border transition-colors',
+                      normalizeCamAilesiAd(watch('ad')) === aile
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    )}
+                  >
+                    {aile}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Çıta boyut preset */}
           {kategori === 'cita' && (
             <div>
@@ -208,33 +244,13 @@ export default function StokForm({ duzenlenecek, cariler, defaultKategori, onKay
                 errors.ad ? 'border-red-300' : 'border-gray-200'
               )}
               placeholder={
-                kategori === 'cam' ? 'Örn: Şeffaf Cam 6mm' :
+                kategori === 'cam' ? 'Örn: Isıcam Konfor' :
                 kategori === 'cita' ? 'Yukarıdan boyut seçin veya yazın' :
                 'Örn: Poliüretan, Butil...'
               }
             />
             {errors.ad && <p className="mt-1 text-xs text-red-500">{errors.ad.message}</p>}
           </div>
-
-          {/* Cam: Kalınlık */}
-          {kategori === 'cam' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Kalınlık (mm) *</label>
-              <input
-                {...register('kalinlik_mm')}
-                type="number"
-                step="0.1"
-                className={cn(
-                  'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
-                  errors.kalinlik_mm ? 'border-red-300' : 'border-gray-200'
-                )}
-                placeholder="Örn: 4, 5, 6, 8"
-              />
-              <p className="mt-1 text-[11px] text-gray-400">
-                Kalınlık stok için zorunlu, Kompozisyon (4+16+4 vb.) siparişte satır bazında girilir.
-              </p>
-            </div>
-          )}
 
           {/* Tedarikçi — cam dışında */}
           {kategori !== 'cam' && (

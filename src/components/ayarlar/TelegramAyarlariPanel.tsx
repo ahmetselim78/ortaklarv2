@@ -13,6 +13,14 @@ function saatGecerliMi(saat: string): boolean {
   })()
 }
 
+function saatNormalize(saat: string): string {
+  const parcalar = saat.trim().split(':')
+  if (parcalar.length < 2) return saat.trim()
+
+  const [h = '', m = ''] = parcalar
+  return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
+}
+
 // ── Ana Panel ─────────────────────────────────────────────────────────────────
 
 export default function TelegramAyarlariPanel() {
@@ -97,17 +105,18 @@ export default function TelegramAyarlariPanel() {
   // ── Saat ekle ────────────────────────────────────────────────────────────
   const saatEkle = async () => {
     setSaatHata(null)
-    if (!saatGecerliMi(yeniSaat)) {
+    const normalizedSaat = saatNormalize(yeniSaat)
+    if (!saatGecerliMi(normalizedSaat)) {
       setSaatHata('Geçerli bir saat girin (ÖR: 08:00)')
       return
     }
-    if (saatler.some(s => s.saat === yeniSaat)) {
+    if (saatler.some(s => saatNormalize(s.saat) === normalizedSaat)) {
       setSaatHata('Bu saat zaten eklenmiş.')
       return
     }
     const { error } = await supabase
       .from('telegram_rapor_saatleri')
-      .insert([{ saat: yeniSaat, aktif: true }])
+      .insert([{ saat: normalizedSaat, aktif: true }])
     if (error) { setSaatHata(error.message); return }
     setYeniSaat('')
     await getir()
@@ -246,8 +255,7 @@ export default function TelegramAyarlariPanel() {
             </button>
           </div>
           <p className="mt-1 text-[11px] text-gray-400">
-            Bu değeri aynı zamanda Supabase → Edge Functions → Secrets'a{' '}
-            <code className="bg-gray-100 px-1 rounded text-gray-600">TELEGRAM_BOT_TOKEN</code> olarak eklemeyi unutmayın.
+            Otomatik ve test raporları bu panelde kaydedilen token değerini kullanır.
           </p>
         </div>
 
@@ -297,7 +305,7 @@ export default function TelegramAyarlariPanel() {
           <h3 className="text-sm font-semibold text-gray-800 mb-1">Otomatik Rapor Saatleri</h3>
           <p className="text-xs text-gray-500">
             Bu saatlerde (Türkiye saatiyle) Telegram'a otomatik rapor gönderilir.
-            pg_cron her dakika Edge Function'ı çalıştırır; saat eşleştiğinde rapor iletilir.
+            Veritabanı cron görevi her dakika kayıtlı saatleri kontrol eder; saat eşleştiğinde rapor iletilir.
           </p>
         </div>
 
@@ -388,17 +396,13 @@ export default function TelegramAyarlariPanel() {
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-xs text-amber-800 space-y-2">
         <p className="font-semibold flex items-center gap-1.5">
           <AlertCircle size={13} />
-          pg_cron Kurulum Hatırlatıcısı
+          Otomatik Gönderim Notu
         </p>
         <p>
           Otomatik gönderim için Supabase Dashboard → Database → Extensions bölümünden{' '}
-          <strong>pg_net</strong> ve <strong>pg_cron</strong> aktif olmalı; ardından{' '}
-          migration dosyasındaki SQL'i SQL Editor'da çalıştırmanız gerekiyor.
-        </p>
-        <p>
-          Edge Function secret:{' '}
-          <code className="bg-amber-100 px-1 rounded">TELEGRAM_BOT_TOKEN</code> →{' '}
-          Dashboard → Edge Functions → check-and-send-report → Secrets
+          <strong>pg_net</strong> ve <strong>pg_cron</strong> aktif olmalı. Yeni migration uygulandığında
+          <code className="bg-amber-100 px-1 rounded mx-1">telegram-rapor-gonder</code>
+          cron görevi otomatik kurulur.
         </p>
       </div>
     </div>
