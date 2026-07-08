@@ -4,12 +4,10 @@ import type { Siparis, SiparisDetay } from '@/types/siparis'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import { supabase } from '@/lib/supabase'
-import { isValidKatmanYapisi, normalizeKatmanYapisi, getCamKompozisyon } from '@/lib/cam'
 import { fizikselCamAdedi, tekilSiparisDetayRows } from '@/lib/siparisDetay'
-import { useKatmanYapilari } from '@/hooks/useKatmanYapilari'
 import { useEscape } from '@/hooks/useEscape'
-import KatmanCombobox from '@/components/ui/KatmanCombobox'
 import { cn } from '@/lib/utils'
+import CamStokPicker from '@/components/siparis/CamStokPicker'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
@@ -22,7 +20,6 @@ interface CamSatiri {
   genislik_mm: string
   yukseklik_mm: string
   adet: string
-  katman_yapisi: string  // "4+16+4", "4+12+4+16+5", vb.
   kenar_islemi: string
   notlar: string
   poz: string
@@ -48,16 +45,7 @@ interface Props {
 let _keyCounter = 0
 const newKey = () => `k${++_keyCounter}`
 
-/** Mevcut detaydan düzenleme için katman_yapisi türet (eski veri / yeni veri her ikisini destekler). */
-function deriveKatmanYapisi(d: SiparisDetay, stoklar: Stok[]): string {
-  const norm = normalizeKatmanYapisi(d.katman_yapisi)
-  if (norm) return norm
-  const stok = stoklar.find(s => s.id === d.stok_id)
-  return getCamKompozisyon(d, stok ? { ad: stok.ad, kalinlik_mm: stok.kalinlik_mm } : null)
-}
-
 export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, onKaydet, onKapat }: Props) {
-  const { yapilar: populerKatmanYapilari } = useKatmanYapilari()
   const beklemede = siparis.durum === 'beklemede'
   const ADIMLAR = beklemede
     ? [{ no: 1, etiket: 'Sipariş Bilgileri' }, { no: 2, etiket: 'Cam Listesi' }, { no: 3, etiket: 'Sevkiyat' }]
@@ -93,7 +81,6 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       genislik_mm: String(d.genislik_mm),
       yukseklik_mm: String(d.yukseklik_mm),
       adet: String(d.adet ?? 1),
-      katman_yapisi: deriveKatmanYapisi(d, stoklar),
       kenar_islemi: d.kenar_islemi ?? '',
       notlar: d.notlar ?? '',
       poz: d.poz ?? '',
@@ -107,11 +94,16 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
 
   useEscape(onKapat, !kaydediliyor)
 
-  const camStoklar = stoklar.filter(s => s.kategori === 'cam')
+  const stokSecenekleri = stoklar.filter(
+    (s) => s.kategori === 'cam' && (s.aktif !== false || camlar.some((c) => c.stok_id === s.id))
+  )
   const musteriCariler = cariler.filter(c => c.tipi === 'musteri')
 
   const updateCam = (idx: number, field: keyof CamSatiri, value: string) => {
-    setCamlar(prev => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c))
+    setCamlar(prev => prev.map((c, i) => {
+      if (i !== idx) return c
+      return { ...c, [field]: value }
+    }))
   }
 
   const toggleTag = (idx: number, field: 'kenar_islemi' | 'notlar', tag: string) => {
@@ -143,7 +135,6 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
       genislik_mm: '',
       yukseklik_mm: '',
       adet: '1',
-      katman_yapisi: last?.katman_yapisi ?? '',
       kenar_islemi: '',
       notlar: '',
       poz: '',
@@ -277,18 +268,19 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
         const mevcutlar = camlar.filter(c => c.id)
         if (mevcutlar.length > 0) {
           const updates = mevcutlar.map(c => ({
-            id: c.id!,
-            siparis_id: siparis.id,
-            cam_kodu: c.cam_kodu,            // NOT NULL — upsert için zorunlu
-            stok_id: c.stok_id || null,
-            genislik_mm: Number(c.genislik_mm) || 0,
-            yukseklik_mm: Number(c.yukseklik_mm) || 0,
-            adet: 1,
-            katman_yapisi: normalizeKatmanYapisi(c.katman_yapisi) || null,
-            kenar_islemi: c.kenar_islemi || null,
-            notlar: c.notlar || null,
-            poz: c.poz || null,
-          }))
+              id: c.id!,
+              siparis_id: siparis.id,
+              cam_kodu: c.cam_kodu,            // NOT NULL — upsert için zorunlu
+              stok_id: c.stok_id || null,
+              genislik_mm: Number(c.genislik_mm) || 0,
+              yukseklik_mm: Number(c.yukseklik_mm) || 0,
+              adet: 1,
+              kenar_islemi: c.kenar_islemi || null,
+              notlar: c.notlar || null,
+              poz: c.poz || null,
+              menfez_cap_mm: c.menfez_cap_mm ?? null,
+              kucuk_cam: c.kucuk_cam ?? false,
+            }))
           const { error } = await supabase
             .from('siparis_detaylari')
             .upsert(updates, { onConflict: 'id' })
@@ -318,6 +310,19 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
           .update({ tarih: teslimTarihi })
           .eq('id', mevcutSevkiyatId)
         if (error) throw new Error(error.message)
+      } else if (!mevcutSevkiyatId && teslimatTipi === 'sevkiyat' && teslimTarihi) {
+        const { data: araclar } = await supabase
+          .from('araclar')
+          .select('id')
+          .eq('aktif', true)
+          .limit(1)
+        const aracId = araclar?.[0]?.id
+        if (aracId) {
+          const { error } = await supabase
+            .from('sevkiyat_planlari')
+            .insert({ siparis_id: siparis.id, arac_id: aracId, tarih: teslimTarihi })
+          if (error) throw new Error(error.message)
+        }
       }
 
       onKaydet()
@@ -496,7 +501,6 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                           </span>
                         </th>
                         <th className="px-2 py-2">Cam Cinsi *</th>
-                        <th className="px-2 py-2">Katman</th>
                         <th className="px-2 py-2">Gen. (mm)</th>
                         <th className="px-2 py-2">Yük. (mm)</th>
                         <th className="px-2 py-2">Adet</th>
@@ -527,29 +531,12 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
                               />
                             </td>
                             <td className="px-1.5 py-1.5">
-                              <select
+                              <CamStokPicker
+                                stoklar={stokSecenekleri}
                                 value={cam.stok_id}
-                                onChange={e => updateCam(index, 'stok_id', e.target.value)}
-                                className={cn(
-                                  'w-40 rounded border px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
-                                  rowH?.stok_id ? 'border-red-300' : 'border-gray-200'
-                                )}
-                              >
-                                <option value="">Seçiniz...</option>
-                                {camStoklar.map(s => (
-                                  <option key={s.id} value={s.id}>{s.ad}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-1.5 py-1.5">
-                              <KatmanCombobox
-                                value={cam.katman_yapisi}
-                                onChange={v => updateCam(index, 'katman_yapisi', v.replace(/\s+/g, ''))}
-                                options={populerKatmanYapilari}
-                                invalid={!!cam.katman_yapisi && !isValidKatmanYapisi(cam.katman_yapisi)}
-                                placeholder="4+16+4"
-                                className="w-28"
-                                title="Katman yapısı (örn. 4+16+4 veya 4+12+4+16+5)."
+                                onChange={v => updateCam(index, 'stok_id', v)}
+                                invalid={!!rowH?.stok_id}
+                                pasifEtiketi
                               />
                             </td>
                             <td className="px-1.5 py-1.5">

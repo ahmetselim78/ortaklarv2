@@ -5,19 +5,56 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ── Türkiye saatini al (UTC+3) ────────────────────────────────────────────────
+type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
+
+interface TelegramSablon {
+  baslik: boolean
+  saatlik_detay: boolean
+  saatlik_ozet: boolean
+  istasyonlar: boolean
+  araclar: boolean
+  personel: boolean
+  operator: boolean
+  notlar: boolean
+}
+
+interface SaatlikSatir {
+  saat_araligi: string
+  hedef_adet: number
+  gerceklesen_adet: number
+  fire_adet: number
+}
+
+interface UretimRaporu {
+  id: string
+  toplam_personel: number
+  notlar: string | null
+  created_at: string
+  operator: { ad_soyad: string } | null
+  istasyon_kayitlari: Array<{
+    adet: number
+    fire_adet: number
+    istasyon: { ad: string; sira_no: number } | null
+  }>
+  arac_yuklemeleri: Array<{
+    adet: number
+    dis_arac_plakasi: string | null
+    dis_arac_adi: string | null
+    arac: { plaka: string; ad: string } | null
+  }>
+}
+
+// ── Türkiye saatini al ────────────────────────────────────────────────────────
 function turkiyeSaati(): { tarih: string; saat: string } {
   const now = new Date()
-  // UTC+3 offset
-  const tr = new Date(now.getTime() + 3 * 60 * 60 * 1000)
-  const yil = tr.getUTCFullYear()
-  const ay = String(tr.getUTCMonth() + 1).padStart(2, '0')
-  const gun = String(tr.getUTCDate()).padStart(2, '0')
-  const saat = String(tr.getUTCHours()).padStart(2, '0')
-  const dakika = String(tr.getUTCMinutes()).padStart(2, '0')
   return {
-    tarih: `${yil}-${ay}-${gun}`,
-    saat: `${saat}:${dakika}`,
+    tarih: now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }),
+    saat: now.toLocaleTimeString('sv-SE', {
+      timeZone: 'Europe/Istanbul',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }),
   }
 }
 
@@ -33,7 +70,6 @@ function normalizeSaatDegeri(deger: unknown): string | null {
   return `${String(saat).padStart(2, '0')}:${String(dakika).padStart(2, '0')}`
 }
 
-// ── Türkçe ay adları ──────────────────────────────────────────────────────────
 const TR_AYLAR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran',
                   'Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık']
 
@@ -42,54 +78,175 @@ function gunGoster(tarih: string): string {
   return `${parseInt(gun)} ${TR_AYLAR[parseInt(ay) - 1]} ${yil}`
 }
 
-// ── MarkdownV2 escape ─────────────────────────────────────────────────────────
 function escMd(text: string): string {
   return String(text).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, c => `\\${c}`)
 }
 
-// ── Rapor metni oluştur ───────────────────────────────────────────────────────
+function performansEmoji(oran: number): string {
+  if (oran >= 95) return '🟢'
+  if (oran >= 80) return '🟡'
+  return '🔴'
+}
+
+function saatAraligiGoster(aralik: string): string {
+  return aralik.replace(/\s*-\s*/g, ' – ')
+}
+
+function ayirici(char = '─', uzunluk = 18): string {
+  return escMd(char.repeat(uzunluk))
+}
+
+function sablonFromAyar(ayar: Record<string, unknown>): TelegramSablon {
+  return {
+    baslik: ayar.sablon_baslik !== false,
+    saatlik_detay: ayar.sablon_saatlik_detay !== false,
+    saatlik_ozet: ayar.sablon_saatlik_ozet !== false,
+    istasyonlar: ayar.sablon_istasyonlar !== false,
+    araclar: ayar.sablon_araclar !== false,
+    personel: ayar.sablon_personel !== false,
+    operator: ayar.sablon_operator !== false,
+    notlar: ayar.sablon_notlar !== false,
+  }
+}
+
+function saatlikRaporMetni(satirlar: SaatlikSatir[], sablon: TelegramSablon): string {
+  const parcalar: string[] = []
+
+  if (sablon.baslik) {
+    parcalar.push(`📊 *Saatlik Takip*`)
+    parcalar.push(ayirici())
+  }
+
+  if (sablon.saatlik_detay) {
+    if (satirlar.length === 0) {
+      parcalar.push('_Henüz veri girilmemiş\\._')
+    } else {
+      for (const s of satirlar) {
+        const oran = s.hedef_adet > 0
+          ? Math.round((s.gerceklesen_adet / s.hedef_adet) * 100)
+          : 0
+        const emoji = performansEmoji(oran)
+        parcalar.push([
+          `🕐 *${escMd(saatAraligiGoster(s.saat_araligi))}*`,
+          `${emoji} Gerçekleşen: *${escMd(String(s.gerceklesen_adet))}* / ${escMd(String(s.hedef_adet))} \\(%${escMd(String(oran))}\\)`,
+          `🔥 Fire: *${escMd(String(s.fire_adet))}*`,
+        ].join('\n'))
+      }
+    }
+  }
+
+  if (sablon.saatlik_ozet) {
+    const toplamHedef = satirlar.reduce((s, r) => s + (r.hedef_adet ?? 0), 0)
+    const toplamGercek = satirlar.reduce((s, r) => s + (r.gerceklesen_adet ?? 0), 0)
+    const toplamFire = satirlar.reduce((s, r) => s + (r.fire_adet ?? 0), 0)
+    const performans = toplamHedef > 0
+      ? ((toplamGercek / toplamHedef) * 100).toFixed(1)
+      : '0.0'
+    const performansEmojiStr = performansEmoji(parseFloat(performans))
+
+    parcalar.push([
+      `📌 *Gün Özeti*`,
+      `✅ Gerçekleşen: *${escMd(String(toplamGercek))}* adet`,
+      `🎯 Hedef: *${escMd(String(toplamHedef))}* adet`,
+      `🔥 Fire: *${escMd(String(toplamFire))}* adet`,
+      `${performansEmojiStr} Performans: *%${escMd(performans)}*`,
+    ].join('\n'))
+  }
+
+  return parcalar.join('\n\n')
+}
+
+function uretimGirisRaporMetni(raporlar: UretimRaporu[], sablon: TelegramSablon): string {
+  const parcalar: string[] = []
+
+  if (sablon.baslik) {
+    parcalar.push(`🏭 *Üretim Girişi*`)
+    parcalar.push(ayirici())
+  }
+
+  if (raporlar.length === 0) {
+    parcalar.push('_Henüz giriş yapılmamış\\._')
+    return parcalar.join('\n\n')
+  }
+
+  raporlar.forEach((rapor, idx) => {
+    const blok: string[] = []
+    const kayitNo = raporlar.length > 1 ? ` ${idx + 1}` : ''
+
+    if (sablon.operator || sablon.personel) {
+      const bilgiler: string[] = []
+      if (sablon.operator) {
+        bilgiler.push(`👤 ${escMd(rapor.operator?.ad_soyad ?? 'Bilinmiyor')}`)
+      }
+      if (sablon.personel) {
+        bilgiler.push(`👥 ${escMd(String(rapor.toplam_personel))} personel`)
+      }
+      blok.push(`*Kayıt${escMd(kayitNo)}*\n${bilgiler.join(' · ')}`)
+    }
+
+    if (sablon.istasyonlar) {
+      const sirali = [...rapor.istasyon_kayitlari].sort(
+        (a, b) => (a.istasyon?.sira_no ?? 0) - (b.istasyon?.sira_no ?? 0),
+      )
+      if (sirali.length > 0) {
+        const satirlar = sirali.map(k => {
+          const ad = escMd(k.istasyon?.ad ?? '—')
+          const fire = k.fire_adet > 0 ? ` \\(🔥 ${escMd(String(k.fire_adet))}\\)` : ''
+          return `• ${ad} — *${escMd(String(k.adet))}* adet${fire}`
+        })
+        blok.push(`*İstasyonlar*\n${satirlar.join('\n')}`)
+      }
+    }
+
+    if (sablon.araclar && rapor.arac_yuklemeleri.length > 0) {
+      const satirlar = rapor.arac_yuklemeleri.map(y => {
+        const plaka = escMd(y.arac?.plaka ?? y.dis_arac_plakasi ?? '—')
+        const ad = escMd(y.arac?.ad ?? y.dis_arac_adi ?? 'Harici')
+        return `• ${plaka} \\(${ad}\\) — *${escMd(String(y.adet))}* adet`
+      })
+      blok.push(`*Araç Yüklemeleri*\n${satirlar.join('\n')}`)
+    }
+
+    if (sablon.notlar && rapor.notlar?.trim()) {
+      blok.push(`📝 *Not:* ${escMd(rapor.notlar.trim())}`)
+    }
+
+    if (blok.length > 0) {
+      parcalar.push(blok.join('\n\n'))
+      if (idx < raporlar.length - 1) parcalar.push(ayirici('·', 12))
+    }
+  })
+
+  return parcalar.join('\n\n')
+}
+
 function raporOlustur(
   tarih: string,
   saat: string,
-  satirlar: Array<{
-    saat_araligi: string
-    hedef_adet: number
-    gerceklesen_adet: number
-    fire_adet: number
-  }>,
+  raporTipi: TelegramRaporTipi,
+  sablon: TelegramSablon,
+  saatlikSatirlar: SaatlikSatir[],
+  uretimRaporlari: UretimRaporu[],
 ): string {
-  const toplamHedef = satirlar.reduce((s, r) => s + (r.hedef_adet ?? 0), 0)
-  const toplamGercek = satirlar.reduce((s, r) => s + (r.gerceklesen_adet ?? 0), 0)
-  const toplamFire = satirlar.reduce((s, r) => s + (r.fire_adet ?? 0), 0)
-  const performans = toplamHedef > 0
-    ? ((toplamGercek / toplamHedef) * 100).toFixed(1)
-    : '0.0'
-
-  const performansEmoji = parseFloat(performans) >= 95
-    ? '🟢' : parseFloat(performans) >= 80 ? '🟡' : '🔴'
-
-  const baslik = `📊 *Günlük Üretim Raporu*\n📅 ${escMd(gunGoster(tarih))} — ${escMd(saat)} Raporu`
-
-  const satirMetinleri = satirlar.map(s => {
-    const saatKisa = s.saat_araligi.replace(' ', '').replace(' ', '')
-    const oran = s.hedef_adet > 0
-      ? Math.round((s.gerceklesen_adet / s.hedef_adet) * 100)
-      : 0
-    return `  ${escMd(saatKisa)} │ ${escMd(String(s.hedef_adet))} → ${escMd(String(s.gerceklesen_adet))} \\(${escMd(String(oran))}%\\) 🔥${escMd(String(s.fire_adet))}`
-  })
-
-  const tablo = satirMetinleri.length > 0
-    ? `*Saat Dilimi Detayı:*\n${satirMetinleri.join('\n')}`
-    : '_Henüz veri girilmemiş\\._'
-
-  const ozet = [
-    `✅ *Toplam Gerçekleşen:* ${escMd(String(toplamGercek))} adet`,
-    `🎯 *Toplam Hedef:* ${escMd(String(toplamHedef))} adet`,
-    `🔥 *Toplam Fire:* ${escMd(String(toplamFire))} adet`,
-    `${performansEmoji} *Performans:* %${escMd(performans)}`,
+  const baslik = [
+    `📋 *Günlük Üretim Raporu*`,
+    ayirici('━'),
+    `📅 *${escMd(gunGoster(tarih))}* · *${escMd(saat)}*`,
   ].join('\n')
 
-  return `${baslik}\n\n${tablo}\n\n─────────────────────\n${ozet}`
+  const bolumler: string[] = [baslik]
+
+  if (raporTipi === 'saatlik' || raporTipi === 'her_ikisi') {
+    const metin = saatlikRaporMetni(saatlikSatirlar, sablon)
+    if (metin) bolumler.push(metin)
+  }
+
+  if (raporTipi === 'uretim_giris' || raporTipi === 'her_ikisi') {
+    const metin = uretimGirisRaporMetni(uretimRaporlari, sablon)
+    if (metin) bolumler.push(metin)
+  }
+
+  return bolumler.join('\n\n')
 }
 
 // ── Ana işleyici ─────────────────────────────────────────────────────────────
@@ -98,8 +255,6 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // TELEGRAM_BOT_TOKEN env var'a gerek yok — token DB'den okunuyor (telegram_ayarlari.bot_token)
-  // SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY Supabase tarafından otomatik inject edilir
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
@@ -116,7 +271,6 @@ Deno.serve(async (req) => {
     'Content-Type': 'application/json',
   }
 
-  // Body'de force: true gelirse saat kontrolü atla (test gönderimi)
   let force = false
   try {
     const body = await req.json()
@@ -141,7 +295,6 @@ Deno.serve(async (req) => {
     logTarih = tarih
     logSaat = saat
 
-    // ── 1. Telegram ayarlarını çek ───────────────────────────────────────────
     const ayarRes = await fetch(
       `${SUPABASE_URL}/rest/v1/telegram_ayarlari?select=*&limit=1`,
       { headers: supabaseHeaders },
@@ -170,24 +323,26 @@ Deno.serve(async (req) => {
       )
     }
 
-    // ── 2. Saat eşleşme kontrolü (force modunda atlanır) ────────────────────
+    const sablon = sablonFromAyar(ayar)
+    let raporTipi: TelegramRaporTipi = 'her_ikisi'
+
     if (!force) {
       const saatRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/telegram_rapor_saatleri?aktif=eq.true&select=saat`,
+        `${SUPABASE_URL}/rest/v1/telegram_rapor_saatleri?aktif=eq.true&select=saat,rapor_tipi`,
         { headers: supabaseHeaders },
       )
-      const saatler: Array<{ saat: string }> = await saatRes.json()
-      const eslesme = saatler.some(s => normalizeSaatDegeri(s.saat) === saat)
+      const saatler: Array<{ saat: string; rapor_tipi?: TelegramRaporTipi }> = await saatRes.json()
+      const eslesen = saatler.find(s => normalizeSaatDegeri(s.saat) === saat)
 
-      if (!eslesme) {
+      if (!eslesen) {
         return new Response(
           JSON.stringify({ ok: false, mesaj: `${saat} saati için rapor zamanı değil` }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
 
-      // ── 3. Çift gönderim koruması ──────────────────────────────────────────
-      // PostgREST + ignore-duplicates: yeni insert → 201, duplicate → 200 (boş body)
+      raporTipi = eslesen.rapor_tipi ?? 'saatlik'
+
       const logInsertRes = await fetch(
         `${SUPABASE_URL}/rest/v1/telegram_rapor_log`,
         {
@@ -200,7 +355,6 @@ Deno.serve(async (req) => {
         },
       )
 
-      // 201 = yeni kayıt (gönderime devam), 200 = zaten gönderilmiş (dur)
       if (logInsertRes.status !== 201) {
         return new Response(
           JSON.stringify({ ok: false, mesaj: `${tarih} ${saat} raporu zaten gönderildi` }),
@@ -211,17 +365,39 @@ Deno.serve(async (req) => {
       logKaydiEklendi = true
     }
 
-    // ── 4. Bugünün üretim verilerini çek ────────────────────────────────────
-    const uretimRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/gunluk_uretim_takip?tarih=eq.${tarih}&select=saat_araligi,hedef_adet,gerceklesen_adet,fire_adet,sira_no&order=sira_no.asc`,
-      { headers: supabaseHeaders },
-    )
-    const uretimVerisi = await uretimRes.json()
+    const veriCekimleri: Promise<Response>[] = []
 
-    // ── 5. Rapor mesajını oluştur ────────────────────────────────────────────
-    const mesaj = raporOlustur(tarih, saat, Array.isArray(uretimVerisi) ? uretimVerisi : [])
+    if (raporTipi === 'saatlik' || raporTipi === 'her_ikisi' || force) {
+      veriCekimleri.push(fetch(
+        `${SUPABASE_URL}/rest/v1/gunluk_uretim_takip?tarih=eq.${tarih}&select=saat_araligi,hedef_adet,gerceklesen_adet,fire_adet,sira_no&order=sira_no.asc`,
+        { headers: supabaseHeaders },
+      ))
+    }
 
-    // ── 6. Telegram'a gönder ────────────────────────────────────────────────
+    if (raporTipi === 'uretim_giris' || raporTipi === 'her_ikisi' || force) {
+      veriCekimleri.push(fetch(
+        `${SUPABASE_URL}/rest/v1/gunluk_uretim_raporlari?tarih=eq.${tarih}&select=id,toplam_personel,notlar,created_at,operator:operator_id(ad_soyad),istasyon_kayitlari:gunluk_uretim_istasyon_kayitlari(adet,fire_adet,istasyon:istasyon_id(ad,sira_no)),arac_yuklemeleri:gunluk_uretim_arac_yuklemeleri(adet,dis_arac_plakasi,dis_arac_adi,arac:arac_id(plaka,ad))&order=created_at.asc`,
+        { headers: supabaseHeaders },
+      ))
+    }
+
+    const yanitlar = await Promise.all(veriCekimleri)
+    let saatlikSatirlar: SaatlikSatir[] = []
+    let uretimRaporlari: UretimRaporu[] = []
+
+    let idx = 0
+    if (raporTipi === 'saatlik' || raporTipi === 'her_ikisi' || force) {
+      const uretimVerisi = await yanitlar[idx++].json()
+      saatlikSatirlar = Array.isArray(uretimVerisi) ? uretimVerisi : []
+    }
+    if (raporTipi === 'uretim_giris' || raporTipi === 'her_ikisi' || force) {
+      const raporVerisi = await yanitlar[idx++].json()
+      uretimRaporlari = Array.isArray(raporVerisi) ? raporVerisi : []
+    }
+
+    const gonderilecekTip: TelegramRaporTipi = force ? 'her_ikisi' : raporTipi
+    const mesaj = raporOlustur(tarih, saat, gonderilecekTip, sablon, saatlikSatirlar, uretimRaporlari)
+
     const tgRes = await fetch(
       `https://api.telegram.org/bot${ayar.bot_token}/sendMessage`,
       {
@@ -246,7 +422,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, mesaj: `Rapor gönderildi: ${tarih} ${saat}` }),
+      JSON.stringify({ ok: true, mesaj: `Rapor gönderildi: ${tarih} ${saat}`, rapor_tipi: gonderilecekTip }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (err) {

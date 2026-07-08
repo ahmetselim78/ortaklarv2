@@ -14,7 +14,9 @@ export function useStok() {
     const { data, error } = await supabase
       .from('stok')
       .select('*, cari!tedarikci_id(ad)')
-      .order('created_at', { ascending: false })
+      .order('kategori', { ascending: true })
+      .order('grup', { ascending: true, nullsFirst: false })
+      .order('kod', { ascending: true })
 
     if (error) setHata(error.message)
     else {
@@ -30,8 +32,8 @@ export function useStok() {
 
   useEffect(() => { getir() }, [getir])
 
-  const ekle = async (form: Omit<YeniStok, 'kod'>) => {
-    const kod = await generateStokKod()
+  const ekle = async (form: YeniStok) => {
+    const kod = form.kod?.trim() || await generateStokKod()
     const { error } = await supabase.from('stok').insert({ ...form, kod })
     if (error) throw new Error(error.message)
     await getir()

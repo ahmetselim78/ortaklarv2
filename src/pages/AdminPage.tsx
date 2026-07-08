@@ -4,42 +4,43 @@ import {
   Eye, ChevronRight, ArrowLeft, Loader2, AlertCircle,
   RefreshCw, Calendar,
   User, Truck, Factory, FileDown, Trash2, StickyNote, X,
-  Printer, Layers, Users, Target, MessageSquare, Send,
+  Printer, Users, Target, MessageSquare, Send,
   Pencil, Check,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { bugunTarih, formatSaatTr, formatTarihTr, tarihEkleTr } from '@/lib/tarih'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
 import EtiketAyarlariPanel from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
-import KatmanYapilariPanel from '@/components/ayarlar/KatmanYapilariPanel'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
 import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
 import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
+import OptiExportAyarlariPanel from '@/components/ayarlar/OptiExportAyarlariPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 // ── Ayar görünürlük anahtarı ──────────────────────────────────────────────────
 const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 
-type AyarKategori = 'etiket' | 'araclar' | 'katman' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
+type AyarKategori = 'etiket' | 'araclar' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti'
 type AdminTab = 'ayarlar' | 'uretim-giris'
 
 interface GorunumAyarlari {
   etiket: boolean
   araclar: boolean
-  katman: boolean
   personel: boolean
   hedef: boolean
   presets: boolean
   telegram: boolean
   istasyon: boolean
+  opti: boolean
 }
 
 const VARSAYILAN_GORUNUM: GorunumAyarlari = {
-  etiket: true, araclar: true, katman: true, personel: true,
-  hedef: true, presets: true, telegram: true, istasyon: true,
+  etiket: true, araclar: true, personel: true,
+  hedef: true, presets: true, telegram: true, istasyon: true, opti: true,
 }
 
 interface AyarKategoriTanim {
@@ -55,12 +56,12 @@ interface AyarKategoriTanim {
 const KATEGORILER: AyarKategoriTanim[] = [
   { id: 'etiket',   label: 'Etiket Basım',              aciklama: 'Yazıcı bağlantısı, etiket boyutu ve DPL şablonu ayarları.', icon: Printer,       renk: 'bg-blue-50 border-blue-200',   ikonRenk: 'text-blue-600 bg-blue-100',    ikonRenkRaw: 'text-blue-600' },
   { id: 'araclar',  label: 'Araçlar',                   aciklama: 'Sevkiyat planlamada kullanılan şirket araçlarını yönet.',    icon: Truck,         renk: 'bg-orange-50 border-orange-200', ikonRenk: 'text-orange-600 bg-orange-100', ikonRenkRaw: 'text-orange-600' },
-  { id: 'katman',   label: 'Popüler Katman Yapıları',   aciklama: 'Sipariş girilirken otomatik tamamlama önerilerini yönet.',  icon: Layers,        renk: 'bg-emerald-50 border-emerald-200', ikonRenk: 'text-emerald-600 bg-emerald-100', ikonRenkRaw: 'text-emerald-600' },
   { id: 'personel', label: 'Personel Yönetimi',         aciklama: 'Üretim personelini ekle, düzenle, aktif/pasif yap.',        icon: Users,         renk: 'bg-violet-50 border-violet-200', ikonRenk: 'text-violet-600 bg-violet-100', ikonRenkRaw: 'text-violet-600' },
   { id: 'hedef',    label: 'Hedef & Vardiya',            aciklama: 'Vardiya şablonları ve saatlik üretim hedefleri.',           icon: Target,        renk: 'bg-rose-50 border-rose-200',   ikonRenk: 'text-rose-600 bg-rose-100',    ikonRenkRaw: 'text-rose-600' },
   { id: 'presets',  label: 'Aksiyon Notu Hazır Cevaplar', aciklama: 'Saatlik takipte hızlı not eklemek için hazır cevaplar.', icon: MessageSquare, renk: 'bg-sky-50 border-sky-200',     ikonRenk: 'text-sky-600 bg-sky-100',      ikonRenkRaw: 'text-sky-600' },
-  { id: 'telegram', label: 'Telegram Raporu',            aciklama: 'Bot token, chat ID ve otomatik rapor saatleri.',            icon: Send,          renk: 'bg-teal-50 border-teal-200',   ikonRenk: 'text-teal-600 bg-teal-100',    ikonRenkRaw: 'text-teal-600' },
+  { id: 'telegram', label: 'Telegram Raporu',            aciklama: 'Bot token, rapor saatleri, mesaj bölümleri ve rapor tipi.', icon: Send,          renk: 'bg-teal-50 border-teal-200',   ikonRenk: 'text-teal-600 bg-teal-100',    ikonRenkRaw: 'text-teal-600' },
   { id: 'istasyon', label: 'Üretim İstasyonları',        aciklama: 'Operatör giriş formundaki istasyonları düzenle.',           icon: Factory,       renk: 'bg-amber-50 border-amber-200', ikonRenk: 'text-amber-600 bg-amber-100',  ikonRenkRaw: 'text-amber-600' },
+  { id: 'opti',     label: 'Opti Export',                aciklama: 'PerfectCut IMP sayacı, çıta düşme ve stok FAM kodları.', icon: FileDown,      renk: 'bg-lime-50 border-lime-200',   ikonRenk: 'text-lime-700 bg-lime-100',    ikonRenkRaw: 'text-lime-700' },
 ]
 
 // ── Üretim girişi tipleri ──────────────────────────────────────────────────────
@@ -88,26 +89,10 @@ interface GunlukRapor {
 }
 
 // ── Yardımcı ──────────────────────────────────────────────────────────────────
-function formatTarih(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('tr-TR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-  })
-}
-
-function formatSaat(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-}
-
-function bugunStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function tarihEkle(gunSayisi: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + gunSayisi)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+const formatTarih = formatTarihTr
+const formatSaat = formatSaatTr
+const bugunStr = bugunTarih
+const tarihEkle = tarihEkleTr
 
 // ── Gruplama yardımcıları ──────────────────────────────────────────────────────
 interface GunRaporu {
@@ -515,12 +500,12 @@ function AyarlarPanelGorunum({
         </div>
       )}
       {kategori === 'araclar'  && <div className="flex-1 overflow-auto p-8"><AraclarPanel /></div>}
-      {kategori === 'katman'   && <div className="flex-1 overflow-auto p-8"><KatmanYapilariPanel /></div>}
       {kategori === 'personel' && <div className="flex-1 overflow-auto p-8"><PersonelYonetimiPanel /></div>}
       {kategori === 'hedef'    && <div className="flex-1 overflow-auto p-8"><HedefVardiyaPanel /></div>}
       {kategori === 'presets'  && <div className="flex-1 overflow-auto p-8"><AksiyonNotuPresetsPanel /></div>}
       {kategori === 'telegram' && <div className="flex-1 overflow-auto p-8"><TelegramAyarlariPanel /></div>}
       {kategori === 'istasyon' && <div className="flex-1 overflow-auto p-8"><IstasyonYonetimiPanel /></div>}
+      {kategori === 'opti'     && <div className="flex-1 overflow-auto p-8"><OptiExportAyarlariPanel /></div>}
     </div>
   )
 }

@@ -5,15 +5,18 @@ export interface Stok {
   kod: string
   ad: string
   kategori: StokKategori
+  grup: string | null
+  katman_yapisi: string | null
   kalinlik_mm: number | null
   birim: string
   birim_fiyat: number | null
   tedarikci_id: string | null
   marka: string | null
   mevcut_miktar: number | null
+  aktif: boolean
   created_at: string
   // join'den gelen
   tedarikci_ad?: string
 }
 
-export type YeniStok = Omit<Stok, 'id' | 'created_at' | 'tedarikci_ad' | 'mevcut_miktar' | 'marka'>
+export type YeniStok = Omit<Stok, 'id' | 'created_at' | 'tedarikci_ad' | 'mevcut_miktar'>

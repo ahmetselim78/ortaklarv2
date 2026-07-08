@@ -11,8 +11,7 @@ import TamireGonderModal from '@/components/tamir/TamireGonderModal'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { dplUret } from '@/types/ayarlar'
 import type { EtiketVeri } from '@/types/ayarlar'
-import { camTipiAd } from '@/lib/utils'
-import { getCamKompozisyon } from '@/lib/cam'
+import { getCamKompozisyon, getEtiketCamTipi } from '@/lib/cam'
 import { glsSayacArttir } from '@/lib/saatlikSayac'
 import { fizikselGlsKodu, normalizeBatchSiraInput } from '@/lib/siparisDetay'
 
@@ -213,9 +212,9 @@ export default function PozGirisPage() {
       .select(`
         id, siparis_detay_id, sira_no,
         siparis_detaylari (
-          siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet, katman_yapisi,
+          siparis_id, cam_kodu, genislik_mm, yukseklik_mm, adet,
           uretim_durumu,
-          stok!stok_id ( ad, kalinlik_mm ),
+          stok!stok_id ( kod, ad, grup, kalinlik_mm, katman_yapisi, birim_fiyat ),
           cita_stok:stok!cita_stok_id ( kalinlik_mm ),
           siparisler ( siparis_no, alt_musteri, cari ( ad ) )
         )
@@ -242,7 +241,7 @@ export default function PozGirisPage() {
       yukseklik_mm: detay.yukseklik_mm,
       adet: detay.adet ?? 1,
       taranan_adet: 0,  // aşağıda yikama_loglari ile doldurulacak
-      katman_yapisi: detay.katman_yapisi ?? null,
+      katman_yapisi: getCamKompozisyon({}, detay.stok ?? null) || null,
       ic_kalinlik_mm: detay.stok?.kalinlik_mm ?? null,
       cita_kalinlik_mm: detay.cita_stok?.kalinlik_mm ?? null,
       sira_no: d.sira_no ?? null,
@@ -450,13 +449,10 @@ export default function PozGirisPage() {
     const tekrar = cam.uretim_durumu === 'yikandi'
 
     // Etiket bas (tekrar taramalarda da bas — her cam geçişinde etiket gerekir)
-    const kompozisyon = getCamKompozisyon(
-      { katman_yapisi: cam.katman_yapisi },
-      { ad: cam.stok_ad, kalinlik_mm: cam.ic_kalinlik_mm },
+    const camTipiTam = getEtiketCamTipi(
+      {},
+      { ad: cam.stok_ad, kalinlik_mm: cam.ic_kalinlik_mm, katman_yapisi: cam.katman_yapisi },
     )
-    const camTipiTam = [kompozisyon || null, camTipiAd(cam.stok_ad) || null]
-      .filter(Boolean)
-      .join(' ')
 
     if (etiketAyarlari.yazici.kopru_adresi && etiketAyarlari.yazdirma_kosulu === 'otomatik') {
       const veri: EtiketVeri = {

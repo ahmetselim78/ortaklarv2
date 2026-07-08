@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Printer, ChevronRight, ArrowLeft, Truck, Layers, Users, Target, MessageSquare, Send, Factory } from 'lucide-react'
+import { Printer, ChevronRight, ArrowLeft, Truck, Users, Target, MessageSquare, Send, Factory } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { supabase } from '@/lib/supabase'
 
@@ -8,7 +8,6 @@ const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 const VARSAYILAN_GORUNUM = {
   etiket: true,
   araclar: true,
-  katman: true,
   personel: true,
   hedef: true,
   presets: true,
@@ -45,7 +44,6 @@ function useGorunumAyarlari() {
 }
 import EtiketAyarlariPanel, { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
-import KatmanYapilariPanel from '@/components/ayarlar/KatmanYapilariPanel'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
@@ -55,7 +53,7 @@ import type { EtiketAyarlari } from '@/types/ayarlar'
 
 /* ── Kategori tanımları ──────────────────────────────────────── */
 
-type AyarKategori = 'etiket' | 'araclar' | 'katman' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
+type AyarKategori = 'etiket' | 'araclar' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
 
 interface Kategori {
   id: AyarKategori
@@ -82,14 +80,6 @@ const kategoriler: Kategori[] = [
     icon: Truck,
     renk: 'bg-orange-50 hover:bg-orange-100 border-orange-200',
     ikonRenk: 'text-orange-600 bg-orange-100',
-  },
-  {
-    id: 'katman',
-    label: 'Popüler Katman Yapıları',
-    aciklama: 'Sipariş satırı girilirken Katman sütunu otomatik tamamlama önerilerini düzenle (4+16+4, 4+12+4+16+5…).',
-    icon: Layers,
-    renk: 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200',
-    ikonRenk: 'text-emerald-600 bg-emerald-100',
   },
   {
     id: 'personel',
@@ -268,30 +258,6 @@ export default function AyarlarPage() {
       </div>
       <div className="flex-1 overflow-auto p-8">
         <AraclarPanel />
-      </div>
-    </div>
-  )
-
-  /* Popüler Katman Yapıları */
-  if (aktifKategori === 'katman') return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
-        <button
-          type="button"
-          onClick={() => setAktifKategori(null)}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
-        >
-          <ArrowLeft size={15} />
-          Ayarlar
-        </button>
-        <span className="text-gray-300">/</span>
-        <div className="flex items-center gap-2">
-          <Layers size={16} className="text-emerald-600" />
-          <span className="text-sm font-semibold text-gray-900">Popüler Katman Yapıları</span>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto p-8">
-        <KatmanYapilariPanel />
       </div>
     </div>
   )

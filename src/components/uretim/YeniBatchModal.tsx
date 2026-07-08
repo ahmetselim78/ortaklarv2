@@ -1,8 +1,15 @@
-import { useState, useEffect, useMemo } from 'react'
-import { X, Search, Package, Check } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { X, Search, Package, Check, Layers, Square, Shapes } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
+
+interface DetayOzet {
+  adet: number
+  genislik_mm: number
+  yukseklik_mm: number
+  stok_id: string | null
+}
 
 interface SiparisOzet {
   id: string
@@ -10,26 +17,26 @@ interface SiparisOzet {
   musteri: string
   tarih: string
   cam_sayisi: number
-  batchte: boolean       // zaten bir batch'te mi (eksik_var hariç)?
-  eksik_var: boolean     // eksik_var durumunda mı?
+  batchte: boolean
+  eksik_var: boolean
   batch_no: string | null
 }
 
-type BatchJoinRow = {
-  siparis_detay_id: string
-  uretim_emirleri?: { batch_no?: string | null; durum?: string | null } | { batch_no?: string | null; durum?: string | null }[] | null
+type AktifBatchRow = {
+  batch_no: string
+  uretim_emri_detaylari?: {
+    siparis_detaylari?: { siparis_id?: string | null } | { siparis_id?: string | null }[] | null
+  }[] | null
 }
 
-const IN_FILTER_CHUNK_SIZE = 100
+const IN_FILTER_CHUNK_SIZE = 200
+const LISTE_CACHE_TTL_MS = 30_000
+
+let listeCache: { veri: SiparisOzet[]; zaman: number } | null = null
 
 interface Props {
   onOlustur: (siparisIds: string[]) => Promise<void>
   onKapat: () => void
-}
-
-function joinedBatch(row: BatchJoinRow) {
-  const joined = row.uretim_emirleri
-  return Array.isArray(joined) ? joined[0] : joined
 }
 
 function chunkArray<T>(items: T[], size: number) {
@@ -40,17 +47,101 @@ function chunkArray<T>(items: T[], size: number) {
   return chunks
 }
 
-async function batchDetaylariniGetir(detayIds: string[]) {
-  const rows: BatchJoinRow[] = []
-  for (const chunk of chunkArray(detayIds, IN_FILTER_CHUNK_SIZE)) {
-    const { data, error } = await supabase
-      .from('uretim_emri_detaylari')
-      .select('siparis_detay_id, uretim_emirleri(batch_no, durum)')
-      .in('siparis_detay_id', chunk)
-    if (error) throw new Error(error.message)
-    rows.push(...((data ?? []) as BatchJoinRow[]))
+async function paralelChunkSorgu<T>(
+  ids: string[],
+  sorgu: (chunk: string[]) => Promise<T[]>,
+): Promise<T[]> {
+  if (ids.length === 0) return []
+  const chunks = chunkArray(ids, IN_FILTER_CHUNK_SIZE)
+  const sonuclar = await Promise.all(chunks.map(sorgu))
+  return sonuclar.flat()
+}
+
+function detayOzetOlustur(d: {
+  adet?: number | null
+  genislik_mm?: number | null
+  yukseklik_mm?: number | null
+  stok_id?: string | null
+}): DetayOzet {
+  const hamAdet = Number(d.adet)
+  const adet = Number.isFinite(hamAdet) && hamAdet > 0 ? hamAdet : 1
+  return {
+    adet,
+    genislik_mm: Number(d.genislik_mm) || 0,
+    yukseklik_mm: Number(d.yukseklik_mm) || 0,
+    stok_id: d.stok_id ?? null,
   }
-  return rows
+}
+
+function siparisBatchNoHaritasi(aktifBatchler: AktifBatchRow[]) {
+  const map = new Map<string, string>()
+  for (const emir of aktifBatchler) {
+    for (const ued of emir.uretim_emri_detaylari ?? []) {
+      const joined = ued.siparis_detaylari
+      const siparisDetay = Array.isArray(joined) ? joined[0] : joined
+      const siparisId = siparisDetay?.siparis_id
+      if (siparisId && !map.has(siparisId)) {
+        map.set(siparisId, emir.batch_no)
+      }
+    }
+  }
+  return map
+}
+
+async function siparisListesiniGetir(): Promise<SiparisOzet[]> {
+  const { data: tumSiparisler, error: siparisHata } = await supabase
+    .from('siparisler')
+    .select('id, siparis_no, tarih, durum, cari(ad)')
+    .or('durum.in.(beklemede,batchte,eksik_var),durum.is.null')
+    .order('created_at', { ascending: false })
+
+  if (siparisHata) throw new Error(siparisHata.message)
+  if (!tumSiparisler || tumSiparisler.length === 0) return []
+
+  const sipIds = tumSiparisler.map((s) => s.id)
+
+  const [adetSatirlari, aktifBatchler] = await Promise.all([
+    paralelChunkSorgu(sipIds, async (chunk) => {
+      const { data, error } = await supabase
+        .from('siparis_detaylari')
+        .select('siparis_id, adet')
+        .in('siparis_id', chunk)
+      if (error) throw new Error(error.message)
+      return data ?? []
+    }),
+    supabase
+      .from('uretim_emirleri')
+      .select('batch_no, uretim_emri_detaylari(siparis_detaylari(siparis_id))')
+      .neq('durum', 'iptal')
+      .then(({ data, error }) => {
+        if (error) throw new Error(error.message)
+        return (data ?? []) as AktifBatchRow[]
+      }),
+  ])
+
+  const camSayisiMap = new Map<string, number>()
+  for (const satir of adetSatirlari) {
+    const hamAdet = Number(satir.adet)
+    const adet = Number.isFinite(hamAdet) && hamAdet > 0 ? hamAdet : 1
+    camSayisiMap.set(satir.siparis_id, (camSayisiMap.get(satir.siparis_id) ?? 0) + adet)
+  }
+
+  const batchNoMap = siparisBatchNoHaritasi(aktifBatchler)
+
+  return tumSiparisler.map((s) => {
+    const eksikVar = s.durum === 'eksik_var'
+    const batchte = s.durum === 'batchte' && !eksikVar
+    return {
+      id: s.id,
+      siparis_no: s.siparis_no,
+      musteri: (s.cari as { ad?: string } | null)?.ad ?? '—',
+      tarih: s.tarih,
+      cam_sayisi: camSayisiMap.get(s.id) ?? 0,
+      batchte,
+      eksik_var: eksikVar,
+      batch_no: batchNoMap.get(s.id) ?? null,
+    }
+  })
 }
 
 export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
@@ -58,106 +149,85 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
   const [siparisler, setSiparisler] = useState<SiparisOzet[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [seciliIds, setSeciliIds] = useState<Set<string>>(new Set())
+  const [detayCache, setDetayCache] = useState<Map<string, DetayOzet[]>>(new Map())
+  const detayCacheRef = useRef(detayCache)
+  detayCacheRef.current = detayCache
+  const [detayYukleniyor, setDetayYukleniyor] = useState(false)
   const [olusturuluyor, setOlusturuluyor] = useState(false)
   const [arama, setArama] = useState('')
   const [hata, setHata] = useState<string | null>(null)
+  const yuklemeRef = useRef(0)
 
   useEffect(() => {
-    verileriGetir()
+    const yuklemeId = ++yuklemeRef.current
+    const cacheGecerli = listeCache && Date.now() - listeCache.zaman < LISTE_CACHE_TTL_MS
+
+    if (cacheGecerli) {
+      setSiparisler(listeCache!.veri)
+      setYukleniyor(false)
+    }
+
+    const verileriGetir = async () => {
+      if (!cacheGecerli) setYukleniyor(true)
+      setHata(null)
+
+      try {
+        const sonuc = await siparisListesiniGetir()
+        if (yuklemeId !== yuklemeRef.current) return
+        listeCache = { veri: sonuc, zaman: Date.now() }
+        setSiparisler(sonuc)
+      } catch (e) {
+        if (yuklemeId !== yuklemeRef.current) return
+        setHata(e instanceof Error ? e.message : 'Siparişler alınamadı')
+      } finally {
+        if (yuklemeId === yuklemeRef.current) setYukleniyor(false)
+      }
+    }
+
+    void verileriGetir()
   }, [])
 
-  const verileriGetir = async () => {
-    setYukleniyor(true)
-    setHata(null)
+  useEffect(() => {
+    const eksikIds = [...seciliIds].filter((id) => !detayCacheRef.current.has(id))
+    if (eksikIds.length === 0) return
 
-    // 1. Tüm siparişleri getir (durum dahil)
-    const { data: tumSiparisler, error: siparisHata } = await supabase
-      .from('siparisler')
-      .select('id, siparis_no, tarih, durum, cari(ad), siparis_detaylari(id, adet)')
-      .or('durum.in.(beklemede,batchte,eksik_var),durum.is.null')
-      .order('created_at', { ascending: false })
+    let iptal = false
+    setDetayYukleniyor(true)
 
-    if (siparisHata) { setHata(siparisHata.message); setYukleniyor(false); return }
-    if (!tumSiparisler) { setYukleniyor(false); return }
+    void (async () => {
+      try {
+        const satirlar = await paralelChunkSorgu(eksikIds, async (chunk) => {
+          const { data, error } = await supabase
+            .from('siparis_detaylari')
+            .select('siparis_id, adet, genislik_mm, yukseklik_mm, stok_id')
+            .in('siparis_id', chunk)
+          if (error) throw new Error(error.message)
+          return data ?? []
+        })
 
-    const sipIds = tumSiparisler.map((s: any) => s.id)
-    if (sipIds.length === 0) {
-      setSiparisler([])
-      setYukleniyor(false)
-      return
-    }
-    const tumDetaylar = tumSiparisler.flatMap((s: any) =>
-      ((s.siparis_detaylari ?? []) as any[]).map((d) => ({
-        id: d.id,
-        siparis_id: s.id,
-        adet: d.adet,
-      }))
-    )
+        if (iptal) return
 
-    // 3. Zaten batch'te olan sipariş detaylarını bul
-    let batchDetaylar: BatchJoinRow[] = []
-    try {
-      batchDetaylar = await batchDetaylariniGetir(tumDetaylar.map((d) => d.id))
-    } catch (e) {
-      setHata(e instanceof Error ? e.message : 'Batch detayları alınamadı')
-      setYukleniyor(false)
-      return
-    }
-
-    const aktifBatchDetaylar = batchDetaylar
-      .filter((d) => joinedBatch(d)?.durum !== 'iptal')
-
-    const batchteOlanDetayIds = new Set(
-      aktifBatchDetaylar.map((d) => d.siparis_detay_id)
-    )
-
-    // siparis_detay_id → batch_no mapping
-    const detayBatchMap = new Map<string, string>()
-    for (const d of aktifBatchDetaylar) {
-      detayBatchMap.set(d.siparis_detay_id, joinedBatch(d)?.batch_no ?? '')
-    }
-
-    // siparis_id → cam sayısı (adet toplamı)
-    const camSayisiMap = new Map<string, number>()
-    for (const d of tumDetaylar ?? []) {
-      const hamAdet = Number((d as any).adet)
-      const adet = Number.isFinite(hamAdet) && hamAdet > 0 ? hamAdet : 1
-      camSayisiMap.set(d.siparis_id, (camSayisiMap.get(d.siparis_id) ?? 0) + adet)
-    }
-
-    // siparis_id → batch'te mi (tüm cam parçaları batch'te ise)
-    const siparisBatchteMap = new Map<string, { batchte: boolean; batch_no: string | null }>()
-    for (const sipId of sipIds) {
-      const sipDetaylar = (tumDetaylar ?? []).filter((d: any) => d.siparis_id === sipId)
-      if (sipDetaylar.length === 0) {
-        siparisBatchteMap.set(sipId, { batchte: false, batch_no: null })
-        continue
+        setDetayCache((prev) => {
+          const next = new Map(prev)
+          for (const siparisId of eksikIds) next.set(siparisId, [])
+          for (const satir of satirlar) {
+            const liste = next.get(satir.siparis_id) ?? []
+            liste.push(detayOzetOlustur(satir))
+            next.set(satir.siparis_id, liste)
+          }
+          return next
+        })
+      } catch (e) {
+        if (!iptal) {
+          setHata(e instanceof Error ? e.message : 'Seçili sipariş detayları alınamadı')
+        }
+      } finally {
+        if (!iptal) setDetayYukleniyor(false)
       }
-      const tumParaclarBatchte = sipDetaylar.every((d: any) => batchteOlanDetayIds.has(d.id))
-      const ilkBatchNo = sipDetaylar.length > 0 && batchteOlanDetayIds.has(sipDetaylar[0].id)
-        ? detayBatchMap.get(sipDetaylar[0].id) ?? null
-        : null
-      siparisBatchteMap.set(sipId, { batchte: tumParaclarBatchte, batch_no: ilkBatchNo })
-    }
+    })()
 
-    const sonuc: SiparisOzet[] = tumSiparisler.map((s: any) => {
-      const batchBilgi = siparisBatchteMap.get(s.id) ?? { batchte: false, batch_no: null }
-      const eksikVar = s.durum === 'eksik_var'
-      return {
-        id: s.id,
-        siparis_no: s.siparis_no,
-        musteri: s.cari?.ad ?? '—',
-        tarih: s.tarih,
-        cam_sayisi: camSayisiMap.get(s.id) ?? 0,
-        batchte: batchBilgi.batchte && !eksikVar, // eksik_var ise seçilebilir
-        eksik_var: eksikVar,
-        batch_no: batchBilgi.batch_no,
-      }
-    })
-
-    setSiparisler(sonuc)
-    setYukleniyor(false)
-  }
+    return () => { iptal = true }
+  }, [seciliIds])
 
   const filtrelenmis = useMemo(() => {
     if (!arama.trim()) return siparisler
@@ -185,6 +255,7 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
     setHata(null)
     try {
       await onOlustur(Array.from(seciliIds))
+      listeCache = null
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Batch oluşturulamadı')
     } finally {
@@ -192,9 +263,33 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
     }
   }
 
-  const seciliCamToplam = siparisler
-    .filter((s) => seciliIds.has(s.id))
-    .reduce((sum, s) => sum + s.cam_sayisi, 0)
+  const seciliOzet = useMemo(() => {
+    let toplamAdet = 0
+    let toplamM2 = 0
+    const stokIds = new Set<string>()
+
+    for (const siparisId of seciliIds) {
+      const detaylar = detayCache.get(siparisId) ?? []
+      for (const d of detaylar) {
+        toplamAdet += d.adet
+        toplamM2 += (d.adet * d.genislik_mm * d.yukseklik_mm) / 1_000_000
+        if (d.stok_id) stokIds.add(d.stok_id)
+      }
+    }
+
+    return {
+      siparisAdedi: seciliIds.size,
+      toplamAdet,
+      toplamM2,
+      camTuruAdedi: stokIds.size,
+      detayHazir: [...seciliIds].every((id) => detayCache.has(id)),
+    }
+  }, [seciliIds, detayCache])
+
+  const ozetDeger = (deger: string) => {
+    if (seciliOzet.siparisAdedi > 0 && !seciliOzet.detayHazir && detayYukleniyor) return '…'
+    return deger
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -222,6 +317,34 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
               className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
+        </div>
+
+        {/* Seçim özeti — liste kayarken sabit kalır */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-6 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
+          {[
+            { icon: Package, label: 'Sipariş Adedi', value: String(seciliOzet.siparisAdedi) },
+            { icon: Layers, label: 'Toplam Adet', value: ozetDeger(String(seciliOzet.toplamAdet)) },
+            { icon: Square, label: 'Toplam m²', value: ozetDeger(seciliOzet.toplamM2.toFixed(2)) },
+            { icon: Shapes, label: 'Cam Türü', value: ozetDeger(String(seciliOzet.camTuruAdedi)) },
+          ].map(({ icon: Icon, label, value }) => (
+            <div
+              key={label}
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors',
+                seciliOzet.siparisAdedi > 0
+                  ? 'bg-white border-blue-100'
+                  : 'bg-white/60 border-gray-100'
+              )}
+            >
+              <div className="p-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-500 shrink-0">
+                <Icon size={14} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] text-gray-500 truncate">{label}</p>
+                <p className="text-base font-semibold text-gray-900 tabular-nums leading-tight">{value}</p>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Liste */}
@@ -312,8 +435,8 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
         {/* Alt bar */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl shrink-0">
           <div className="text-sm text-gray-500">
-            {seciliIds.size > 0
-              ? <><span className="font-semibold text-gray-800">{seciliIds.size}</span> sipariş seçili · <span className="font-semibold text-gray-800">{seciliCamToplam}</span> cam parçası</>
+            {seciliOzet.siparisAdedi > 0
+              ? <><span className="font-semibold text-gray-800">{seciliOzet.siparisAdedi}</span> sipariş seçili</>
               : 'Sipariş seçin'
             }
           </div>

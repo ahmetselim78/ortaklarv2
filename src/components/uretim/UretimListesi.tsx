@@ -1,4 +1,4 @@
-import { Eye, Trash2, Download, Ban, Inbox } from 'lucide-react'
+import { Eye, Trash2, Ban, Inbox } from 'lucide-react'
 import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
@@ -77,12 +77,7 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
                 <StatusBadge durum={emir.durum} tip="uretim" />
               </td>
               <td className="px-4 py-3 text-gray-600">
-                {emir.export_tarihi ? (
-                  <span className="flex items-center gap-1 text-orange-900">
-                    <Download size={12} />
-                    {formatDate(emir.export_tarihi)}
-                  </span>
-                ) : '—'}
+                {emir.export_tarihi ? formatDate(emir.export_tarihi) : '—'}
               </td>
               <td className="px-4 py-3">
                 {emir.cam_sayisi != null ? (
@@ -116,7 +111,7 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
                   <button
                     onClick={() => onGoruntule(emir)}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                    title="Görüntüle / Düzenle"
+                    title="Görüntüle"
                   >
                     <Eye size={15} />
                   </button>

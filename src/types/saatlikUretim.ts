@@ -91,7 +91,20 @@ export interface IsGucuOzeti {
 
 // ── Telegram ──────────────────────────────────────────────────────────────────
 
-export interface TelegramAyarlari {
+export type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
+
+export interface TelegramSablonAyarlari {
+  sablon_baslik: boolean
+  sablon_saatlik_detay: boolean
+  sablon_saatlik_ozet: boolean
+  sablon_istasyonlar: boolean
+  sablon_araclar: boolean
+  sablon_personel: boolean
+  sablon_operator: boolean
+  sablon_notlar: boolean
+}
+
+export interface TelegramAyarlari extends TelegramSablonAyarlari {
   id: string
   bot_token: string
   chat_id: string
@@ -102,4 +115,22 @@ export interface TelegramRaporSaati {
   id: string
   saat: string
   aktif: boolean
+  rapor_tipi: TelegramRaporTipi
+}
+
+export const TELEGRAM_RAPOR_TIPI_ETIKETLERI: Record<TelegramRaporTipi, string> = {
+  saatlik: 'Saatlik Takip',
+  uretim_giris: 'Üretim Girişi',
+  her_ikisi: 'İkisi Birden',
+}
+
+export const VARSAYILAN_TELEGRAM_SABLON: TelegramSablonAyarlari = {
+  sablon_baslik: true,
+  sablon_saatlik_detay: true,
+  sablon_saatlik_ozet: true,
+  sablon_istasyonlar: true,
+  sablon_araclar: true,
+  sablon_personel: true,
+  sablon_operator: true,
+  sablon_notlar: true,
 }

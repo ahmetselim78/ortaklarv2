@@ -11,9 +11,13 @@ import { getDocument } from 'pdfjs-dist'
 import { generateCariKod, generateStokKod } from '@/lib/idGenerator'
 import {
   cozumleOcrCam,
-  isValidKatmanYapisi,
-  normalizeCamAilesiAd,
+  citaKodOnerisi,
+  citaStokAdi,
+  getStokGosterimAciklamasi,
   normalizeKatmanYapisi,
+  normalizeCamAilesiAd,
+  stripKatmanYapisi,
+  aktifCitaStoklari,
 } from '@/lib/cam'
 
 /* ===== PDF Sayfa Görüntüleyici ===== */
@@ -143,6 +147,13 @@ function satirGrupBilgi(s: PDFCamSatir) {
   }
 }
 
+/** PDF satırı veya stok kartından tek kaynaklı açıklama metni. */
+function pdfImportAciklama(s: PDFCamSatir, stok: Stok | null | undefined): string {
+  if (stok) return getStokGosterimAciklamasi(stok)
+  const cozum = cozumleOcrCam(s.aciklama)
+  return cozum.sistem_etiketi || s.aciklama.trim() || '—'
+}
+
 interface Props {
   cariler: { id: string; ad: string; kod: string }[]
   stoklar: Stok[]
@@ -176,9 +187,8 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
   // Eşleştirme
   const [secilenCariId, setSecilenCariId] = useState<string>('')
   const [cariSkor, setCariSkor] = useState<number>(0)
-  /** Her unique OCR cam ailesi/katman kombinasyonu için stok seçimleri. */
+  /** Her unique OCR cam tipi için stok seçimleri. */
   const [satirStokSecimler, setSatirStokSecimler] = useState<Record<string, { stokId: string; skor: number }>>({})
-  const [satirKatmanSecimler, setSatirKatmanSecimler] = useState<Record<string, string>>({})
   const [mukerrer, setMukerrer] = useState(false)
 
   // Yerel cari listesi (prop + modal içinde yeni eklenenler)
@@ -193,7 +203,8 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
   const [yeniCariKaydediliyor, setYeniCariKaydediliyor] = useState(false)
 
   // Yeni stok ekleme modal state
-  const [yeniStokModal, setYeniStokModal] = useState<null | { gKey: string; ad: string }>(null)
+  const [yeniStokModal, setYeniStokModal] = useState<null | { gKey: string; ad: string; katman: string; grup: string }>(null)
+  const [yeniCitaKaydediliyor, setYeniCitaKaydediliyor] = useState<number | null>(null)
   const [yeniStokKaydediliyor, setYeniStokKaydediliyor] = useState(false)
 
   // Çıta eşleştirme: mm → stok_id
@@ -216,34 +227,19 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
   const [pdfViewerPage, setPdfViewerPage] = useState(1)
   const [pdfViewerTotalPages, setPdfViewerTotalPages] = useState(0)
 
-  const katmanYapisiOlustur = useCallback((satir: PDFCamSatir): string | undefined => {
-    const key = satirAnahtari(satir)
-    const cozum = cozumleOcrCam(satir.aciklama)
-    const katman = normalizeKatmanYapisi(satirKatmanSecimler[key] ?? cozum.katman_yapisi)
-    return katman || undefined
-  }, [satirKatmanSecimler])
-
   const eslesmeEksikleri = useMemo(() => {
     if (!parseResult) return []
     const eksikler: string[] = []
     if (!secilenCariId) eksikler.push('Cari eslesmesi secilmedi.')
 
-    const eksikKatmanlar = new Set<string>()
     const eksikStoklar = new Set<string>()
     for (const satir of parseResult.satirlar) {
       const key = satirAnahtari(satir)
-      const katman = katmanYapisiOlustur(satir)
-      if (!katman || !isValidKatmanYapisi(katman)) {
-        eksikKatmanlar.add(satir.aciklama)
-      }
       const stokId = satirStokSecimler[key]?.stokId
       if (!stokId || !localStoklar.some(s => s.id === stokId)) {
         const bilgi = satirGrupBilgi(satir)
         eksikStoklar.add(`${bilgi.katman || '?'} ${bilgi.aile ?? bilgi.aciklama}`)
       }
-    }
-    if (eksikKatmanlar.size > 0) {
-      eksikler.push(`Katman okunamadı: ${Array.from(eksikKatmanlar).slice(0, 2).join(', ')}${eksikKatmanlar.size > 2 ? '...' : ''}`)
     }
     if (eksikStoklar.size > 0) {
       eksikler.push(`Stok eslesmesi eksik: ${Array.from(eksikStoklar).slice(0, 3).join(', ')}${eksikStoklar.size > 3 ? '...' : ''}`)
@@ -258,7 +254,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
       eksikler.push(`Cita eslesmesi eksik: ${eksikCitalar.join(', ')}mm`)
     }
     return eksikler
-  }, [citaSecimler, katmanYapisiOlustur, localStoklar, parseResult, satirStokSecimler, secilenCariId])
+  }, [citaSecimler, localStoklar, parseResult, satirStokSecimler, secilenCariId])
 
   const eslesmeGecerli = eslesmeEksikleri.length === 0
 
@@ -329,29 +325,25 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
       }
 
       // Stok eşleştirme — her unique OCR aile/katman dönüşümü için ayrı eşleştirme
-      const camStoklar = localStoklar.filter((s) => s.kategori === 'cam')
+      const camStoklar = localStoklar.filter((s) => s.kategori === 'cam' && s.aktif !== false)
       const yeniStokSecimler: Record<string, { stokId: string; skor: number }> = {}
-      const yeniKatmanSecimler: Record<string, string> = {}
       for (const satir of result.satirlar) {
         const key = satirAnahtari(satir)
         if (yeniStokSecimler[key]) continue
-        const cozum = cozumleOcrCam(satir.aciklama)
         const stokMatch = stokEslestir(satir.aciklama, camStoklar, satir.dis_kalinlik_mm)
         yeniStokSecimler[key] = stokMatch
           ? { stokId: stokMatch.id, skor: stokMatch.skor }
           : { stokId: '', skor: 0 }
-        yeniKatmanSecimler[key] = cozum.katman_yapisi
       }
       setSatirStokSecimler(yeniStokSecimler)
-      setSatirKatmanSecimler(yeniKatmanSecimler)
 
       // Çıta eşleştirme — her unique ara_bosluk_mm için çıta stok bul
-      const citaStoklar = stoklar.filter((s) => s.kategori === 'cita')
+      const citaStoklar = aktifCitaStoklari(stoklar)
       const uniqueMmler = [...new Set(result.satirlar.map((s) => s.ara_bosluk_mm).filter((v): v is number => v != null))]
       const yeniCitaSecimler: Record<number, string> = {}
       for (const mm of uniqueMmler) {
         const match = citaEslestir(mm, citaStoklar)
-        if (match && match.skor >= 0.5) {
+        if (match) {
           yeniCitaSecimler[mm] = match.id
         }
       }
@@ -420,7 +412,6 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
 
       const camlar: CamFormSatiri[] = parseResult.satirlar.map((s) => {
         const stokId = satirStokSecimler[satirAnahtari(s)]?.stokId ?? ''
-        const katmanYapisi = katmanYapisiOlustur(s)
         return {
           stok_id: stokId,
           genislik_mm: s.genislik_mm,
@@ -429,10 +420,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
           cita_stok_id: s.ara_bosluk_mm != null ? (citaSecimler[s.ara_bosluk_mm] || undefined) : undefined,
           kenar_islemi: '',
           poz: s.pozNo || '',
-          notlar: '',  // Menfez/küçük cam bilgileri menfez_cap_mm + kucuk_cam kolonlarında tutuluyor
+          notlar: '',
           menfez_cap_mm: s.menfez_cap_mm ?? undefined,
           kucuk_cam: s.kucuk_cam,
-          katman_yapisi: katmanYapisi,
         }
       })
 
@@ -484,22 +474,58 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
     onKapat()
   }
 
-  /* ===== Yeni Stok Oluştur ===== */
-  const handleStokOlustur = async () => {
-    if (!yeniStokModal) return
-    const { gKey, ad } = yeniStokModal
-    if (!ad.trim()) return
-    setYeniStokKaydediliyor(true)
+  const handleCitaOlustur = async (mm: number) => {
+    setYeniCitaKaydediliyor(mm)
+    setHata(null)
     try {
-      const kod = await generateStokKod()
+      const onerilenKod = citaKodOnerisi(mm)
+      const kodVar = localStoklar.some((s) => s.kod === onerilenKod)
+      const kod = kodVar ? await generateStokKod() : onerilenKod
       const { data, error } = await supabase
         .from('stok')
         .insert({
           kod,
-          ad: normalizeCamAilesiAd(ad.trim()),
+          ad: citaStokAdi(mm),
+          kategori: 'cita',
+          kalinlik_mm: mm,
+          birim: 'm',
+          aktif: true,
+        })
+        .select()
+        .single()
+      if (error) throw new Error(error.message)
+      const yeniStok = data as Stok
+      setLocalStoklar((prev) => [yeniStok, ...prev])
+      setCitaSecimler((prev) => ({ ...prev, [mm]: yeniStok.id }))
+      await onStokYenile?.()
+    } catch (err: unknown) {
+      setHata(`Çıta stoku eklenemedi: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`)
+    } finally {
+      setYeniCitaKaydediliyor(null)
+    }
+  }
+
+  /* ===== Yeni Stok Oluştur ===== */
+  const handleStokOlustur = async () => {
+    if (!yeniStokModal) return
+    const { gKey, ad, katman, grup } = yeniStokModal
+    if (!ad.trim()) return
+    const katmanYapisi = normalizeKatmanYapisi(katman) || cozumleOcrCam(ad).katman_yapisi
+    setYeniStokKaydediliyor(true)
+    try {
+      const kod = await generateStokKod()
+      const adKatmansiz = stripKatmanYapisi(ad.trim()) || normalizeCamAilesiAd(ad.trim()) || ad.trim()
+      const { data, error } = await supabase
+        .from('stok')
+        .insert({
+          kod,
+          ad: adKatmansiz,
+          grup: grup.trim().toLocaleUpperCase('tr-TR') || null,
+          katman_yapisi: katmanYapisi || null,
           kalinlik_mm: null,
           kategori: 'cam',
           birim: 'm2',
+          aktif: true,
         })
         .select()
         .single()
@@ -767,9 +793,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                 )}
               </div>
 
-              {/* Stok Eşleştirme — her unique cam ailesi/katman kombinasyonu */}
+              {/* Stok Eşleştirme — her unique cam tipi için */}
               {(() => {
-                const camStoklar = localStoklar.filter((s) => s.kategori === 'cam')
+                const camStoklar = localStoklar.filter((s) => s.kategori === 'cam' && s.aktif !== false)
                 const gosterilenKeyler = new Set<string>()
                 const gruplar: { key: string; bilgi: ReturnType<typeof satirGrupBilgi>; satirSayisi: number }[] = []
                 for (const s of parseResult.satirlar) {
@@ -783,7 +809,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                 return (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      Cam Ailesi ve Katman Eşleştirme
+                      Cam Stoğu Eşleştirme
                       <span className="ml-2 text-xs text-gray-400 font-normal">
                         {gruplar.length} farklı dönüşüm tespit edildi
                       </span>
@@ -791,12 +817,14 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                     <div className="space-y-2">
                       {gruplar.map((g) => {
                         const secim = satirStokSecimler[g.key]
-                        const katman = satirKatmanSecimler[g.key] ?? g.bilgi.katman
-                        const katmanGecerli = isValidKatmanYapisi(katman)
-                        const aileEtiketi = g.bilgi.aile ?? '—'
-                        const eslesti = secim?.stokId && secim.skor >= 0.6 && katmanGecerli
+                        const seciliStok = secim?.stokId ? localStoklar.find((s) => s.id === secim.stokId) : null
+                        const sistemAciklama = pdfImportAciklama(
+                          parseResult.satirlar.find((x) => satirAnahtari(x) === g.key) ?? parseResult.satirlar[0],
+                          seciliStok,
+                        )
+                        const eslesti = !!secim?.stokId && secim.skor >= 0.6
                         return (
-                          <div key={g.key} className="grid grid-cols-[minmax(0,1fr)_220px_minmax(220px,1fr)] gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/50">
+                          <div key={g.key} className="grid grid-cols-[minmax(0,1fr)_minmax(260px,1fr)] gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/50">
                             <div className="min-w-0">
                               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">OCR</div>
                               <div className="text-xs text-gray-700 truncate" title={g.bilgi.aciklama}>
@@ -805,51 +833,26 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                               <div className="mt-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Sistem</div>
                               <div className={cn(
                                 'text-xs font-medium truncate',
-                                g.bilgi.uyari ? 'text-amber-700' : 'text-green-700',
+                                secim?.stokId ? 'text-green-700' : 'text-gray-600',
                               )}>
-                                {[katman || '?', aileEtiketi].filter(Boolean).join(' ')}
+                                {sistemAciklama}
                               </div>
                               <div className="mt-0.5 text-[10px] text-gray-400">{g.satirSayisi} satır</div>
-                              {g.bilgi.uyari && (
-                                <div className="mt-1 text-[11px] text-amber-700">{g.bilgi.uyari}</div>
-                              )}
                             </div>
 
                             <div>
                               <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                                Katman
-                              </label>
-                              <input
-                                value={katman}
-                                onChange={(e) => setSatirKatmanSecimler((prev) => ({
-                                  ...prev,
-                                  [g.key]: e.target.value.replace(/\s+/g, ''),
-                                }))}
-                                placeholder="4+16+4"
-                                className={cn(
-                                  'w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2',
-                                  katmanGecerli
-                                    ? 'border-green-400 bg-green-50 focus:ring-green-400'
-                                    : 'border-red-200 bg-red-50/30 focus:ring-red-400',
-                                )}
-                              />
-                              {!katmanGecerli && (
-                                <div className="mt-1 text-[11px] text-red-600">Örn: 4+16+4</div>
-                              )}
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                                Cam Ailesi
+                                Cam Stoğu
                               </label>
                               <select
                                 value={secim?.stokId ?? ''}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                  const stokId = e.target.value
                                   setSatirStokSecimler((prev) => ({
                                     ...prev,
-                                    [g.key]: { stokId: e.target.value, skor: e.target.value ? 1 : 0 },
+                                    [g.key]: { stokId, skor: stokId ? 1 : 0 },
                                   }))
-                                }
+                                }}
                                 className={cn(
                                   'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
                                   eslesti
@@ -859,22 +862,28 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                                       : 'border-red-200 bg-red-50/30 focus:ring-blue-500'
                                 )}
                               >
-                                <option value="">— Cam ailesi seçin —</option>
+                                <option value="">— Stok kartı seçin —</option>
                                 {camStoklar.map((s) => (
                                   <option key={s.id} value={s.id}>
-                                    {s.kod} — {normalizeCamAilesiAd(s.ad)}
+                                    {s.kod} — {s.ad}
                                   </option>
                                 ))}
                               </select>
                               {!secim?.stokId && (
                                 <div className="mt-1.5 flex items-center gap-2">
-                                  <span className="text-xs text-red-600">Bu cam ailesi için stok bulunamadı.</span>
+                                  <span className="text-xs text-red-600">Bu cam için stok bulunamadı.</span>
                                   <button
                                     type="button"
                                     onClick={() =>
                                       setYeniStokModal({
                                         gKey: g.key,
-                                        ad: g.bilgi.aile ?? normalizeCamAilesiAd(g.bilgi.aciklama),
+                                        ad: g.bilgi.aile ?? normalizeCamAilesiAd(g.bilgi.aciklama) ?? g.bilgi.aciklama,
+                                        katman: g.bilgi.katman ?? '',
+                                        grup: g.bilgi.aile?.toLocaleUpperCase('tr-TR').includes('KONFOR')
+                                          ? 'ISICAM-KONFOR'
+                                          : g.bilgi.aile?.toLocaleUpperCase('tr-TR').includes('SINERJI')
+                                            ? 'ISICAM-S'
+                                            : 'ISICAM',
                                       })
                                     }
                                     className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
@@ -896,33 +905,57 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
               {(() => {
                 const uniqueMmler = [...new Set(parseResult.satirlar.map((s) => s.ara_bosluk_mm).filter((v): v is number => v != null))].sort((a, b) => a - b)
                 if (uniqueMmler.length === 0) return null
-                const citaStoklar = stoklar.filter((s) => s.kategori === 'cita')
+                const citaStoklar = aktifCitaStoklari(localStoklar)
                 return (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       Çıta Eşleştirme
                       <span className="ml-2 text-xs text-gray-400 font-normal">
-                        {uniqueMmler.length} farklı çıta boyutu tespit edildi
+                        {uniqueMmler.length} farklı ara boşluk tespit edildi
                       </span>
                     </label>
                     <div className="space-y-2">
                       {uniqueMmler.map((mm) => {
                         const satirSayisi = parseResult.satirlar.filter((s) => s.ara_bosluk_mm === mm).length
+                        const eslesti = !!citaSecimler[mm]
                         return (
                           <div key={mm} className="flex items-center gap-3">
                             <div className="shrink-0 w-20 text-sm font-mono font-medium text-cyan-700 bg-cyan-50 px-2 py-1.5 rounded text-center">
                               {mm}mm
                             </div>
-                            <select
-                              value={citaSecimler[mm] ?? ''}
-                              onChange={(e) => setCitaSecimler((prev) => ({ ...prev, [mm]: e.target.value }))}
-                              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="">— Çıta Stok Seçin —</option>
-                              {citaStoklar.map((s) => (
-                                <option key={s.id} value={s.id}>{s.kod} — {s.ad}</option>
-                              ))}
-                            </select>
+                            <div className="flex-1 min-w-0">
+                              <select
+                                value={citaSecimler[mm] ?? ''}
+                                onChange={(e) => setCitaSecimler((prev) => ({ ...prev, [mm]: e.target.value }))}
+                                className={cn(
+                                  'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
+                                  eslesti
+                                    ? 'border-green-400 bg-green-50 focus:ring-green-400'
+                                    : 'border-red-200 bg-red-50/30 focus:ring-blue-500',
+                                )}
+                              >
+                                <option value="">— Çıta Stok Seçin —</option>
+                                {citaStoklar.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.kalinlik_mm != null ? `${s.kalinlik_mm} mm` : '? mm'} — {s.ad}
+                                  </option>
+                                ))}
+                              </select>
+                              {!eslesti && (
+                                <div className="mt-1.5 flex items-center gap-2">
+                                  <span className="text-xs text-red-600">{mm}mm için aktif çıta stoku yok.</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCitaOlustur(mm)}
+                                    disabled={yeniCitaKaydediliyor === mm}
+                                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                                  >
+                                    <Plus size={12} />
+                                    {yeniCitaKaydediliyor === mm ? 'Ekleniyor...' : 'Çıta Stoğu Aç'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             <span className="shrink-0 text-xs text-gray-400">{satirSayisi} satır</span>
                           </div>
                         )
@@ -976,18 +1009,14 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                       {parseResult.satirlar.map((s, i) => {
                         const stokSec = satirStokSecimler[satirAnahtari(s)]
                         const stok = stokSec?.stokId ? localStoklar.find((x) => x.id === stokSec.stokId) : null
-                        const katmanYapisi = katmanYapisiOlustur(s)
-                        const camAilesi = stok ? normalizeCamAilesiAd(stok.ad) : ''
+                        const aciklamaMetni = pdfImportAciklama(s, stok)
                         return (
                           <tr key={i} className="border-b border-gray-50 last:border-0">
                             <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
                             <td className="px-3 py-2 text-gray-700 text-xs">
-                              {katmanYapisi && (
-                                <span className="font-mono text-gray-500 mr-1">
-                                  {katmanYapisi}
-                                </span>
+                              {stok ? aciklamaMetni : (
+                                <span className="text-red-500">⚠ {aciklamaMetni}</span>
                               )}
-                              {stok ? camAilesi : <span className="text-red-500">⚠ stok yok</span>}
                             </td>
                             <td className="px-3 py-2 font-mono text-gray-800">{s.genislik_mm}</td>
                             <td className="px-3 py-2 font-mono text-gray-800">{s.yukseklik_mm}</td>
@@ -1298,7 +1327,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-gray-800">Yeni Cam Ailesi Ekle</h3>
+              <h3 className="text-base font-semibold text-gray-800">Yeni Cam Stoğu Aç</h3>
               <button
                 onClick={() => setYeniStokModal(null)}
                 className="p-1 rounded text-gray-400 hover:bg-gray-100"
@@ -1308,18 +1337,28 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Cam Ailesi *</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama *</label>
                 <input
                   type="text"
                   value={yeniStokModal.ad}
                   onChange={(e) => setYeniStokModal((prev) => prev ? { ...prev, ad: e.target.value } : null)}
-                  placeholder="örn. Isıcam Konfor"
+                  placeholder="Örn. ISICAM KONFOR"
                   autoFocus
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Grup</label>
+                <input
+                  type="text"
+                  value={yeniStokModal.grup}
+                  onChange={(e) => setYeniStokModal((prev) => prev ? { ...prev, grup: e.target.value.toLocaleUpperCase('tr-TR') } : null)}
+                  placeholder="ISICAM"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
               <div className="text-xs text-gray-400">
-                Stok kodu otomatik atanacak. Katman bilgisi sipariş satırında tutulacak.
+                Stok kodu otomatik atanacak. Bu kart PDF eşleştirme ve sipariş satırlarında tek cam stoğu olarak kullanılacak.
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">

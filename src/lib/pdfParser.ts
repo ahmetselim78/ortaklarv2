@@ -1,6 +1,9 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
 import { supabase } from './supabase'
-import { camAilesiEsit, cozumleOcrCam, extractKatmanYapisiFromText } from '@/lib/cam'
+import {
+  extractKatmanYapisiFromText,
+  stokKartEslestir,
+} from '@/lib/cam'
 
 // Worker /public/pdf.worker.js olarak servis edilir (.js uzantısı nginx MIME type sorununu önler).
 // vite.config.ts'deki copyPdfWorkerPlugin her build/dev başlangıcında bu dosyayı oluşturur.
@@ -1011,47 +1014,22 @@ export function cariEslestir(
   return enIyi
 }
 
-/**
- * Stok eşleştirme — OCR açıklamasından önce cam ailesi çıkarılır.
- * "ÇiftCam Konfor" gibi ifadelerde Konfor/Sinerji, genel ÇiftCam bilgisinden
- * daha güçlüdür. Stok kalınlığı artık eşleşme anahtarı değildir; katman
- * `siparis_detaylari.katman_yapisi` alanında tutulur.
- */
+/** Stok eşleştirme — OCR açıklamasından kombinasyon bazlı stok kartı bulur. */
 export function stokEslestir(
   aciklama: string,
-  stoklar: { id: string; ad: string; kalinlik_mm?: number | null }[],
+  stoklar: {
+    id: string
+    kod?: string | null
+    ad: string
+    grup?: string | null
+    kalinlik_mm?: number | null
+    katman_yapisi?: string | null
+    aktif?: boolean | null
+  }[],
   _disKalinlikMm?: number | null,
 ): { id: string; ad: string; skor: number } | null {
-  if (stoklar.length === 0) return null
   void _disKalinlikMm
-
-  const cozum = cozumleOcrCam(aciklama)
-  if (!cozum.emin || !cozum.cam_ailesi) return null
-
-  const exact = stoklar.find(s => camAilesiEsit(s.ad, cozum.cam_ailesi))
-  return exact ? { id: exact.id, ad: exact.ad, skor: 1 } : null
+  return stokKartEslestir(aciklama, stoklar)
 }
 
-/** Çıta eşleştirme — ara boşluk mm değerine göre çıta stok bul */
-export function citaEslestir(
-  mm: number,
-  citaStoklar: { id: string; ad: string }[]
-): { id: string; ad: string; skor: number } | null {
-  if (citaStoklar.length === 0) return null
-
-  // Önce ad'ında "Xmm" geçen stok ara (kesin eşleşme)
-  for (const s of citaStoklar) {
-    const normalAd = normalize(s.ad)
-    if (normalAd.includes(`${mm}mm`) || normalAd.includes(`${mm} mm`)) {
-      return { ...s, skor: 1 }
-    }
-  }
-
-  // Fallback: en yüksek Jaccard
-  let enIyi: { id: string; ad: string; skor: number } | null = null
-  for (const s of citaStoklar) {
-    const skor = benzerlikSkoru(`${mm}mm cita`, s.ad)
-    if (!enIyi || skor > enIyi.skor) enIyi = { ...s, skor }
-  }
-  return enIyi
-}
+export { citaEslestir } from '@/lib/cam'

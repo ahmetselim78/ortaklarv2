@@ -90,7 +90,7 @@ export default function UretimPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800">Üretim Emirleri</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Üretim partileri (batch) oluşturun ve PerfectCut'a export edin.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Üretim partileri (batch) oluşturun ve PerfectCut IMP export edin.</p>
         </div>
         <button
           onClick={() => setModalAcik(true)}
@@ -147,6 +147,7 @@ export default function UretimPage() {
       {/* Detay Modalı */}
       {seciliEmir && (
         <UretimDetayModal
+          key={seciliEmir.id}
           emir={seciliEmir}
           onDurumDegisti={handleDurumDegisti}
           onKapat={() => setSeciliEmir(null)}

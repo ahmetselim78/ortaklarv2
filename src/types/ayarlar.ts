@@ -42,6 +42,19 @@ export interface AyarlarRow {
   guncelleme: string
 }
 
+/** Opti / PerfectCut IMP export FAM eşlemesi */
+export interface OptiFamEsleme {
+  stok_kod: string
+  fam_kodu: string
+}
+
+/** Opti export ayarları */
+export interface OptiExportAyarlari {
+  sayac: number
+  cita_dusme: number
+  fam_haritasi: OptiFamEsleme[]
+}
+
 // ── Varsayılan değerler ──────────────────────────────────────────────────────
 
 export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
@@ -68,6 +81,12 @@ export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
   },
   yazdirma_kosulu: 'otomatik',
   dpl_sablonu: '',
+}
+
+export const VARSAYILAN_OPTI_EXPORT_AYARLARI: OptiExportAyarlari = {
+  sayac: 1,
+  cita_dusme: 1,
+  fam_haritasi: [],
 }
 
 // ── DPL Şablon Üretici (Datamax M-Serisi, 203 DPI) ──────────────────────────

@@ -1,5 +1,4 @@
 import type { UretimDurumu } from '@/types/siparis'
-import { normalizeKatmanYapisi } from '@/lib/cam'
 import { generateCamKodulari } from '@/lib/idGenerator'
 
 export interface TekilCamInput {
@@ -13,7 +12,6 @@ export interface TekilCamInput {
   poz?: string | null
   menfez_cap_mm?: number | string | null
   kucuk_cam?: boolean | null
-  katman_yapisi?: string | null
   ara_bosluk_mm?: number | string | null
 }
 
@@ -25,7 +23,6 @@ export interface TekilSiparisDetayRow {
   yukseklik_mm: number
   adet: 1
   uretim_durumu: UretimDurumu
-  katman_yapisi: string | null
   cita_stok_id: string | null
   kenar_islemi: string | null
   notlar: string | null
@@ -57,11 +54,14 @@ export function fizikselGlsKodu(siraNo: number | null | undefined, fallback?: st
   return siraNo != null && siraNo > 0 ? String(siraNo) : (fallback ?? '')
 }
 
-function katmanYapisi(row: TekilCamInput): string | null {
-  const norm = normalizeKatmanYapisi(row.katman_yapisi ?? '')
-  if (norm) return norm
-  const araBosluk = pozitifSayi(row.ara_bosluk_mm, 0)
-  return araBosluk > 0 ? `0+${araBosluk}+0` : null
+/** Sipariş detay listesinde gösterilecek kod — batch sıra no veya stok kodu (GLS değil). */
+export function siparisDetayGosterimKodu(
+  siraNo: number | null | undefined,
+  stokKod?: string | null,
+): string {
+  if (siraNo != null && siraNo > 0) return String(siraNo)
+  const kod = stokKod?.trim()
+  return kod || '—'
 }
 
 function menfezCap(value: unknown): number | null {
@@ -88,7 +88,6 @@ export async function tekilSiparisDetayRows(
       yukseklik_mm: pozitifSayi(cam.yukseklik_mm),
       adet: 1 as const,
       uretim_durumu: uretimDurumu,
-      katman_yapisi: katmanYapisi(cam),
       cita_stok_id: cam.cita_stok_id || null,
       kenar_islemi: cam.kenar_islemi || null,
       notlar: cam.notlar || null,

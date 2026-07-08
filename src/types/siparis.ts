@@ -34,10 +34,16 @@ export interface SiparisDetay {
   poz: string | null
   menfez_cap_mm?: number | null
   kucuk_cam?: boolean
-  katman_yapisi?: string | null
   uretim_durumu: UretimDurumu
   created_at: string
-  stok?: { ad: string; kalinlik_mm?: number | null } | null
+  stok?: {
+    kod?: string | null
+    ad: string
+    grup?: string | null
+    kalinlik_mm?: number | null
+    katman_yapisi?: string | null
+    birim_fiyat?: number | null
+  } | null
   cita_stok?: { ad: string } | null
 }
 
@@ -52,5 +58,4 @@ export interface CamFormSatiri {
   poz?: string
   menfez_cap_mm?: number | string
   kucuk_cam?: boolean
-  katman_yapisi?: string
 }

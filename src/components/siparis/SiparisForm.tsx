@@ -1,25 +1,23 @@
 import { useState } from 'react'
-import { useForm, useFieldArray, useWatch, type FieldPath } from 'react-hook-form'
+import { useForm, useFieldArray, useWatch, Controller, type FieldPath } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, PackageCheck, AlertTriangle } from 'lucide-react'
+import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, PackageCheck, AlertTriangle, Plus } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import type { SiparisTaslakCam, SiparisTaslakVerisi } from '@/types/taslak'
 import { cn } from '@/lib/utils'
-import { isValidKatmanYapisi, normalizeCamAilesiAd, normalizeKatmanYapisi } from '@/lib/cam'
 import { useEscape } from '@/hooks/useEscape'
+import CamStokPicker from '@/components/siparis/CamStokPicker'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
 
 const camSchema = z.object({
-  stok_id: z.string().min(1, 'Cam ailesi seçiniz'),
-  katman_yapisi: z.string().min(1, 'Katman yapısı giriniz').refine(isValidKatmanYapisi, 'Örn: 4+16+4'),
+  stok_id: z.string().min(1, 'Cam cinsi seçiniz'),
   genislik_mm: z.coerce.number().positive('Pozitif olmalı'),
   yukseklik_mm: z.coerce.number().positive('Pozitif olmalı'),
   adet: z.coerce.number().int().min(1, 'En az 1'),
-  ara_bosluk_mm: z.coerce.number().positive('Seçiniz').optional(),
   kenar_islemi: z.string().optional(),
   notlar: z.string().optional(),
   poz: z.string().optional(),
@@ -55,11 +53,9 @@ interface Props {
 
 const BOŞ_CAM = {
   stok_id: '',
-  katman_yapisi: '',
   genislik_mm: '' as unknown as number,
   yukseklik_mm: '' as unknown as number,
   adet: 1,
-  ara_bosluk_mm: '' as unknown as number,
   kenar_islemi: '',
   notlar: '',
   poz: '',
@@ -122,9 +118,15 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     append({
       ...BOŞ_CAM,
       stok_id: src?.stok_id ?? '',
-      katman_yapisi: src?.katman_yapisi ?? '',
-      ara_bosluk_mm: src?.ara_bosluk_mm ?? ('' as unknown as number),
     })
+  }
+
+  const satirEkle = () => {
+    const yeniIdx = fields.length
+    appendCam(yeniIdx > 0 ? yeniIdx - 1 : undefined)
+    setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-row="${yeniIdx}"][data-field="genislik_mm"]`)?.focus()
+    }, 60)
   }
 
   const handleEnterNav = (
@@ -191,7 +193,6 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     } else if (adim === 2) {
       const alanlar = fields.flatMap((_, i) => [
         `camlar.${i}.stok_id`,
-        `camlar.${i}.katman_yapisi`,
         `camlar.${i}.genislik_mm`,
         `camlar.${i}.yukseklik_mm`,
         `camlar.${i}.adet`,
@@ -233,11 +234,9 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
         const v = getValues()
         const taslakCamlar: SiparisTaslakCam[] = (v.camlar ?? []).map((cam) => ({
           stok_id: cam.stok_id,
-          katman_yapisi: cam.katman_yapisi,
           genislik_mm: taslakDegeri(cam.genislik_mm),
           yukseklik_mm: taslakDegeri(cam.yukseklik_mm),
           adet: taslakDegeri(cam.adet),
-          ara_bosluk_mm: taslakDegeri(cam.ara_bosluk_mm),
           kenar_islemi: cam.kenar_islemi,
           notlar: cam.notlar,
           poz: cam.poz,
@@ -259,7 +258,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
   }
   useEscape(kapat, !kaydediliyor)
 
-  const camStoklar = stoklar.filter(s => s.kategori === 'cam')
+  const camStoklar = stoklar.filter(s => s.kategori === 'cam' && s.aktif !== false)
 
   const ADIMLAR = [
     { no: 1, etiket: 'Müşteri Bilgileri' },
@@ -267,11 +266,18 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     { no: 3, etiket: 'Sevkiyat' },
   ]
 
+  const camListesiModu = adim === 2
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className={cn(
+      'fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 ease-out',
+      camListesiModu ? 'pt-2 pb-28 transition-[padding] duration-300' : 'py-4',
+    )}>
       <div className={cn(
-        'w-full bg-white rounded-2xl shadow-xl flex flex-col transition-all duration-300',
-        adim === 2 ? 'max-w-5xl max-h-[95vh]' : 'max-w-lg max-h-[90vh]'
+        'w-full bg-white rounded-2xl shadow-xl flex flex-col transition-all duration-300 ease-out',
+        camListesiModu
+          ? 'max-w-5xl max-h-[min(92vh,calc(100vh-8rem))] -translate-y-14'
+          : 'max-w-lg max-h-[90vh] translate-y-0',
       )}>
         {/* Başlık + Adım göstergesi */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
@@ -387,18 +393,16 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                 </div>
 
                 <div className="border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="overflow-y-auto" style={{ maxHeight: 'calc(95vh - 280px)' }}>
+                  <div className="overflow-y-auto" style={{ maxHeight: 'min(52vh, calc(100vh - 22rem))' }}>
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
                           <th className="px-2 py-2 text-center text-gray-300 w-7">#</th>
                           <th className="px-2 py-2">Poz</th>
-                          <th className="px-2 py-2">Katman *</th>
-                          <th className="px-2 py-2">Cam Ailesi *</th>
+                          <th className="px-2 py-2">Cam Cinsi / Stok *</th>
                           <th className="px-2 py-2">Gen. (mm)</th>
                           <th className="px-2 py-2">Yük. (mm)</th>
                           <th className="px-2 py-2">Adet</th>
-                          <th className="px-2 py-2">Boşluk</th>
                           <th className="px-2 py-2 w-[210px]">Özellikler</th>
                           <th className="px-2 py-2 w-6"></th>
                         </tr>
@@ -423,33 +427,18 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                               />
                             </td>
                             <td className="px-1.5 py-1.5">
-                              <input
-                                type="text"
-                                {...register(`camlar.${index}.katman_yapisi`, {
-                                  setValueAs: (v) => normalizeKatmanYapisi(String(v ?? '')) || String(v ?? '').replace(/\s+/g, ''),
-                                })}
-                                className={cn(
-                                  'w-24 rounded border px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500',
-                                  errors.camlar?.[index]?.katman_yapisi ? 'border-red-300' : 'border-gray-200'
+                              <Controller
+                                name={`camlar.${index}.stok_id`}
+                                control={control}
+                                render={({ field }) => (
+                                  <CamStokPicker
+                                    stoklar={camStoklar}
+                                    value={field.value ?? ''}
+                                    onChange={field.onChange}
+                                    invalid={!!errors.camlar?.[index]?.stok_id}
+                                  />
                                 )}
-                                placeholder="4+16+4"
                               />
-                            </td>
-                            <td className="px-1.5 py-1.5">
-                              <select
-                                {...register(`camlar.${index}.stok_id`)}
-                                className={cn(
-                                  'w-40 rounded border px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500',
-                                  errors.camlar?.[index]?.stok_id ? 'border-red-300' : 'border-gray-200'
-                                )}
-                              >
-                                <option value="">Seçiniz...</option>
-                                {camStoklar.map(s => (
-                                  <option key={s.id} value={s.id}>
-                                    {normalizeCamAilesiAd(s.ad)}
-                                  </option>
-                                ))}
-                              </select>
                             </td>
                             <td className="px-1.5 py-1.5">
                               <input
@@ -496,20 +485,6 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                 placeholder="1"
                                 min={1}
                               />
-                            </td>
-                            <td className="px-1.5 py-1.5">
-                              <select
-                                {...register(`camlar.${index}.ara_bosluk_mm`)}
-                                className="w-16 rounded border border-gray-200 px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              >
-                                <option value="">—</option>
-                                <option value="9">9</option>
-                                <option value="12">12</option>
-                                <option value="14">14</option>
-                                <option value="16">16</option>
-                                <option value="20">20</option>
-                                <option value="24">24</option>
-                              </select>
                             </td>
                             <td className="px-1.5 py-1.5 w-[210px]">
                               <div className="flex flex-wrap gap-1 items-center" style={{ maxWidth: '200px' }}>
@@ -571,11 +546,22 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                       </tbody>
                     </table>
                   </div>
+                  <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-xs text-gray-400">{fields.length} cam parçası</span>
+                    <button
+                      type="button"
+                      onClick={satirEkle}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      <Plus size={13} />
+                      Satır Ekle
+                    </button>
+                  </div>
                 </div>
                 <p className="mt-2 text-xs text-gray-400 leading-relaxed">
-                  <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px] font-mono">Enter</kbd> ile Gen → Yük → Adet → bir sonraki satır şeklinde ilerler.
+                  Cam stoğu için arama kutusunu kullanın veya grup filtresiyle daraltın.
+                  {' '}<kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px] font-mono">Enter</kbd> ile Gen → Yük → Adet → bir sonraki satır şeklinde ilerler.
                   {' '}Poz sütununda seçiliyken <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px] font-mono">Enter</kbd> aşağıdaki Poz'a geçer.
-                  {' '}Poz numaralarını tüm ölçüler girildikten sonra toplu girmek tavsiye edilir.
                 </p>
               </div>
             )}

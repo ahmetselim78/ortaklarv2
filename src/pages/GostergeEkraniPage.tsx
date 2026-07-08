@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { beepAlert } from '@/lib/audio'
 import { ArrowLeft, Wifi, WifiOff, Volume2, VolumeX, AlertTriangle, Keyboard, ArrowRight } from 'lucide-react'
 
+import { getStokKatmanYapisi } from '@/lib/cam'
+
 /* ========== Tipler ========== */
 
 type YeniCamPayload = {
@@ -13,8 +15,8 @@ type YeniCamPayload = {
 }
 
 type CitaDetayRow = {
-  katman_yapisi: string | null
   cita_stok?: { kalinlik_mm?: number | null } | { kalinlik_mm?: number | null }[] | null
+  stok?: { katman_yapisi?: string | null; ad?: string | null } | { katman_yapisi?: string | null; ad?: string | null }[] | null
 }
 
 /* ========== Bileşen ========== */
@@ -78,20 +80,22 @@ export default function GostergeEkraniPage() {
         if (p.siparis_detay_id || p.teknik_cam_kodu || p.cam_kodu) {
           let sorgu = supabase
             .from('siparis_detaylari')
-            .select('katman_yapisi, cita_stok:stok!cita_stok_id(kalinlik_mm)')
+            .select('cita_stok:stok!cita_stok_id(kalinlik_mm), stok:stok_id(katman_yapisi, ad)')
           if (p.siparis_detay_id) sorgu = sorgu.eq('id', p.siparis_detay_id)
           else sorgu = sorgu.eq('cam_kodu', p.teknik_cam_kodu ?? p.cam_kodu)
           const { data } = await sorgu.maybeSingle()
           if (data) {
             const detay = data as CitaDetayRow
             const citaStok = Array.isArray(detay.cita_stok) ? detay.cita_stok[0] : detay.cita_stok
-            // 1) cita_stok.kalinlik_mm
+            const camStok = Array.isArray(detay.stok) ? detay.stok[0] : detay.stok
             gelenMm = citaStok?.kalinlik_mm ?? null
-            // 2) katman_yapisi orta sayısı ("4+16+4" → 16)
-            if (gelenMm == null && detay.katman_yapisi) {
-              const p2 = detay.katman_yapisi.split('+')
-              if (p2.length >= 3) gelenMm = Number(p2[1]) || null
-              else if (p2.length === 2) gelenMm = Number(p2[1]) || null
+            if (gelenMm == null && camStok) {
+              const katman = getStokKatmanYapisi(camStok)
+              if (katman) {
+                const p2 = katman.split('+')
+                if (p2.length >= 3) gelenMm = Number(p2[1]) || null
+                else if (p2.length === 2) gelenMm = Number(p2[1]) || null
+              }
             }
           }
         }

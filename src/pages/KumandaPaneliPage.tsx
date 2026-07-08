@@ -5,6 +5,7 @@ import { ArrowLeft, Wifi, WifiOff, Wrench } from 'lucide-react'
 import TamireGonderModal from '@/components/tamir/TamireGonderModal'
 import type { TamireGonderCam } from '@/components/tamir/TamireGonderModal'
 import { fizikselGlsKodu } from '@/lib/siparisDetay'
+import { getCamKompozisyon } from '@/lib/cam'
 
 /* ========== Yardımcılar ========== */
 
@@ -92,8 +93,7 @@ export default function KumandaPaneliPage() {
         id, siparis_detay_id, sira_no,
         siparis_detaylari (
           cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet,
-          katman_yapisi,
-          stok!stok_id ( ad ),
+          stok!stok_id ( kod, ad, grup, katman_yapisi ),
           cita_stok:stok!cita_stok_id ( kalinlik_mm ),
           siparisler ( siparis_no, alt_musteri, cari ( ad ) )
         )
@@ -115,7 +115,7 @@ export default function KumandaPaneliPage() {
       taranan_adet: 0,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
       sira_no: d.sira_no ?? null,
-      katman_yapisi: d.siparis_detaylari.katman_yapisi ?? null,
+      katman_yapisi: getCamKompozisyon({}, d.siparis_detaylari.stok ?? null) || null,
       cita_kalinlik_mm: d.siparis_detaylari.cita_stok?.kalinlik_mm ?? null,
     }))
 

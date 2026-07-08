@@ -5,6 +5,7 @@ import {
   History, ArrowLeft, FileText, Pencil,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { bugunGoster, bugunTarih, formatSaatTr, tarihEtiketTr, trSaatStr } from '@/lib/tarih'
 import type { HrPersonel } from '@/types/saatlikUretim'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -55,21 +56,6 @@ interface RaporData {
 const LS_TEMA = 'ogu_tema'
 const LS_KULLANICI = 'ogu_son_kullanici'
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-function bugunTarih() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' })
-}
-
-function bugunGoster() {
-  return new Date().toLocaleDateString('tr-TR', {
-    timeZone: 'Europe/Istanbul',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    weekday: 'long',
-  })
-}
-
 // ─── Tema Yardımcıları ────────────────────────────────────────────────────────
 function pageBg(dk: boolean) { return dk ? 'bg-gray-950' : 'bg-gray-50' }
 function cardCls(dk: boolean) { return `rounded-2xl border ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}` }
@@ -116,6 +102,15 @@ function PageHeader({
   rightContent?: React.ReactNode
 }) {
   const dk = tema === 'dark'
+  const [saat, setSaat] = useState('')
+
+  useEffect(() => {
+    const tick = () => setSaat(trSaatStr())
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <div className={`flex items-center justify-between px-5 py-3.5 border-b shrink-0 ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
       <div className="flex items-center gap-2.5">
@@ -127,6 +122,9 @@ function PageHeader({
         </span>
       </div>
       <div className="flex items-center gap-1.5">
+        {saat && (
+          <span className={`hidden sm:inline font-mono text-sm tabular-nums ${txtMuted(dk)}`}>{saat}</span>
+        )}
         {rightContent}
         <button
           type="button"
@@ -1181,12 +1179,6 @@ function SonKayitlarEkrani({
     })()
   }, [])
 
-  function tarihGoster(t: string): string {
-    return new Date(t + 'T12:00:00').toLocaleDateString('tr-TR', {
-      day: 'numeric', month: 'long', year: 'numeric', weekday: 'short',
-    })
-  }
-
   return (
     <div className={`min-h-screen flex flex-col ${pageBg(dk)}`}>
       <PageHeader
@@ -1240,9 +1232,19 @@ function SonKayitlarEkrani({
                 <div key={g.tarih} className={`rounded-2xl border p-4 ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
                     <div>
-                      <p className={`text-sm font-semibold ${txtPrimary(dk)}`}>{tarihGoster(g.tarih)}</p>
+                      <p className={`text-sm font-semibold ${txtPrimary(dk)}`}>{tarihEtiketTr(g.tarih)}</p>
                       {g.kayitlar.length > 1 && (
-                        <p className={`text-[10px] mt-0.5 ${txtMuted(dk)}`}>{g.kayitlar.length} giriş birleştirildi</p>
+                        <p className={`text-[10px] mt-0.5 ${txtMuted(dk)}`}>
+                          {g.kayitlar.length} giriş birleştirildi
+                          {g.kayitlar.some(k => k.created_at) && (
+                            <span className="ml-1">
+                              ({g.kayitlar
+                                .filter(k => k.created_at)
+                                .map(k => formatSaatTr(k.created_at!))
+                                .join(', ')})
+                            </span>
+                          )}
+                        </p>
                       )}
                     </div>
                     {tekOperator ? (

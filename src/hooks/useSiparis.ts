@@ -123,7 +123,7 @@ export function useSiparis() {
 export async function getSiparisDetaylari(siparisId: string): Promise<SiparisDetay[]> {
   const { data, error } = await supabase
     .from('siparis_detaylari')
-    .select('*, stok:stok!stok_id(ad, kalinlik_mm), cita_stok:stok!cita_stok_id(ad)')
+    .select('*, stok:stok!stok_id(kod, ad, grup, kalinlik_mm, katman_yapisi, birim_fiyat), cita_stok:stok!cita_stok_id(ad, kalinlik_mm)')
     .eq('siparis_id', siparisId)
     // İki seviyeli sıralama: önce created_at, sonra cam_kodu (tie-break).
     // PDF import gibi toplu insert'lerde aynı created_at'e sahip satırlar olabilir;

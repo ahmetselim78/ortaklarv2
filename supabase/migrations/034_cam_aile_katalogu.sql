@@ -21,7 +21,7 @@ update stok
        birim = coalesce(nullif(birim, ''), 'm2'),
        aktif = true
  where kategori = 'cam'
-   and ad ~* 'konfor'"
+   and ad ~* 'konfor'
    and ad !~* 'sinerji';
 
 update stok
