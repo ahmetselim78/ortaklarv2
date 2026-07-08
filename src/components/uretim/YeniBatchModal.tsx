@@ -15,9 +15,42 @@ interface SiparisOzet {
   batch_no: string | null
 }
 
+type BatchJoinRow = {
+  siparis_detay_id: string
+  uretim_emirleri?: { batch_no?: string | null; durum?: string | null } | { batch_no?: string | null; durum?: string | null }[] | null
+}
+
+const IN_FILTER_CHUNK_SIZE = 100
+
 interface Props {
   onOlustur: (siparisIds: string[]) => Promise<void>
   onKapat: () => void
+}
+
+function joinedBatch(row: BatchJoinRow) {
+  const joined = row.uretim_emirleri
+  return Array.isArray(joined) ? joined[0] : joined
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+async function batchDetaylariniGetir(detayIds: string[]) {
+  const rows: BatchJoinRow[] = []
+  for (const chunk of chunkArray(detayIds, IN_FILTER_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from('uretim_emri_detaylari')
+      .select('siparis_detay_id, uretim_emirleri(batch_no, durum)')
+      .in('siparis_detay_id', chunk)
+    if (error) throw new Error(error.message)
+    rows.push(...((data ?? []) as BatchJoinRow[]))
+  }
+  return rows
 }
 
 export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
@@ -62,20 +95,26 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
     )
 
     // 3. Zaten batch'te olan sipariş detaylarını bul
-    const { data: batchDetaylar, error: batchHata } = await supabase
-      .from('uretim_emri_detaylari')
-      .select('siparis_detay_id, uretim_emirleri!inner(batch_no, durum)')
-      .neq('uretim_emirleri.durum', 'iptal')
-    if (batchHata) { setHata(batchHata.message); setYukleniyor(false); return }
+    let batchDetaylar: BatchJoinRow[] = []
+    try {
+      batchDetaylar = await batchDetaylariniGetir(tumDetaylar.map((d) => d.id))
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : 'Batch detayları alınamadı')
+      setYukleniyor(false)
+      return
+    }
+
+    const aktifBatchDetaylar = batchDetaylar
+      .filter((d) => joinedBatch(d)?.durum !== 'iptal')
 
     const batchteOlanDetayIds = new Set(
-      (batchDetaylar ?? []).map((d: any) => d.siparis_detay_id)
+      aktifBatchDetaylar.map((d) => d.siparis_detay_id)
     )
 
     // siparis_detay_id → batch_no mapping
     const detayBatchMap = new Map<string, string>()
-    for (const d of batchDetaylar ?? []) {
-      detayBatchMap.set(d.siparis_detay_id, (d as any).uretim_emirleri?.batch_no ?? '')
+    for (const d of aktifBatchDetaylar) {
+      detayBatchMap.set(d.siparis_detay_id, joinedBatch(d)?.batch_no ?? '')
     }
 
     // siparis_id → cam sayısı (adet toplamı)
