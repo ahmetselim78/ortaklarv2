@@ -1,0 +1,2760 @@
+{
+  "cl": "YKS  PVC PLSTK.DOG.İNŞ.TİC.VE/GENC INS",
+  "ord": "26/0851",
+  "rows": [
+    {
+      "sira_no": 1,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1244,
+      "expected": {
+        "n": 2,
+        "b": 1244,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 2,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 3,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1154,
+      "expected": {
+        "n": 2,
+        "b": 1154,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 4,
+      "adet": 1,
+      "genislik_mm": 460,
+      "yukseklik_mm": 1054,
+      "expected": {
+        "n": 2,
+        "b": 1054,
+        "h": 460,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 5,
+      "adet": 1,
+      "genislik_mm": 649,
+      "yukseklik_mm": 1984,
+      "expected": {
+        "n": 2,
+        "b": 1984,
+        "h": 649,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 6,
+      "adet": 1,
+      "genislik_mm": 550,
+      "yukseklik_mm": 1884,
+      "expected": {
+        "n": 2,
+        "b": 1884,
+        "h": 550,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 7,
+      "adet": 1,
+      "genislik_mm": 555,
+      "yukseklik_mm": 1062,
+      "expected": {
+        "n": 2,
+        "b": 1062,
+        "h": 555,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 8,
+      "adet": 1,
+      "genislik_mm": 554,
+      "yukseklik_mm": 1062,
+      "expected": {
+        "n": 2,
+        "b": 1062,
+        "h": 554,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 9,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1239,
+      "expected": {
+        "n": 2,
+        "b": 1239,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 10,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 11,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1239,
+      "expected": {
+        "n": 2,
+        "b": 1239,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 12,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 13,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1112,
+      "expected": {
+        "n": 2,
+        "b": 1112,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 14,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1112,
+      "expected": {
+        "n": 2,
+        "b": 1112,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 15,
+      "adet": 1,
+      "genislik_mm": 649,
+      "yukseklik_mm": 1989,
+      "expected": {
+        "n": 2,
+        "b": 1989,
+        "h": 649,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 16,
+      "adet": 1,
+      "genislik_mm": 550,
+      "yukseklik_mm": 1889,
+      "expected": {
+        "n": 2,
+        "b": 1889,
+        "h": 550,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 17,
+      "adet": 1,
+      "genislik_mm": 567,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 567,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 18,
+      "adet": 1,
+      "genislik_mm": 467,
+      "yukseklik_mm": 1044,
+      "expected": {
+        "n": 2,
+        "b": 1044,
+        "h": 467,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 19,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1264,
+      "expected": {
+        "n": 2,
+        "b": 1264,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 20,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1164,
+      "expected": {
+        "n": 2,
+        "b": 1164,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 21,
+      "adet": 1,
+      "genislik_mm": 662,
+      "yukseklik_mm": 1274,
+      "expected": {
+        "n": 2,
+        "b": 1274,
+        "h": 662,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 22,
+      "adet": 1,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1174,
+      "expected": {
+        "n": 2,
+        "b": 1174,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 23,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1149,
+      "expected": {
+        "n": 2,
+        "b": 1149,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 24,
+      "adet": 1,
+      "genislik_mm": 457,
+      "yukseklik_mm": 1049,
+      "expected": {
+        "n": 2,
+        "b": 1049,
+        "h": 457,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 25,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1999,
+      "expected": {
+        "n": 2,
+        "b": 1999,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 26,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1899,
+      "expected": {
+        "n": 2,
+        "b": 1899,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 27,
+      "adet": 2,
+      "genislik_mm": 552,
+      "yukseklik_mm": 1022,
+      "expected": {
+        "n": 4,
+        "b": 1022,
+        "h": 552,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 28,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1254,
+      "expected": {
+        "n": 2,
+        "b": 1254,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 29,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1154,
+      "expected": {
+        "n": 2,
+        "b": 1154,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 30,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1244,
+      "expected": {
+        "n": 2,
+        "b": 1244,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 31,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 32,
+      "adet": 2,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1037,
+      "expected": {
+        "n": 4,
+        "b": 1037,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 33,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1984,
+      "expected": {
+        "n": 2,
+        "b": 1984,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 34,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1884,
+      "expected": {
+        "n": 2,
+        "b": 1884,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 35,
+      "adet": 1,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 36,
+      "adet": 1,
+      "genislik_mm": 462,
+      "yukseklik_mm": 1039,
+      "expected": {
+        "n": 2,
+        "b": 1039,
+        "h": 462,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 37,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1249,
+      "expected": {
+        "n": 2,
+        "b": 1249,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 38,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1149,
+      "expected": {
+        "n": 2,
+        "b": 1149,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 39,
+      "adet": 1,
+      "genislik_mm": 652,
+      "yukseklik_mm": 1254,
+      "expected": {
+        "n": 2,
+        "b": 1254,
+        "h": 652,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 40,
+      "adet": 1,
+      "genislik_mm": 552,
+      "yukseklik_mm": 1154,
+      "expected": {
+        "n": 2,
+        "b": 1154,
+        "h": 552,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 41,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 42,
+      "adet": 1,
+      "genislik_mm": 460,
+      "yukseklik_mm": 1044,
+      "expected": {
+        "n": 2,
+        "b": 1044,
+        "h": 460,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 43,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 2004,
+      "expected": {
+        "n": 2,
+        "b": 2004,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 44,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1904,
+      "expected": {
+        "n": 2,
+        "b": 1904,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 45,
+      "adet": 2,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1047,
+      "expected": {
+        "n": 4,
+        "b": 1047,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 46,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1269,
+      "expected": {
+        "n": 2,
+        "b": 1269,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 47,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1169,
+      "expected": {
+        "n": 2,
+        "b": 1169,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 48,
+      "adet": 1,
+      "genislik_mm": 664,
+      "yukseklik_mm": 1249,
+      "expected": {
+        "n": 2,
+        "b": 1249,
+        "h": 664,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 49,
+      "adet": 1,
+      "genislik_mm": 565,
+      "yukseklik_mm": 1149,
+      "expected": {
+        "n": 2,
+        "b": 1149,
+        "h": 565,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 50,
+      "adet": 2,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1047,
+      "expected": {
+        "n": 4,
+        "b": 1047,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 51,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1939,
+      "expected": {
+        "n": 2,
+        "b": 1939,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 52,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1839,
+      "expected": {
+        "n": 2,
+        "b": 1839,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 53,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1134,
+      "expected": {
+        "n": 2,
+        "b": 1134,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 54,
+      "adet": 1,
+      "genislik_mm": 460,
+      "yukseklik_mm": 1034,
+      "expected": {
+        "n": 2,
+        "b": 1034,
+        "h": 460,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 55,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1274,
+      "expected": {
+        "n": 2,
+        "b": 1274,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 56,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1174,
+      "expected": {
+        "n": 2,
+        "b": 1174,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 57,
+      "adet": 1,
+      "genislik_mm": 664,
+      "yukseklik_mm": 1279,
+      "expected": {
+        "n": 2,
+        "b": 1279,
+        "h": 664,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 58,
+      "adet": 1,
+      "genislik_mm": 565,
+      "yukseklik_mm": 1179,
+      "expected": {
+        "n": 2,
+        "b": 1179,
+        "h": 565,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 59,
+      "adet": 1,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1192,
+      "expected": {
+        "n": 2,
+        "b": 1192,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 60,
+      "adet": 1,
+      "genislik_mm": 462,
+      "yukseklik_mm": 1092,
+      "expected": {
+        "n": 2,
+        "b": 1092,
+        "h": 462,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 61,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 2009,
+      "expected": {
+        "n": 2,
+        "b": 2009,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 62,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1909,
+      "expected": {
+        "n": 2,
+        "b": 1909,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 63,
+      "adet": 2,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1100,
+      "expected": {
+        "n": 4,
+        "b": 1100,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 64,
+      "adet": 1,
+      "genislik_mm": 658,
+      "yukseklik_mm": 1249,
+      "expected": {
+        "n": 2,
+        "b": 1249,
+        "h": 658,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 65,
+      "adet": 1,
+      "genislik_mm": 558,
+      "yukseklik_mm": 1149,
+      "expected": {
+        "n": 2,
+        "b": 1149,
+        "h": 558,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 66,
+      "adet": 1,
+      "genislik_mm": 655,
+      "yukseklik_mm": 1239,
+      "expected": {
+        "n": 2,
+        "b": 1239,
+        "h": 655,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 67,
+      "adet": 1,
+      "genislik_mm": 554,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 554,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 68,
+      "adet": 1,
+      "genislik_mm": 555,
+      "yukseklik_mm": 1112,
+      "expected": {
+        "n": 2,
+        "b": 1112,
+        "h": 555,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 69,
+      "adet": 1,
+      "genislik_mm": 554,
+      "yukseklik_mm": 1112,
+      "expected": {
+        "n": 2,
+        "b": 1112,
+        "h": 554,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 70,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1129,
+      "expected": {
+        "n": 2,
+        "b": 1129,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 71,
+      "adet": 1,
+      "genislik_mm": 457,
+      "yukseklik_mm": 1029,
+      "expected": {
+        "n": 2,
+        "b": 1029,
+        "h": 457,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 72,
+      "adet": 1,
+      "genislik_mm": 654,
+      "yukseklik_mm": 1254,
+      "expected": {
+        "n": 2,
+        "b": 1254,
+        "h": 654,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 73,
+      "adet": 1,
+      "genislik_mm": 555,
+      "yukseklik_mm": 1154,
+      "expected": {
+        "n": 2,
+        "b": 1154,
+        "h": 555,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 74,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1219,
+      "expected": {
+        "n": 2,
+        "b": 1219,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 75,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1119,
+      "expected": {
+        "n": 2,
+        "b": 1119,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 76,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1129,
+      "expected": {
+        "n": 2,
+        "b": 1129,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 77,
+      "adet": 1,
+      "genislik_mm": 460,
+      "yukseklik_mm": 1029,
+      "expected": {
+        "n": 2,
+        "b": 1029,
+        "h": 460,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 78,
+      "adet": 1,
+      "genislik_mm": 674,
+      "yukseklik_mm": 1989,
+      "expected": {
+        "n": 2,
+        "b": 1989,
+        "h": 674,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 79,
+      "adet": 1,
+      "genislik_mm": 575,
+      "yukseklik_mm": 1889,
+      "expected": {
+        "n": 2,
+        "b": 1889,
+        "h": 575,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 80,
+      "adet": 2,
+      "genislik_mm": 552,
+      "yukseklik_mm": 1067,
+      "expected": {
+        "n": 4,
+        "b": 1067,
+        "h": 552,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 81,
+      "adet": 1,
+      "genislik_mm": 661,
+      "yukseklik_mm": 1239,
+      "expected": {
+        "n": 2,
+        "b": 1239,
+        "h": 661,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 82,
+      "adet": 1,
+      "genislik_mm": 561,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 561,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 83,
+      "adet": 1,
+      "genislik_mm": 664,
+      "yukseklik_mm": 1234,
+      "expected": {
+        "n": 2,
+        "b": 1234,
+        "h": 664,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 84,
+      "adet": 1,
+      "genislik_mm": 565,
+      "yukseklik_mm": 1134,
+      "expected": {
+        "n": 2,
+        "b": 1134,
+        "h": 565,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 85,
+      "adet": 2,
+      "genislik_mm": 567,
+      "yukseklik_mm": 1072,
+      "expected": {
+        "n": 4,
+        "b": 1072,
+        "h": 567,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 86,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1999,
+      "expected": {
+        "n": 2,
+        "b": 1999,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 87,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1899,
+      "expected": {
+        "n": 2,
+        "b": 1899,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 88,
+      "adet": 1,
+      "genislik_mm": 564,
+      "yukseklik_mm": 1099,
+      "expected": {
+        "n": 2,
+        "b": 1099,
+        "h": 564,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 89,
+      "adet": 1,
+      "genislik_mm": 465,
+      "yukseklik_mm": 999,
+      "expected": {
+        "n": 2,
+        "b": 999,
+        "h": 465,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 90,
+      "adet": 1,
+      "genislik_mm": 663,
+      "yukseklik_mm": 1249,
+      "expected": {
+        "n": 2,
+        "b": 1249,
+        "h": 663,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 91,
+      "adet": 1,
+      "genislik_mm": 564,
+      "yukseklik_mm": 1149,
+      "expected": {
+        "n": 2,
+        "b": 1149,
+        "h": 564,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 92,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1244,
+      "expected": {
+        "n": 2,
+        "b": 1244,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 93,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 94,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 95,
+      "adet": 1,
+      "genislik_mm": 457,
+      "yukseklik_mm": 1039,
+      "expected": {
+        "n": 2,
+        "b": 1039,
+        "h": 457,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 96,
+      "adet": 1,
+      "genislik_mm": 664,
+      "yukseklik_mm": 2009,
+      "expected": {
+        "n": 2,
+        "b": 2009,
+        "h": 664,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 97,
+      "adet": 1,
+      "genislik_mm": 565,
+      "yukseklik_mm": 1909,
+      "expected": {
+        "n": 2,
+        "b": 1909,
+        "h": 565,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 98,
+      "adet": 2,
+      "genislik_mm": 567,
+      "yukseklik_mm": 1100,
+      "expected": {
+        "n": 4,
+        "b": 1100,
+        "h": 567,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 99,
+      "adet": 1,
+      "genislik_mm": 654,
+      "yukseklik_mm": 1254,
+      "expected": {
+        "n": 2,
+        "b": 1254,
+        "h": 654,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 100,
+      "adet": 1,
+      "genislik_mm": 555,
+      "yukseklik_mm": 1154,
+      "expected": {
+        "n": 2,
+        "b": 1154,
+        "h": 555,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 101,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1264,
+      "expected": {
+        "n": 2,
+        "b": 1264,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 102,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1164,
+      "expected": {
+        "n": 2,
+        "b": 1164,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 103,
+      "adet": 1,
+      "genislik_mm": 555,
+      "yukseklik_mm": 1102,
+      "expected": {
+        "n": 2,
+        "b": 1102,
+        "h": 555,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 104,
+      "adet": 1,
+      "genislik_mm": 554,
+      "yukseklik_mm": 1102,
+      "expected": {
+        "n": 2,
+        "b": 1102,
+        "h": 554,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 105,
+      "adet": 1,
+      "genislik_mm": 667,
+      "yukseklik_mm": 1999,
+      "expected": {
+        "n": 2,
+        "b": 1999,
+        "h": 667,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 106,
+      "adet": 1,
+      "genislik_mm": 567,
+      "yukseklik_mm": 1899,
+      "expected": {
+        "n": 2,
+        "b": 1899,
+        "h": 567,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 107,
+      "adet": 1,
+      "genislik_mm": 552,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 552,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 108,
+      "adet": 1,
+      "genislik_mm": 452,
+      "yukseklik_mm": 1039,
+      "expected": {
+        "n": 2,
+        "b": 1039,
+        "h": 452,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 109,
+      "adet": 1,
+      "genislik_mm": 652,
+      "yukseklik_mm": 1234,
+      "expected": {
+        "n": 2,
+        "b": 1234,
+        "h": 652,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 110,
+      "adet": 1,
+      "genislik_mm": 552,
+      "yukseklik_mm": 1134,
+      "expected": {
+        "n": 2,
+        "b": 1134,
+        "h": 552,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 111,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1229,
+      "expected": {
+        "n": 2,
+        "b": 1229,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 112,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1129,
+      "expected": {
+        "n": 2,
+        "b": 1129,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 113,
+      "adet": 1,
+      "genislik_mm": 563,
+      "yukseklik_mm": 1139,
+      "expected": {
+        "n": 2,
+        "b": 1139,
+        "h": 563,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 114,
+      "adet": 1,
+      "genislik_mm": 464,
+      "yukseklik_mm": 1039,
+      "expected": {
+        "n": 2,
+        "b": 1039,
+        "h": 464,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 115,
+      "adet": 1,
+      "genislik_mm": 565,
+      "yukseklik_mm": 1082,
+      "expected": {
+        "n": 2,
+        "b": 1082,
+        "h": 565,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 116,
+      "adet": 1,
+      "genislik_mm": 564,
+      "yukseklik_mm": 1082,
+      "expected": {
+        "n": 2,
+        "b": 1082,
+        "h": 564,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 117,
+      "adet": 1,
+      "genislik_mm": 672,
+      "yukseklik_mm": 1237,
+      "expected": {
+        "n": 2,
+        "b": 1237,
+        "h": 672,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 118,
+      "adet": 1,
+      "genislik_mm": 572,
+      "yukseklik_mm": 1137,
+      "expected": {
+        "n": 2,
+        "b": 1137,
+        "h": 572,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 119,
+      "adet": 1,
+      "genislik_mm": 667,
+      "yukseklik_mm": 1244,
+      "expected": {
+        "n": 2,
+        "b": 1244,
+        "h": 667,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 120,
+      "adet": 1,
+      "genislik_mm": 567,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 567,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 121,
+      "adet": 2,
+      "genislik_mm": 567,
+      "yukseklik_mm": 1092,
+      "expected": {
+        "n": 4,
+        "b": 1092,
+        "h": 567,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 122,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 2024,
+      "expected": {
+        "n": 2,
+        "b": 2024,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 123,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1924,
+      "expected": {
+        "n": 2,
+        "b": 1924,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 124,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 125,
+      "adet": 1,
+      "genislik_mm": 457,
+      "yukseklik_mm": 1044,
+      "expected": {
+        "n": 2,
+        "b": 1044,
+        "h": 457,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 126,
+      "adet": 1,
+      "genislik_mm": 664,
+      "yukseklik_mm": 1244,
+      "expected": {
+        "n": 2,
+        "b": 1244,
+        "h": 664,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 127,
+      "adet": 1,
+      "genislik_mm": 565,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 565,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 128,
+      "adet": 1,
+      "genislik_mm": 672,
+      "yukseklik_mm": 1249,
+      "expected": {
+        "n": 2,
+        "b": 1249,
+        "h": 672,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 129,
+      "adet": 1,
+      "genislik_mm": 572,
+      "yukseklik_mm": 1149,
+      "expected": {
+        "n": 2,
+        "b": 1149,
+        "h": 572,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 130,
+      "adet": 1,
+      "genislik_mm": 559,
+      "yukseklik_mm": 1134,
+      "expected": {
+        "n": 2,
+        "b": 1134,
+        "h": 559,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 131,
+      "adet": 1,
+      "genislik_mm": 460,
+      "yukseklik_mm": 1034,
+      "expected": {
+        "n": 2,
+        "b": 1034,
+        "h": 460,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 132,
+      "adet": 1,
+      "genislik_mm": 669,
+      "yukseklik_mm": 2009,
+      "expected": {
+        "n": 2,
+        "b": 2009,
+        "h": 669,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 133,
+      "adet": 1,
+      "genislik_mm": 570,
+      "yukseklik_mm": 1909,
+      "expected": {
+        "n": 2,
+        "b": 1909,
+        "h": 570,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 134,
+      "adet": 1,
+      "genislik_mm": 570,
+      "yukseklik_mm": 1067,
+      "expected": {
+        "n": 2,
+        "b": 1067,
+        "h": 570,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 135,
+      "adet": 1,
+      "genislik_mm": 569,
+      "yukseklik_mm": 1067,
+      "expected": {
+        "n": 2,
+        "b": 1067,
+        "h": 569,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 136,
+      "adet": 1,
+      "genislik_mm": 654,
+      "yukseklik_mm": 1234,
+      "expected": {
+        "n": 2,
+        "b": 1234,
+        "h": 654,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 137,
+      "adet": 1,
+      "genislik_mm": 555,
+      "yukseklik_mm": 1134,
+      "expected": {
+        "n": 2,
+        "b": 1134,
+        "h": 555,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 138,
+      "adet": 1,
+      "genislik_mm": 657,
+      "yukseklik_mm": 1244,
+      "expected": {
+        "n": 2,
+        "b": 1244,
+        "h": 657,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 139,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1144,
+      "expected": {
+        "n": 2,
+        "b": 1144,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 140,
+      "adet": 2,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1082,
+      "expected": {
+        "n": 4,
+        "b": 1082,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 141,
+      "adet": 1,
+      "genislik_mm": 662,
+      "yukseklik_mm": 1999,
+      "expected": {
+        "n": 2,
+        "b": 1999,
+        "h": 662,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 142,
+      "adet": 1,
+      "genislik_mm": 562,
+      "yukseklik_mm": 1899,
+      "expected": {
+        "n": 2,
+        "b": 1899,
+        "h": 562,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 143,
+      "adet": 1,
+      "genislik_mm": 557,
+      "yukseklik_mm": 1134,
+      "expected": {
+        "n": 2,
+        "b": 1134,
+        "h": 557,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 144,
+      "adet": 1,
+      "genislik_mm": 457,
+      "yukseklik_mm": 1034,
+      "expected": {
+        "n": 2,
+        "b": 1034,
+        "h": 457,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 145,
+      "adet": 1,
+      "genislik_mm": 659,
+      "yukseklik_mm": 1227,
+      "expected": {
+        "n": 2,
+        "b": 1227,
+        "h": 659,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 146,
+      "adet": 1,
+      "genislik_mm": 560,
+      "yukseklik_mm": 1127,
+      "expected": {
+        "n": 2,
+        "b": 1127,
+        "h": 560,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10005",
+      "stok_ad": "4+16+4 ISICAM C",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 147,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1359,
+      "expected": {
+        "n": 1,
+        "b": 1359,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 148,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1369,
+      "expected": {
+        "n": 1,
+        "b": 1369,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 149,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1354,
+      "expected": {
+        "n": 1,
+        "b": 1354,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 150,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1364,
+      "expected": {
+        "n": 1,
+        "b": 1364,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 151,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1364,
+      "expected": {
+        "n": 1,
+        "b": 1364,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 152,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1374,
+      "expected": {
+        "n": 1,
+        "b": 1374,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 153,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1374,
+      "expected": {
+        "n": 1,
+        "b": 1374,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 154,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1359,
+      "expected": {
+        "n": 1,
+        "b": 1359,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 155,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1354,
+      "expected": {
+        "n": 1,
+        "b": 1354,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 156,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1384,
+      "expected": {
+        "n": 1,
+        "b": 1384,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 157,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1384,
+      "expected": {
+        "n": 1,
+        "b": 1384,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 158,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1359,
+      "expected": {
+        "n": 1,
+        "b": 1359,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 159,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1379,
+      "expected": {
+        "n": 1,
+        "b": 1379,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 160,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1384,
+      "expected": {
+        "n": 1,
+        "b": 1384,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 161,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1389,
+      "expected": {
+        "n": 1,
+        "b": 1389,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    },
+    {
+      "sira_no": 162,
+      "adet": 1,
+      "genislik_mm": 627,
+      "yukseklik_mm": 1374,
+      "expected": {
+        "n": 1,
+        "b": 1374,
+        "h": 627,
+        "fam": "4DC",
+        "ord": "26/0851"
+      },
+      "stok_kod": "10105",
+      "stok_ad": "4+16+4 ISICAM C BUZLU",
+      "stok_grup": "ISICAM",
+      "katman_yapisi": "4+16+4"
+    }
+  ]
+}

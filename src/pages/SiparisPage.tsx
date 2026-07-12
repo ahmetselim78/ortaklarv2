@@ -31,8 +31,12 @@ const DURUM_FILTRELER: { deger: DurumFiltre; etiket: string }[] = [
   { deger: 'tamirde',     etiket: 'Tamirde' },
 ]
 
+const SAYFA_BOYUTU = 20
+// Serbest metin aramasında her tuş vuruşunda sunucuya istek atmamak için debounce.
+const ARAMA_DEBOUNCE_MS = 350
+
 export default function SiparisPage() {
-  const { siparisler, yukleniyor, hata, ekle, guncelle, durumGuncelle, sil, yenile } = useSiparis()
+  const { siparisler, toplamKayit, durumSayilari, yukleniyor, hata, ekle, guncelle, durumGuncelle, sil, yenile, ekleIlerleme } = useSiparis()
   const { cariler } = useCari()
   const { stoklar, yenile: yenileStok } = useStok()
   const location = useLocation()
@@ -52,21 +56,33 @@ export default function SiparisPage() {
   const [durumFiltre, setDurumFiltre] = useState<DurumFiltre>('hepsi')
   const [cariFiltre, setCariFiltre] = useState<string>('')
   const [altMusteriFiltre, setAltMusteriFiltre] = useState<string>('')
+  const [altMusteriAramaDebounced, setAltMusteriAramaDebounced] = useState<string>('')
   const [sayfa, setSayfa] = useState(1)
-  const SAYFA_BOYUTU = 20
 
-  // Üretim emirleri panelinden gelen sipariş açma isteği — ref ile tek seferlik
+  // Üretim emirleri panelinden gelen sipariş açma isteği — ref ile tek seferlik.
+  // Liste artık sunucu tarafında sayfalandığı için hedef sipariş görünen sayfada
+  // olmayabilir; bu yüzden listeden aranmaz, doğrudan id ile çekilir.
   const pendingOpenId = useRef<string | null>((location.state as any)?.openSiparisId ?? null)
 
   useEffect(() => {
-    if (pendingOpenId.current && siparisler.length > 0) {
-      const found = siparisler.find((s) => s.id === pendingOpenId.current)
-      if (found) {
-        setGorunenSiparis(found)
-        pendingOpenId.current = null
-      }
-    }
-  }, [siparisler])
+    if (!pendingOpenId.current) return
+    const id = pendingOpenId.current
+    pendingOpenId.current = null
+    ;(async () => {
+      const { data } = await supabase
+        .from('siparisler')
+        .select('*, cari(ad, kod), siparis_detaylari(adet), sevkiyat_planlari(id, tarih)')
+        .eq('id', id)
+        .maybeSingle()
+      if (data) setGorunenSiparis(data as Siparis)
+    })()
+  }, [])
+
+  // Alt müşteri aramasını debounce'la (her tuş vuruşunda sunucu isteği atmasın)
+  useEffect(() => {
+    const t = setTimeout(() => setAltMusteriAramaDebounced(altMusteriFiltre), ARAMA_DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [altMusteriFiltre])
 
   // Aktif tamir kaydı olan sipariş id'leri
   const [tamirdeSiparisIds, setTamirdeSiparisIds] = useState<Set<string>>(new Set())
@@ -98,21 +114,22 @@ export default function SiparisPage() {
     return () => { supabase.removeChannel(ch) }
   }, [tamirBilgisiGetir])
 
-  const filtrelenmis = (() => {
-    let liste = siparisler
-    if (durumFiltre === 'tamirde') liste = liste.filter(s => tamirdeSiparisIds.has(s.id))
-    else if (durumFiltre !== 'hepsi') liste = liste.filter(s => s.durum === durumFiltre)
-    if (cariFiltre) liste = liste.filter(s => s.cari_id === cariFiltre)
-    if (altMusteriFiltre.trim()) {
-      const ara = altMusteriFiltre.trim().toLocaleLowerCase('tr')
-      liste = liste.filter(s => s.alt_musteri?.toLocaleLowerCase('tr').includes(ara))
-    }
-    return liste
-  })()
+  // Filtre/sayfa değiştiğinde sunucudan (yalnızca görünen sayfayı) yeniden çek.
+  // "Tamirde" filtresi bir DB kolonu değil; tamirdeSiparisIds'ten türetilen id listesi
+  // sunucuya .in('id', ...) olarak gönderilir (bkz. useSiparis.getir).
+  useEffect(() => {
+    yenile({
+      durum: durumFiltre === 'hepsi' || durumFiltre === 'tamirde' ? undefined : durumFiltre,
+      tamirdeIds: durumFiltre === 'tamirde' ? Array.from(tamirdeSiparisIds) : undefined,
+      cariId: cariFiltre || undefined,
+      altMusteri: altMusteriAramaDebounced || undefined,
+      sayfa,
+      sayfaBoyutu: SAYFA_BOYUTU,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [durumFiltre, cariFiltre, altMusteriAramaDebounced, sayfa, tamirdeSiparisIds])
 
-  const sayfali = filtrelenmis.slice((sayfa - 1) * SAYFA_BOYUTU, sayfa * SAYFA_BOYUTU)
-
-  useEffect(() => { setSayfa(1) }, [durumFiltre, cariFiltre, altMusteriFiltre])
+  useEffect(() => { setSayfa(1) }, [durumFiltre, cariFiltre, altMusteriAramaDebounced])
 
   const handleIptalOnayla = async () => {
     if (!iptalEdilecek) return
@@ -130,7 +147,6 @@ export default function SiparisPage() {
     setSilEdiliyor(true)
     try {
       await sil(silEdilecek.id)
-      yenile()
     } finally {
       setSilEdiliyor(false)
       setSilEdilecek(null)
@@ -143,7 +159,7 @@ export default function SiparisPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800">Siparişler</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{siparisler.length} sipariş</p>
+          <p className="text-sm text-gray-500 mt-0.5">{durumSayilari.hepsi} sipariş</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -185,11 +201,9 @@ export default function SiparisPage() {
       <div className="flex gap-2 mb-5 flex-wrap">
         {DURUM_FILTRELER.map(({ deger, etiket }) => {
           const isTamir = deger === 'tamirde'
-          const count = isTamir
-            ? tamirdeSiparisIds.size
-            : deger === 'hepsi'
-              ? siparisler.length
-              : siparisler.filter(s => s.durum === deger).length
+          // Rozet sayıları artık sunucudan gelir (durumSayilari) — sadece görünen
+          // sayfadaki satırlardan değil, tüm tablodan doğru sayım.
+          const count = isTamir ? tamirdeSiparisIds.size : (durumSayilari as Record<string, number>)[deger] ?? 0
           const aktif = durumFiltre === deger
           const hasCount = count > 0
 
@@ -294,7 +308,9 @@ export default function SiparisPage() {
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{hata}</div>
       )}
 
-      {!yukleniyor && siparisler.length === 0 && !hata ? (
+      {/* Not: "hiç sipariş yok" boş durumu tüm tablo boşken gösterilir (durumSayilari.hepsi);
+          bir filtreye takılıp görünen sayfada sonuç olmaması ayrı bir durumdur (aşağıda). */}
+      {!yukleniyor && durumSayilari.hepsi === 0 && !hata ? (
         <EmptyState
           icon={ClipboardList}
           baslik="Henüz sipariş yok"
@@ -309,10 +325,14 @@ export default function SiparisPage() {
             </button>
           }
         />
+      ) : !yukleniyor && siparisler.length === 0 && !hata ? (
+        <div className="py-16 text-center text-sm text-gray-400">
+          Bu filtreye uyan sipariş bulunamadı.
+        </div>
       ) : (
         <>
           <SiparisListesi
-            siparisler={sayfali}
+            siparisler={siparisler}
             yukleniyor={yukleniyor}
             tamirdeSiparisIds={tamirdeSiparisIds}
             onGoruntule={setGorunenSiparis}
@@ -321,7 +341,7 @@ export default function SiparisPage() {
             silGoster={durumFiltre === 'iptal'}
           />
           <Pagination
-            toplamKayit={filtrelenmis.length}
+            toplamKayit={toplamKayit}
             sayfaBoyutu={SAYFA_BOYUTU}
             mevcutSayfa={sayfa}
             onSayfaDegistir={setSayfa}
@@ -335,6 +355,7 @@ export default function SiparisPage() {
           cariler={cariler}
           stoklar={stoklar}
           initialTaslak={aktifTaslak?.veri}
+          ekleIlerleme={ekleIlerleme}
           onKaydet={async (form) => {
             const r = await ekle(form)
             // Başarılı kayıt → ilgili taslağı sil
@@ -385,6 +406,7 @@ export default function SiparisPage() {
         <PDFImportModal
           cariler={cariler.filter((c) => c.tipi === 'musteri')}
           stoklar={stoklar}
+          ekleIlerleme={ekleIlerleme}
           onIceAktar={async (form) => {
             const result = await ekle(form)
             yenile()

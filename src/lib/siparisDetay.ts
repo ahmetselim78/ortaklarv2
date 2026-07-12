@@ -21,7 +21,7 @@ export interface TekilSiparisDetayRow {
   cam_kodu: string
   genislik_mm: number
   yukseklik_mm: number
-  adet: 1
+  adet: number
   uretim_durumu: UretimDurumu
   cita_stok_id: string | null
   kenar_islemi: string | null
@@ -69,31 +69,32 @@ function menfezCap(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
 }
 
+/**
+ * Her form satırından (sipariş satırı) TEK bir `siparis_detaylari` satırı üretir.
+ * `adet`, o satırdaki fiziksel cam sayısını taşır — satır fiziksel parça sayısı
+ * kadar ÇOĞALTILMAZ. `cam_kodu` artık fiziksel parça kimliği değil, satır
+ * kimliğidir (bkz. Info/OrtaklarV2_Architecture.md — "cam_kodu satır kimliği").
+ */
 export async function tekilSiparisDetayRows(
   siparisId: string,
   camlar: TekilCamInput[],
   uretimDurumu: UretimDurumu = 'bekliyor',
 ): Promise<TekilSiparisDetayRow[]> {
-  const toplam = camlar.reduce((sum, cam) => sum + fizikselCamAdedi(cam.adet), 0)
-  const kodlar = await generateCamKodulari(toplam)
-  let kodIndex = 0
+  const kodlar = await generateCamKodulari(camlar.length)
 
-  return camlar.flatMap((cam) => {
-    const adet = fizikselCamAdedi(cam.adet)
-    return Array.from({ length: adet }, () => ({
-      siparis_id: siparisId,
-      stok_id: cam.stok_id || null,
-      cam_kodu: kodlar[kodIndex++],
-      genislik_mm: pozitifSayi(cam.genislik_mm),
-      yukseklik_mm: pozitifSayi(cam.yukseklik_mm),
-      adet: 1 as const,
-      uretim_durumu: uretimDurumu,
-      cita_stok_id: cam.cita_stok_id || null,
-      kenar_islemi: cam.kenar_islemi || null,
-      notlar: cam.notlar || null,
-      poz: cam.poz || null,
-      menfez_cap_mm: menfezCap(cam.menfez_cap_mm),
-      kucuk_cam: cam.kucuk_cam ?? false,
-    }))
-  })
+  return camlar.map((cam, index) => ({
+    siparis_id: siparisId,
+    stok_id: cam.stok_id || null,
+    cam_kodu: kodlar[index],
+    genislik_mm: pozitifSayi(cam.genislik_mm),
+    yukseklik_mm: pozitifSayi(cam.yukseklik_mm),
+    adet: fizikselCamAdedi(cam.adet),
+    uretim_durumu: uretimDurumu,
+    cita_stok_id: cam.cita_stok_id || null,
+    kenar_islemi: cam.kenar_islemi || null,
+    notlar: cam.notlar || null,
+    poz: cam.poz || null,
+    menfez_cap_mm: menfezCap(cam.menfez_cap_mm),
+    kucuk_cam: cam.kucuk_cam ?? false,
+  }))
 }

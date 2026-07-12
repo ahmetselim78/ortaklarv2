@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
@@ -19,15 +19,21 @@ const copyPdfWorkerPlugin = {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), copyPdfWorkerPlugin],
-  //server: {
-    //host: true,
-  //},
+  server: {
+    host: '0.0.0.0',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      buffer: 'buffer/',
     },
   },
   optimizeDeps: {
     exclude: ['pdfjs-dist'],
+    include: ['iconv-lite', 'buffer'],
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 })

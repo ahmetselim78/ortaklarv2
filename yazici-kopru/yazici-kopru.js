@@ -29,6 +29,8 @@ const KOPRU_PORT = (() => {
   return idx !== -1 ? Number(process.argv[idx + 1]) || 9876 : 9876
 })()
 
+console.log(`[yazici-kopru] Baslatiliyor... port ${KOPRU_PORT}`)
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -233,11 +235,16 @@ const sunucu = http.createServer((req, res) => {
           return
         }
 
+        const dplBuf = Buffer.from(dpl, 'binary')
+        console.log(`[${zaman()}] DPL uzunluk: ${dplBuf.length} byte`)
+        console.log(`[${zaman()}] DPL hex (ilk 64): ${dplBuf.subarray(0, 64).toString('hex')}`)
+
         // ── Mod 1: Windows yazıcı adıyla doğrudan baskı (USB yazıcılar) ──
         if (yazici_adi && typeof yazici_adi === 'string' && yazici_adi.trim()) {
           const ad = yazici_adi.trim()
           console.log(`[${zaman()}] Gönderiliyor → "${ad}" (doğrudan)`)
           await yazicinaDogrudenGonder(ad, dpl)
+          console.log(`[${zaman()}] Yazilan byte: ${dplBuf.length}`)
           console.log(`[${zaman()}] ✓ Başarılı   → "${ad}"`)
           res.writeHead(200, { ...CORS, 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ basarili: true, mesaj: `"${ad}" yazıcısına gönderildi.` }))
@@ -265,6 +272,7 @@ const sunucu = http.createServer((req, res) => {
 
         console.log(`[${zaman()}] Gönderiliyor → ${ipResolved}:${portNum}`)
         await yazicinaGonder(ipResolved, portNum, dpl)
+        console.log(`[${zaman()}] Yazilan byte: ${dplBuf.length}`)
         console.log(`[${zaman()}] ✓ Başarılı   → ${ipResolved}:${portNum}`)
 
         res.writeHead(200, { ...CORS, 'Content-Type': 'application/json' })
@@ -281,56 +289,89 @@ const sunucu = http.createServer((req, res) => {
 
   // ── Yazıcı listesi ──────────────────────────────────────────────────────────
   if (req.method === 'GET' && req.url === '/yazicilar') {
+    console.log(`[${zaman()}] Yazici listesi istendi`)
     const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
 $result = [System.Collections.Generic.List[object]]::new()
 
-# 1) Windows print queue listesi
+function Add-Unique($name, $portName, $tip) {
+  if (-not $name) { return }
+  if ($result | Where-Object { $_.Name -eq $name }) { return }
+  $result.Add([PSCustomObject]@{ Name=$name; PortName=$portName; Tip=$tip })
+}
+
+# 1) Windows yazici kuyrugu (Get-Printer)
 try {
-  Get-Printer | ForEach-Object {
-    $result.Add([PSCustomObject]@{ Name=$_.Name; PortName=$_.PortName; Tip='Kuyruk' })
+  Get-Printer | ForEach-Object { Add-Unique $_.Name $_.PortName 'Kuyruk' }
+} catch {}
+
+# 2) WMI yedek (bazi sistemlerde Get-Printer bos doner)
+try {
+  Get-CimInstance Win32_Printer | ForEach-Object { Add-Unique $_.Name $_.PortName 'Kuyruk' }
+} catch {}
+
+# 3) USB portlari (Get-PrinterPort)
+try {
+  Get-PrinterPort | Where-Object { $_.Name -match '^USB\\d+$' } | ForEach-Object {
+    Add-Unique $_.Name 'USB Port' 'USB'
   }
 } catch {}
 
-# 2) USB Monitor registry'den USB printer portları
+# 4) Registry USB Monitor
 try {
   $regPath = 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Monitors\\USB Monitor\\Ports'
   if (Test-Path $regPath) {
-    Get-ChildItem $regPath | ForEach-Object {
-      $portName = $_.PSChildName
-      $result.Add([PSCustomObject]@{ Name=$portName; PortName='USB Yazici Portu'; Tip='USB' })
-    }
+    Get-ChildItem $regPath | ForEach-Object { Add-Unique $_.PSChildName 'USB Yazici Portu' 'USB' }
   }
 } catch {}
 
-# 3) Var olan USB00x portlarını registry'den (Print Ports)
+# 5) Registry Local Port (USB001 vb.)
 try {
   $regPath2 = 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Print\\Monitors\\Local Port\\Ports'
   if (Test-Path $regPath2) {
-    (Get-ItemProperty $regPath2).PSObject.Properties | Where-Object { $_.Name -match '^USB' } | ForEach-Object {
-      if (-not ($result | Where-Object { $_.Name -eq $_.Name })) {
-        $result.Add([PSCustomObject]@{ Name=$_.Name; PortName='Local USB'; Tip='USB' })
-      }
-    }
+    (Get-ItemProperty $regPath2).PSObject.Properties |
+      Where-Object { $_.Name -match '^USB' } |
+      ForEach-Object { Add-Unique $_.Name 'Local USB' 'USB' }
   }
 } catch {}
 
 if ($result.Count -gt 0) { $result | ConvertTo-Json -Compress } else { '[]' }
 `.trim()
     const psFile = path.join(os.tmpdir(), `yazicilar_${Date.now()}.ps1`)
-    try { fs.writeFileSync(psFile, ps, 'utf8') } catch {}
+    try { fs.writeFileSync(psFile, ps, 'utf8') } catch (writeErr) {
+      res.writeHead(500, { ...CORS, 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ yazicilar: [], hata: `PS dosyasi yazilamadi: ${writeErr.message}` }))
+      return
+    }
     exec(
       `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${psFile}"`,
-      { timeout: 12000, encoding: 'utf8' },
-      (err, stdout) => {
+      { timeout: 12000, encoding: 'utf8', windowsHide: true },
+      (err, stdout, stderr) => {
         try { fs.unlinkSync(psFile) } catch {}
-        res.writeHead(200, { ...CORS, 'Content-Type': 'application/json; charset=utf-8' })
+        const raw = (stdout || '').trim()
+        const errText = (stderr || '').trim()
+        if (err) {
+          console.error(`[${zaman()}] Yazicilar PS hata: ${err.message}`)
+          if (errText) console.error(`[${zaman()}] stderr: ${errText.slice(0, 200)}`)
+          res.writeHead(200, { ...CORS, 'Content-Type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({
+            yazicilar: [],
+            hata: err.message,
+            stderr: errText.slice(0, 300),
+            ham: raw.slice(0, 300),
+          }))
+          return
+        }
         try {
-          const raw = (stdout || '').trim()
           const parsed = JSON.parse(raw || '[]')
           const arr = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : [])
+          console.log(`[${zaman()}] Yazicilar: ${arr.length} adet`)
+          res.writeHead(200, { ...CORS, 'Content-Type': 'application/json; charset=utf-8' })
           res.end(JSON.stringify({ yazicilar: arr }))
-        } catch {
-          res.end(JSON.stringify({ yazicilar: [], ham: (stdout || '').slice(0, 500) }))
+        } catch (parseErr) {
+          console.error(`[${zaman()}] Yazicilar JSON parse: ${parseErr.message} | ham: ${raw.slice(0, 100)}`)
+          res.writeHead(200, { ...CORS, 'Content-Type': 'application/json; charset=utf-8' })
+          res.end(JSON.stringify({ yazicilar: [], ham: raw.slice(0, 500), stderr: errText.slice(0, 300) }))
         }
       }
     )
@@ -384,6 +425,15 @@ $out | ConvertTo-Json -Depth 4 -Compress
 function zaman() {
   return new Date().toLocaleTimeString('tr-TR')
 }
+
+sunucu.on('error', (err) => {
+  console.error(`[yazici-kopru] HATA: ${err.message}`)
+  if (err.code === 'EADDRINUSE') {
+    console.error(`  Port ${KOPRU_PORT} zaten kullaniliyor. Eski kopru/EXE kapali mi?`)
+    console.error(`  Alternatif: node yazici-kopru.js --port 9877`)
+  }
+  process.exit(1)
+})
 
 sunucu.listen(KOPRU_PORT, '0.0.0.0', () => {
   console.log('─────────────────────────────────────────')

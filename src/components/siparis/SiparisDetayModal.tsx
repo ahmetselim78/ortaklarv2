@@ -13,6 +13,8 @@ import { useEscape } from '@/hooks/useEscape'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
 import SiparisEditModal from './SiparisEditModal'
 import StatusBadge from '@/components/ui/StatusBadge'
+import YikamaAdetBadge from '@/components/ui/YikamaAdetBadge'
+import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
 
 interface Props {
   siparis: Siparis
@@ -73,15 +75,39 @@ interface TamirBilgi {
 }
 
 interface DetayWithBatch extends SiparisDetay {
+  uretim_emri_detay_id?: string | null
+  taranan_adet?: number
   batch_no?: string | null
   sira_no?: number | null
   aktif_tamir?: TamirBilgi | null
 }
 
 type BatchJoinRow = {
+  id: string
+  uretim_emri_id: string
   siparis_detay_id: string
   sira_no: number | null
   uretim_emirleri?: { batch_no?: string | null } | { batch_no?: string | null }[] | null
+}
+
+function detaySatirOlustur(
+  cam: SiparisDetay,
+  ued: { id: string; sira_no: number | null; batch_no: string | null } | null,
+  tamir: TamirBilgi | null,
+  logMap: Map<string, number>,
+): DetayWithBatch {
+  const adet = cam.adet ?? 1
+  const taranan_adet = ued
+    ? tarananAdetHesapla(cam.uretim_durumu, adet, ued.id, logMap)
+    : 0
+  return {
+    ...cam,
+    uretim_emri_detay_id: ued?.id ?? null,
+    batch_no: ued?.batch_no ?? null,
+    sira_no: ued?.sira_no ?? null,
+    taranan_adet,
+    aktif_tamir: tamir,
+  }
 }
 
 export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, batchKonteksti }: Props) {
@@ -105,6 +131,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [rowDeleting, setRowDeleting] = useState(false)
   const [camEkleniyor, setCamEkleniyor] = useState(false)
+  const [yikamaLogHata, setYikamaLogHata] = useState(false)
 
   const camStoklar = stoklar.filter(s => s.kategori === 'cam')
   const aktifCamStoklar = camStoklar.filter(s => s.aktif !== false)
@@ -177,24 +204,38 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
   const yukleDetaylar = useCallback(async () => {
     setYukleniyor(true)
+    setYikamaLogHata(false)
     const camlar = await getSiparisDetaylari(siparis.id)
+
+    let logMap = new Map<string, number>()
 
     if (batchKonteksti) {
       const { data: batchRows } = await supabase
         .from('uretim_emri_detaylari')
-        .select('siparis_detay_id, sira_no')
+        .select('id, uretim_emri_id, siparis_detay_id, sira_no')
         .eq('uretim_emri_id', batchKonteksti.uretimEmriId)
 
-      const siraMap = new Map<string, number | null>()
+      const uedMap = new Map<string, { id: string; sira_no: number | null; batch_no: string | null }>()
       for (const b of batchRows ?? []) {
-        siraMap.set(b.siparis_detay_id, b.sira_no ?? null)
+        uedMap.set(b.siparis_detay_id, {
+          id: b.id,
+          sira_no: b.sira_no ?? null,
+          batch_no: null,
+        })
       }
 
       const batchCamlar = camlar
-        .filter((c) => siraMap.has(c.id))
-        .sort((a, b) => (siraMap.get(a.id) ?? 0) - (siraMap.get(b.id) ?? 0))
+        .filter((c) => uedMap.has(c.id))
+        .sort((a, b) => (uedMap.get(a.id)?.sira_no ?? 0) - (uedMap.get(b.id)?.sira_no ?? 0))
 
       if (batchCamlar.length > 0) {
+        try {
+          logMap = await yikamaLogSayilariGetir([batchKonteksti.uretimEmriId])
+        } catch (error) {
+          console.error('Yıkama logları alınamadı:', error)
+          setYikamaLogHata(true)
+        }
+
         const camIds = batchCamlar.map((c) => c.id)
         const { data: tamirData } = await supabase
           .from('tamir_kayitlari')
@@ -209,12 +250,9 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
           }
         }
 
-        setDetaylar(batchCamlar.map((c) => ({
-          ...c,
-          batch_no: null,
-          sira_no: siraMap.get(c.id) ?? null,
-          aktif_tamir: tamirMap.get(c.id) ?? null,
-        })))
+        setDetaylar(batchCamlar.map((c) =>
+          detaySatirOlustur(c, uedMap.get(c.id) ?? null, tamirMap.get(c.id) ?? null, logMap),
+        ))
       } else {
         setDetaylar([])
       }
@@ -223,16 +261,29 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
       const { data: batchData } = await supabase
         .from('uretim_emri_detaylari')
-        .select('siparis_detay_id, sira_no, uretim_emirleri(batch_no)')
+        .select('id, uretim_emri_id, siparis_detay_id, sira_no, uretim_emirleri(batch_no)')
         .in('siparis_detay_id', camIds)
 
-      const batchMap = new Map<string, { batch_no: string; sira_no: number | null }>()
+      const uedMap = new Map<string, { id: string; sira_no: number | null; batch_no: string | null }>()
+      const batchIdSet = new Set<string>()
       for (const b of (batchData ?? []) as BatchJoinRow[]) {
         const emir = Array.isArray(b.uretim_emirleri) ? b.uretim_emirleri[0] : b.uretim_emirleri
-        batchMap.set(b.siparis_detay_id, {
-          batch_no: emir?.batch_no ?? '',
+        uedMap.set(b.siparis_detay_id, {
+          id: b.id,
           sira_no: b.sira_no ?? null,
+          batch_no: emir?.batch_no ?? null,
         })
+        batchIdSet.add(b.uretim_emri_id)
+      }
+
+      const batchIds = Array.from(batchIdSet)
+      if (batchIds.length > 0) {
+        try {
+          logMap = await yikamaLogSayilariGetir(batchIds)
+        } catch (error) {
+          console.error('Yıkama logları alınamadı:', error)
+          setYikamaLogHata(true)
+        }
       }
 
       const { data: tamirData } = await supabase
@@ -248,12 +299,9 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
         }
       }
 
-      setDetaylar(camlar.map(c => ({
-        ...c,
-        batch_no: batchMap.get(c.id)?.batch_no || null,
-        sira_no: batchMap.get(c.id)?.sira_no ?? null,
-        aktif_tamir: tamirMap.get(c.id) ?? null,
-      })))
+      setDetaylar(camlar.map(c =>
+        detaySatirOlustur(c, uedMap.get(c.id) ?? null, tamirMap.get(c.id) ?? null, logMap),
+      ))
     } else {
       setDetaylar([])
     }
@@ -262,7 +310,12 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
 
   useEffect(() => { yukleDetaylar() }, [yukleDetaylar])
 
-  const yikanmis = detaylar.reduce((sum, d) => sum + (d.uretim_durumu === 'yikandi' ? (d.adet ?? 1) : 0), 0)
+  const yikanmis = detaylar.reduce((sum, d) =>
+    sum + camTarananSayisi({
+      uretim_durumu: d.uretim_durumu,
+      adet: d.adet ?? 1,
+      taranan_adet: d.taranan_adet ?? 0,
+    }), 0)
   const toplam = detaylar.reduce((sum, d) => sum + (d.adet ?? 1), 0)
 
 
@@ -292,36 +345,20 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
     setRowSaving(true)
     setRowHata(null)
     try {
-      const mevcut = detaylar.find(d => d.id === editingDetayId)
+      // adet doğrudan güncellenir — satır çoğaltma yok (1 satır = 1 form satırı, adet fiziksel sayıyı taşır).
       const { error } = await supabase
         .from('siparis_detaylari')
         .update({
           stok_id: editRowForm.stok_id || null,
           genislik_mm: genislik,
           yukseklik_mm: yukseklik,
-          adet: 1,
+          adet,
           poz: editRowForm.poz || null,
           kenar_islemi: editRowForm.kenar_islemi || null,
           notlar: editRowForm.notlar || null,
         })
         .eq('id', editingDetayId)
       if (error) throw error
-      if (adet > 1) {
-        const rows = await tekilSiparisDetayRows(siparis.id, [{
-          stok_id: editRowForm.stok_id || null,
-          genislik_mm: genislik,
-          yukseklik_mm: yukseklik,
-          adet: adet - 1,
-          poz: editRowForm.poz || null,
-          kenar_islemi: editRowForm.kenar_islemi || null,
-          notlar: editRowForm.notlar || null,
-          cita_stok_id: mevcut?.cita_stok_id ?? null,
-          menfez_cap_mm: mevcut?.menfez_cap_mm ?? null,
-          kucuk_cam: mevcut?.kucuk_cam ?? false,
-        }])
-        const { error: ekHata } = await supabase.from('siparis_detaylari').insert(rows)
-        if (ekHata) throw ekHata
-      }
       setEditingDetayId(null)
       await yukleDetaylar()
     } finally {
@@ -435,19 +472,25 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
           <div className="px-6 pt-4 shrink-0">
             <div className="flex items-center gap-3 mb-1">
               <span className="text-xs text-gray-500 font-medium">Yıkama İlerlemesi</span>
-              <span className="text-xs text-gray-400 tabular-nums ml-auto">
-                {yikanmis} / {toplam} cam
-              </span>
+              {yikamaLogHata ? (
+                <span className="text-xs text-amber-600 ml-auto">İlerleme alınamadı</span>
+              ) : (
+                <span className="text-xs text-gray-400 tabular-nums ml-auto">
+                  {yikanmis} / {toplam} cam
+                </span>
+              )}
             </div>
-            <div className="w-full bg-gray-100 rounded-full h-2">
-              <div
-                className={cn(
-                  'h-2 rounded-full transition-all',
-                  yikanmis >= toplam ? 'bg-green-500' : 'bg-cyan-500'
-                )}
-                style={{ width: `${toplam > 0 ? (yikanmis / toplam) * 100 : 0}%` }}
-              />
-            </div>
+            {!yikamaLogHata && (
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className={cn(
+                    'h-2 rounded-full transition-all',
+                    yikanmis >= toplam ? 'bg-green-500' : 'bg-cyan-500'
+                  )}
+                  style={{ width: `${toplam > 0 ? (yikanmis / toplam) * 100 : 0}%` }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -592,13 +635,16 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs text-gray-500 font-medium">
+                    {batchKonteksti && siparis.durum !== 'beklemede' && (
+                      <th className="px-3 py-2.5 w-24">Sıra</th>
+                    )}
                     <th className="px-3 py-2.5">Açıklama</th>
                     <th className="px-3 py-2.5">Boyut (mm)</th>
                     <th className="px-3 py-2.5">Adet</th>
                     <th className="px-3 py-2.5">Poz</th>
                     {siparis.durum !== 'beklemede' && (
                       <>
-                        <th className="px-3 py-2.5">{batchKonteksti ? 'Sıra' : 'Batch'}</th>
+                        {!batchKonteksti && <th className="px-3 py-2.5">Batch</th>}
                         <th className="px-3 py-2.5">Yıkama</th>
                         <th className="px-3 py-2.5">Tamir</th>
                       </>
@@ -683,6 +729,17 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                     ) : (
                       /* ── Normal görüntüleme satırı ── */
                       <tr key={d.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
+                        {batchKonteksti && siparis.durum !== 'beklemede' && (
+                          <td className="px-3 py-2.5">
+                            {d.sira_no != null ? (
+                              <span className="font-mono text-xs font-semibold text-gray-800 bg-gray-100 px-2 py-0.5 rounded">
+                                {fizikselGlsKodu(d.sira_no, d.cam_kodu)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-3 py-2.5 text-gray-700">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span>{d.stok ? getStokGosterimAciklamasi(d.stok) : '—'}</span>
@@ -714,30 +771,32 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                         </td>
                         {siparis.durum !== 'beklemede' && (
                           <>
-                            <td className="px-3 py-2.5">
-                              {batchKonteksti ? (
-                                d.sira_no != null ? (
-                                  <span className="font-mono text-xs font-semibold text-gray-800 bg-gray-100 px-2 py-0.5 rounded">
-                                    {fizikselGlsKodu(d.sira_no, d.cam_kodu)}
+                            {!batchKonteksti && (
+                              <td className="px-3 py-2.5">
+                                {d.batch_no ? (
+                                  <span className="font-mono text-xs font-medium text-orange-700 bg-orange-50 px-2 py-0.5 rounded">
+                                    {d.batch_no}
                                   </span>
                                 ) : (
                                   <span className="text-xs text-gray-400">—</span>
-                                )
-                              ) : d.batch_no ? (
-                                <span className="font-mono text-xs font-medium text-orange-700 bg-orange-50 px-2 py-0.5 rounded">
-                                  {d.batch_no}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-400">—</span>
-                              )}
-                            </td>
+                                )}
+                              </td>
+                            )}
                             <td className="px-3 py-2.5">
-                              <span className={cn(
-                                'inline-block rounded px-2 py-0.5 text-xs font-medium',
-                                URETIM_DURUM_STIL[d.uretim_durumu]
-                              )}>
-                                {URETIM_DURUM_ETIKET[d.uretim_durumu]}
-                              </span>
+                              <div className="flex flex-col gap-1">
+                                <YikamaAdetBadge
+                                  taranan={d.taranan_adet ?? 0}
+                                  toplam={d.adet ?? 1}
+                                  compact
+                                  veriAlinamadi={yikamaLogHata && !!d.uretim_emri_detay_id}
+                                />
+                                <span className={cn(
+                                  'inline-block rounded px-2 py-0.5 text-xs font-medium w-fit',
+                                  URETIM_DURUM_STIL[d.uretim_durumu]
+                                )}>
+                                  {URETIM_DURUM_ETIKET[d.uretim_durumu]}
+                                </span>
+                              </div>
                             </td>
                             <td className="px-3 py-2.5">
                               {d.aktif_tamir ? (

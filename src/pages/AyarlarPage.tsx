@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Printer, ChevronRight, ArrowLeft, Truck, Users, Target, MessageSquare, Send, Factory } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { supabase } from '@/lib/supabase'
@@ -42,14 +42,13 @@ function useGorunumAyarlari() {
 
   return { gorunum, yukleniyor }
 }
-import EtiketAyarlariPanel, { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
+import EtiketAyarlariPanel from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
 import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
 import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
-import type { EtiketAyarlari } from '@/types/ayarlar'
 
 /* ── Kategori tanımları ──────────────────────────────────────── */
 
@@ -171,9 +170,6 @@ function AyarlarAnaSayfa({ onSec }: { onSec: (k: AyarKategori) => void }) {
 export default function AyarlarPage() {
   const { etiketAyarlari, yukleniyor, kaydediyor, hata, etiketAyarlariGuncelle } = useAyarlar()
   const [aktifKategori, setAktifKategori] = useState<AyarKategori | null>(null)
-  const [liveForm, setLiveForm] = useState<EtiketAyarlari | null>(null)
-
-  const handleFormChange = useCallback((f: EtiketAyarlari) => setLiveForm(f), [])
 
   if (yukleniyor) {
     return (
@@ -208,9 +204,7 @@ export default function AyarlarPage() {
         </div>
       </div>
 
-      {/* 2 kolon: sol form, sağ sticky önizleme */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sol — form (scroll eder) */}
         <div className="flex-1 overflow-auto p-8">
           <p className="text-sm text-gray-500 mb-6">
             Poz girişinde tarandığında otomatik olarak basılacak etiketin format ve yazıcı ayarları.
@@ -221,18 +215,7 @@ export default function AyarlarPage() {
             kaydediyor={kaydediyor}
             hata={hata}
             onKaydet={etiketAyarlariGuncelle}
-            onFormChange={handleFormChange}
           />
-        </div>
-
-        {/* Sağ — sticky önizleme */}
-        <div className="w-80 shrink-0 border-l border-gray-200 bg-gray-50 flex flex-col">
-          <div className="sticky top-0 p-6 flex flex-col items-center gap-4">
-            <EtiketOnizleme
-              ayarlar={liveForm ?? etiketAyarlari}
-              veri={ORNEK_VERI}
-            />
-          </div>
         </div>
       </div>
     </div>

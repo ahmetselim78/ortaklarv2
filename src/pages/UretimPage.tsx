@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useUretim } from '@/hooks/useUretim'
 import { useStok } from '@/hooks/useStok'
@@ -39,14 +39,25 @@ export default function UretimPage() {
     [emirler, aktifFiltre]
   )
 
-  const handleSiparisAc = async (siparisId: string) => {
+  // Filtre rozet sayıları — her render'da emirler dizisini 7 kez baştan taramamak için.
+  const durumSayilari = useMemo(() => {
+    const sayac: Record<string, number> = { hepsi: emirler.length }
+    for (const emir of emirler) {
+      sayac[emir.durum] = (sayac[emir.durum] ?? 0) + 1
+    }
+    return sayac
+  }, [emirler])
+
+  // useCallback: UretimListesi memo'landığı için (bkz. UretimListesi.tsx) referansı
+  // sabit kalmalı, aksi halde her render'da yeni fonksiyon = memo etkisiz kalır.
+  const handleSiparisAc = useCallback(async (siparisId: string) => {
     const { data, error } = await supabase
       .from('siparisler')
       .select('*, cari(ad, kod)')
       .eq('id', siparisId)
       .single()
     if (!error && data) setSeciliSiparis(data as Siparis)
-  }
+  }, [])
 
   const handleBatchOlustur = async (siparisIds: string[]) => {
     await yeniBatch(siparisIds)
@@ -104,7 +115,7 @@ export default function UretimPage() {
       {/* Filtreler */}
       <div className="flex flex-wrap gap-2 mb-4">
         {FILTRELER.map((f) => {
-          const sayi = f.deger === 'hepsi' ? emirler.length : emirler.filter(e => e.durum === f.deger).length
+          const sayi = durumSayilari[f.deger] ?? 0
           return (
             <button
               key={f.deger}

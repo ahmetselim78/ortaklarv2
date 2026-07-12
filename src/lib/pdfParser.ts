@@ -106,6 +106,28 @@ export async function pdfToText(file: File, onProgress?: PDFProgressCallback): P
   return text
 }
 
+const MISTRAL_OCR_TIMEOUT_MS = 120_000
+const EDGE_FUNCTION_TIMEOUT_MS = 120_000
+
+/** Promise'e zaman aşımı ekler — Edge Function yanıt vermezse sonsuza kadar beklenmez. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} zaman aşımına uğradı (${Math.round(ms / 1000)} sn)`))
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
+}
+
 /** ArrayBuffer → base64 string */
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
@@ -117,68 +139,50 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-/** Mistral OCR — Ham PDF'i doğrudan API'ye yollar (pdf.js BYPASS).
- *  Önce Supabase Edge Function dener, başarısız olursa doğrudan Mistral API'ye gider. */
-async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback): Promise<string> {
-  onProgress?.('Mistral OCR isteği gönderiliyor...')
-
-  const base64 = arrayBufferToBase64(buffer)
-
-  /** Per-page diagnostic — Mistral'in döndürdüğü her sayfada kaç cam-satır var */
-  const logPagesDiagnostic = (pages: { index?: number; markdown: string }[]) => {
-    const camRowRe = /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[.,]\d{3}\s+\d[.,]\d{3}/
-    let totalRows = 0
-    pages.forEach((p, idx) => {
-      const camRowCount = (p.markdown ?? '').split('\n').filter(l => {
-        let s = l.trim()
-        if (!s) return false
-        if (s.startsWith('|')) s = s.replace(/^\||\|$/g, '').split('|').map(c => c.trim()).join(' ')
-        return camRowRe.test(s)
-      }).length
-      totalRows += camRowCount
-      console.log(
-        `[Mistral OCR] Sayfa ${(p.index ?? idx) + 1}: ${(p.markdown ?? '').length} kar, ${camRowCount} cam-satır`,
-      )
-    })
-    console.log(`[Mistral OCR] Toplam: ${pages.length} sayfa, ${totalRows} cam-satır`)
-  }
-
-  // 1) Supabase Edge Function dene
-  const { data, error } = await supabase.functions.invoke('mistral-ocr', {
-    body: { document_base64: base64 },
-  })
-
-  if (!error && data?.pages) {
-    onProgress?.('Sonuçlar işleniyor...')
-    const pages = data.pages as { index: number; markdown: string }[]
-    logPagesDiagnostic(pages)
-    return pages.map(p => p.markdown).join('\n')
-  }
-
-  // 2) Fallback: VITE_MISTRAL_API_KEY varsa doğrudan Mistral API'ye git
-  const apiKey = import.meta.env.VITE_MISTRAL_API_KEY as string | undefined
-  if (!apiKey) {
-    throw new Error(
-      `Mistral OCR hatası: ${error?.message ?? 'Bilinmeyen hata'}. Edge Function deploy edilmemiş ve VITE_MISTRAL_API_KEY tanımlı değil.`,
+/** Per-page diagnostic — Mistral'in döndürdüğü her sayfada kaç cam-satır var */
+function logPagesDiagnostic(pages: { index?: number; markdown: string }[]) {
+  const camRowRe = /\d{1,3}\s+\d{3,4}(?:[.,]\d{3})?\s+\d{3,4}(?:[.,]\d{3})?\s+\d[.,]\d{3}\s+\d[.,]\d{3}/
+  let totalRows = 0
+  pages.forEach((p, idx) => {
+    const camRowCount = (p.markdown ?? '').split('\n').filter(l => {
+      let s = l.trim()
+      if (!s) return false
+      if (s.startsWith('|')) s = s.replace(/^\||\|$/g, '').split('|').map(c => c.trim()).join(' ')
+      return camRowRe.test(s)
+    }).length
+    totalRows += camRowCount
+    console.log(
+      `[Mistral OCR] Sayfa ${(p.index ?? idx) + 1}: ${(p.markdown ?? '').length} kar, ${camRowCount} cam-satır`,
     )
-  }
+  })
+  console.log(`[Mistral OCR] Toplam: ${pages.length} sayfa, ${totalRows} cam-satır`)
+}
 
-  console.warn('[Mistral OCR] Edge Function başarısız, doğrudan API kullanılıyor')
-  onProgress?.('Mistral OCR (doğrudan API)...')
+function pagesToMarkdown(pages: { index?: number; markdown: string }[]): string {
+  return pages.map(p => p.markdown).join('\n')
+}
 
+type MistralOcrDocument =
+  | { type: 'document_url'; document_url: string }
+  | { type: 'image_url'; image_url: string }
+
+/** Mistral OCR API'ye doğrudan istek */
+async function callMistralOcrApi(
+  apiKey: string,
+  document: MistralOcrDocument,
+  timeoutMs = MISTRAL_OCR_TIMEOUT_MS,
+): Promise<string> {
   const res = await fetch('https://api.mistral.ai/v1/ocr', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: 'mistral-ocr-latest',
-      document: {
-        type: 'document_url',
-        document_url: `data:application/pdf;base64,${base64}`,
-      },
+      document,
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   if (!res.ok) {
@@ -187,10 +191,89 @@ async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback)
   }
 
   const result = await res.json()
-  onProgress?.('Sonuçlar işleniyor...')
   const pages = result.pages as { index: number; markdown: string }[]
+  if (!pages?.length) {
+    throw new Error('Mistral OCR boş sonuç döndürdü')
+  }
   logPagesDiagnostic(pages)
-  return pages.map(p => p.markdown).join('\n')
+  return pagesToMarkdown(pages)
+}
+
+/** Supabase Edge Function üzerinden Mistral OCR (anahtar sunucuda kalır). */
+async function callMistralOcrEdgeFunction(
+  body: { document_base64: string } | { image_base64: string },
+): Promise<string> {
+  const { data, error } = await withTimeout(
+    supabase.functions.invoke('mistral-ocr', { body }),
+    EDGE_FUNCTION_TIMEOUT_MS,
+    'Mistral OCR Edge Function',
+  )
+
+  if (error) {
+    throw new Error(error.message ?? 'Edge Function hatası')
+  }
+
+  const pages = data?.pages as { index: number; markdown: string }[] | undefined
+  if (!pages?.length) {
+    const edgeError = typeof data?.error === 'string' ? data.error : 'Edge Function geçerli OCR sonucu döndürmedi'
+    throw new Error(edgeError)
+  }
+
+  logPagesDiagnostic(pages)
+  return pagesToMarkdown(pages)
+}
+
+/** Edge Function başarısız olursa yalnızca geliştirme/yedek için doğrudan API dener. */
+async function callMistralOcrWithFallback(
+  edgeBody: { document_base64: string } | { image_base64: string },
+  directDocument: MistralOcrDocument,
+  onProgress?: PDFProgressCallback,
+): Promise<string> {
+  const apiKey = import.meta.env.VITE_MISTRAL_API_KEY as string | undefined
+  const errors: string[] = []
+
+  try {
+    onProgress?.('Mistral OCR isteği gönderiliyor...')
+    const text = await callMistralOcrEdgeFunction(edgeBody)
+    onProgress?.('Sonuçlar işleniyor...')
+    return text
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn('[Mistral OCR] Edge Function başarısız:', msg)
+    errors.push(`Edge Function: ${msg}`)
+  }
+
+  if (!apiKey) {
+    throw new Error(
+      `Mistral OCR başarısız: ${errors.join(' | ')}. Sunucu tarafı OCR kullanılamadı.`,
+    )
+  }
+
+  console.warn('[Mistral OCR] Edge Function başarısız, doğrudan API (yedek) kullanılıyor')
+  onProgress?.('Mistral OCR (yedek yol)...')
+  try {
+    const text = await callMistralOcrApi(apiKey, directDocument)
+    onProgress?.('Sonuçlar işleniyor...')
+    return text
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    errors.push(`Doğrudan API: ${msg}`)
+    throw new Error(`Mistral OCR başarısız. ${errors.join(' | ')}`)
+  }
+}
+
+/** Mistral OCR — Ham PDF'i API'ye yollar (pdf.js BYPASS).
+ *  Birincil yol: Edge Function (MISTRAL_API_KEY sunucuda).
+ *  Yedek: VITE_MISTRAL_API_KEY ile doğrudan API (yalnızca Edge Function başarısız olursa). */
+async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback): Promise<string> {
+  onProgress?.('PDF hazırlanıyor...')
+  const base64 = arrayBufferToBase64(buffer)
+  const document: MistralOcrDocument = {
+    type: 'document_url',
+    document_url: `data:application/pdf;base64,${base64}`,
+  }
+
+  return callMistralOcrWithFallback({ document_base64: base64 }, document, onProgress)
 }
 
 /**
@@ -206,7 +289,7 @@ async function mistralOCR(buffer: ArrayBuffer, onProgress?: PDFProgressCallback)
  *   - scale=3 ile yüksek çözünürlük (rakamlar net)
  *   - Canvas'a 8% bottom padding (beyaz boşluk) ekle → son tablo satırı ile
  *     görüntü kenarı arasında nefes alanı kalır, OCR son satırı atmaz
- *   - Edge Function (401) atlanıp doğrudan API'ye gidilir
+ *   - Edge Function birincil yol; doğrudan API yalnızca yedek
  *   - Her sayfa için cam-satır sayısı log'lanır → satır kaybı anında görünür
  */
 async function mistralOCRPageByPage(
@@ -214,12 +297,6 @@ async function mistralOCRPageByPage(
   onProgress?: PDFProgressCallback,
 ): Promise<string> {
   const apiKey = import.meta.env.VITE_MISTRAL_API_KEY as string | undefined
-  if (!apiKey) {
-    throw new Error(
-      `Sayfa-sayfa OCR yapılamıyor: VITE_MISTRAL_API_KEY tanımlı değil. ` +
-      `.env.local dosyasına ekleyin.`,
-    )
-  }
 
   const doc = await getDocument({
     data: buffer,
@@ -262,29 +339,24 @@ async function mistralOCRPageByPage(
     } as Parameters<typeof page.render>[0]).promise
 
     const dataUrl = canvas.toDataURL('image/png')
+    const imageBase64 = dataUrl.split(',')[1] ?? ''
 
-    // Doğrudan Mistral API (Edge Function atlanıyor)
-    const res = await fetch('https://api.mistral.ai/v1/ocr', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'mistral-ocr-latest',
-        document: {
-          type: 'image_url',
-          image_url: dataUrl,
-        },
-      }),
-    })
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}))
-      throw new Error(`Mistral OCR sayfa ${i} hatası (${res.status}): ${JSON.stringify(errBody)}`)
+    let pageMarkdown: string
+    try {
+      pageMarkdown = await callMistralOcrWithFallback(
+        { image_base64: imageBase64 },
+        { type: 'image_url', image_url: dataUrl },
+        onProgress,
+      )
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!apiKey && msg.includes('Sunucu tarafı OCR')) {
+        throw new Error(
+          `Sayfa-sayfa OCR yapılamadı: Edge Function başarısız ve VITE_MISTRAL_API_KEY tanımlı değil.`,
+        )
+      }
+      throw new Error(`Mistral OCR sayfa ${i} hatası: ${msg}`)
     }
-    const result = await res.json()
-    const pages = result.pages as { markdown: string }[]
-    const pageMarkdown = pages.map(p => p.markdown).join('\n')
 
     // Diagnostic: bu sayfada kaç cam-satır geldi?
     // Hem düz metin hem markdown tablo satırlarını sayar.

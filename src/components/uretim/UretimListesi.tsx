@@ -1,7 +1,7 @@
+import { memo } from 'react'
 import { Eye, Trash2, Ban, Inbox } from 'lucide-react'
 import type { UretimEmri, UretimEmriDurum } from '@/types/uretim'
-import { cn } from '@/lib/utils'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { TableSkeleton } from '@/components/ui/Skeleton'
 import EmptyState from '@/components/ui/EmptyState'
 import StatusBadge from '@/components/ui/StatusBadge'
@@ -36,7 +36,10 @@ const DURUM_SATIR_BG: Record<UretimEmriDurum, string> = {
   iptal:        'bg-gray-50/60 opacity-70',
 }
 
-export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoruntule, onSil, onIptal, onSiparisAc }: Props) {
+// Batch listesi 100+ satıra çıktığında (büyük siparişlerin toplandığı batch'ler)
+// filtre/modal gibi ilgisiz state değişimlerinde tüm tablonun yeniden render
+// edilmesini önlemek için memo'lanır — sadece props gerçekten değişince render olur.
+function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoruntule, onSil, onIptal, onSiparisAc }: Props) {
 
   if (yukleniyor) {
     return <TableSkeleton satir={6} kolon={7} />
@@ -80,9 +83,38 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
                 {emir.export_tarihi ? formatDate(emir.export_tarihi) : '—'}
               </td>
               <td className="px-4 py-3">
-                {emir.cam_sayisi != null ? (
-                  <span className="text-sm font-semibold text-gray-700">{emir.cam_sayisi}</span>
-                ) : '—'}
+                {emir.cam_sayisi != null ? (() => {
+                  const toplam = emir.cam_sayisi
+                  const taranan = emir.taranan_cam ?? 0
+                  const taramaBaslamis = taranan > 0
+                  const ilerlemeGoster =
+                    taramaBaslamis ||
+                    ['yikamada', 'eksik_var', 'tamamlandi'].includes(emir.durum)
+
+                  if (!ilerlemeGoster) {
+                    return (
+                      <span className="text-sm font-semibold text-gray-700">{toplam}</span>
+                    )
+                  }
+
+                  const yuzde = toplam > 0 ? (taranan / toplam) * 100 : 0
+                  return (
+                    <div className="space-y-1">
+                      <span className="text-sm font-semibold text-gray-700 tabular-nums">
+                        {taranan} / {toplam}
+                      </span>
+                      <div className="w-24 bg-gray-100 rounded-full h-1">
+                        <div
+                          className={cn(
+                            'h-1 rounded-full transition-all',
+                            yuzde >= 100 ? 'bg-emerald-500' : 'bg-cyan-500',
+                          )}
+                          style={{ width: `${yuzde}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })() : '—'}
               </td>
               <td className="px-4 py-3">
                 <div className="flex flex-wrap gap-1">
@@ -145,3 +177,5 @@ export default function UretimListesi({ emirler, yukleniyor, aktifFiltre, onGoru
     </div>
   )
 }
+
+export default memo(UretimListesi)

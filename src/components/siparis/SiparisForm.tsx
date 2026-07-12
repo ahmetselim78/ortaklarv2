@@ -6,6 +6,7 @@ import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, Pa
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
 import type { SiparisTaslakCam, SiparisTaslakVerisi } from '@/types/taslak'
+import type { EkleIlerleme } from '@/hooks/useSiparis'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
 import CamStokPicker from '@/components/siparis/CamStokPicker'
@@ -51,6 +52,8 @@ interface Props {
    * Döndürülmezse default davranışa düşer (sadece onKapat).
    */
   onTaslakKaydet?: (veri: SiparisTaslakVerisi) => void
+  /** Büyük siparişlerde (300+ satır) parçalı ekleme ilerlemesi (opsiyonel gösterge). */
+  ekleIlerleme?: EkleIlerleme | null
 }
 
 const BOŞ_CAM = {
@@ -68,7 +71,7 @@ function taslakDegeri(value: unknown): string | number | undefined {
   return typeof value === 'string' || typeof value === 'number' ? value : undefined
 }
 
-export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initialTaslak, onTaslakKaydet }: Props) {
+export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initialTaslak, onTaslakKaydet, ekleIlerleme }: Props) {
   const [adim, setAdim] = useState<1 | 2 | 3>(1)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
@@ -700,7 +703,11 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                     disabled={kaydediliyor}
                     className="px-5 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {kaydediliyor ? 'Kaydediliyor...' : 'Siparişi Kaydet'}
+                    {kaydediliyor
+                      ? (ekleIlerleme && ekleIlerleme.toplam > 300
+                          ? `Kaydediliyor... (${ekleIlerleme.eklenen}/${ekleIlerleme.toplam})`
+                          : 'Kaydediliyor...')
+                      : 'Siparişi Kaydet'}
                   </button>
                 )}
               </div>

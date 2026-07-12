@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  ShieldCheck, Settings, ClipboardCheck,
+  ShieldCheck, Settings, ClipboardCheck, Database,
   Eye, ChevronRight, ArrowLeft, Loader2, AlertCircle,
   RefreshCw, Calendar,
   User, Truck, Factory, FileDown, Trash2, StickyNote, X,
@@ -10,7 +10,6 @@ import {
 import { supabase } from '@/lib/supabase'
 import { bugunTarih, formatSaatTr, formatTarihTr, tarihEkleTr } from '@/lib/tarih'
 import { useAyarlar } from '@/hooks/useAyarlar'
-import { EtiketOnizleme, ORNEK_VERI } from '@/components/ayarlar/EtiketAyarlariPanel'
 import EtiketAyarlariPanel from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
@@ -19,13 +18,14 @@ import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPane
 import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
 import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
 import OptiExportAyarlariPanel from '@/components/ayarlar/OptiExportAyarlariPanel'
+import VeriYonetimiPanel from '@/components/admin/VeriYonetimiPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 // ── Ayar görünürlük anahtarı ──────────────────────────────────────────────────
 const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 
 type AyarKategori = 'etiket' | 'araclar' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti'
-type AdminTab = 'ayarlar' | 'uretim-giris'
+type AdminTab = 'ayarlar' | 'uretim-giris' | 'veri-yonetimi'
 
 interface GorunumAyarlari {
   etiket: boolean
@@ -321,7 +321,6 @@ function AyarlarYonetimiTab() {
   const [modalAcik, setModalAcik] = useState(false)
   const [aktifPanel, setAktifPanel] = useState<AyarKategori | null>(null)
   const { etiketAyarlari, kaydediyor: etiketKaydediyor, hata: etiketHata, etiketAyarlariGuncelle } = useAyarlar()
-  const [liveForm, setLiveForm] = useState<EtiketAyarlari | null>(null)
 
   // Görünürlük ayarlarını yükle
   useEffect(() => {
@@ -360,8 +359,6 @@ function AyarlarYonetimiTab() {
         etiketKaydediyor={etiketKaydediyor}
         etiketHata={etiketHata}
         etiketAyarlariGuncelle={etiketAyarlariGuncelle}
-        liveForm={liveForm}
-        setLiveForm={setLiveForm}
         onGeri={() => setAktifPanel(null)}
       />
     )
@@ -445,8 +442,6 @@ function AyarlarPanelGorunum({
   etiketKaydediyor,
   etiketHata,
   etiketAyarlariGuncelle,
-  liveForm,
-  setLiveForm,
   onGeri,
 }: {
   kategori: AyarKategori
@@ -454,8 +449,6 @@ function AyarlarPanelGorunum({
   etiketKaydediyor: boolean
   etiketHata: string | null
   etiketAyarlariGuncelle: (v: EtiketAyarlari) => Promise<boolean>
-  liveForm: EtiketAyarlari | null
-  setLiveForm: (v: EtiketAyarlari) => void
   onGeri: () => void
 }) {
   const kat = KATEGORILER.find(k => k.id === kategori)!
@@ -489,13 +482,7 @@ function AyarlarPanelGorunum({
               kaydediyor={etiketKaydediyor}
               hata={etiketHata}
               onKaydet={etiketAyarlariGuncelle}
-              onFormChange={setLiveForm}
             />
-          </div>
-          <div className="w-80 shrink-0 border-l border-gray-200 bg-gray-50 flex flex-col">
-            <div className="sticky top-0 p-6 flex flex-col items-center gap-4">
-              <EtiketOnizleme ayarlar={liveForm ?? etiketAyarlari} veri={ORNEK_VERI} />
-            </div>
           </div>
         </div>
       )}
@@ -1168,8 +1155,9 @@ function UretimGirisiTab() {
 // ╚══════════════════════════════════════════════════════════════════════════════
 
 const TABS: { id: AdminTab; label: string; icon: React.ElementType; aciklama: string }[] = [
-  { id: 'ayarlar',      label: 'Ayarlar Yönetimi',       icon: Settings,       aciklama: 'Tüm ayar panelleri ve /ayarlar sayfası görünürlük kontrolü' },
-  { id: 'uretim-giris', label: 'Üretim Girişi Kayıtları', icon: ClipboardCheck, aciklama: 'Operatörler tarafından girilen günlük üretim raporları' },
+  { id: 'ayarlar',       label: 'Ayarlar Yönetimi',        icon: Settings,       aciklama: 'Tüm ayar panelleri ve /ayarlar sayfası görünürlük kontrolü' },
+  { id: 'uretim-giris',  label: 'Üretim Girişi Kayıtları', icon: ClipboardCheck, aciklama: 'Operatörler tarafından girilen günlük üretim raporları' },
+  { id: 'veri-yonetimi', label: 'Veri Yönetimi',           icon: Database,       aciklama: 'Batch ve sipariş kayıtlarını kalıcı silme' },
 ]
 
 interface AdminGirisModalProps {
@@ -1333,8 +1321,9 @@ export default function AdminPage() {
 
       {/* Tab içeriği */}
       <div className="flex-1 overflow-auto flex flex-col min-h-0">
-        {aktifTab === 'ayarlar'       && <AyarlarYonetimiTab />}
-        {aktifTab === 'uretim-giris'  && <UretimGirisiTab />}
+        {aktifTab === 'ayarlar'        && <AyarlarYonetimiTab />}
+        {aktifTab === 'uretim-giris'   && <UretimGirisiTab />}
+        {aktifTab === 'veri-yonetimi'  && <VeriYonetimiPanel />}
       </div>
     </div>
   )

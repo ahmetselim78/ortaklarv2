@@ -5,207 +5,260 @@ Turkish glass manufacturing management system with production line synchronizati
 
 ## Database Schema
 
+RLS is enabled on all tables (mostly open `authenticated` policies). Schema reconstructed from `supabase/migrations/001`–`043`.
+
 ### Tables and Key Columns
 
 1. **cari** - Customers and Suppliers
    - id (UUID), kod (TEXT unique), ad, tipi ('musteri'|'tedarikci')
    - telefon, email, adres, notlar, created_at
 
-2. **stok** - Product Catalog
+2. **stok** - Product Catalog (glass combinations, spacer/çıta, ancillary materials)
    - id (UUID), kod (TEXT unique), ad, kategori ('cam'|'cita'|'yan_malzeme')
-   - kalinlik_mm, renk, tip, birim, birim_fiyat
-   - tedarikci_id (FK cari), marka, mevcut_miktar, created_at
+   - grup (e.g. ISICAM, DÜZCAM, ÜÇLÜ CAM), katman_yapisi (composition string e.g. `4+16+4`, CHECK format)
+   - kalinlik_mm (single-pane thickness, NULL for IG units), birim, birim_fiyat
+   - tedarikci_id (FK cari, ON DELETE SET NULL), marka, mevcut_miktar, aktif (BOOLEAN), created_at
+   - Dropped columns: `tip`, `renk` (022)
 
 3. **siparisler** - Orders
-   - id (UUID), siparis_no (TEXT unique), cari_id (FK)
+   - id (UUID), siparis_no (TEXT unique), cari_id (FK, RESTRICT)
    - tarih, teslim_tarihi, durum ('beklemede'|'batchte'|'yikamada'|'tamamlandi'|'eksik_var'|'iptal')
-   - notlar, created_at
+   - notlar, alt_musteri (end customer), teslimat_tipi (default 'teslim_alacak'), tamamlandi_tarihi
+   - kaynak ('pdf'|'manuel'), harici_siparis_no (supplier/PDF order number), created_at
+   - Indexes: durum, harici_siparis_no
 
 4. **siparis_detaylari** - Order Line Items (individual glass pieces)
-   - id (UUID), siparis_id (FK), stok_id (FK cam), cam_kodu (TEXT unique, format: GLS-XXXX)
-   - genislik_mm, yukseklik_mm, adet, ara_bosluk_mm (spacing), kenar_islemi (edge processing)
-   - cita_stok_id (FK for frame reference), uretim_durumu ('bekliyor'|'kesildi'|'yikandi'|'etiketlendi'|'tamamlandi')
-   - notlar, created_at
+   - id (UUID), siparis_id (FK CASCADE), stok_id (FK stok, RESTRICT), cam_kodu (TEXT unique, format: GLS-XXXX)
+   - genislik_mm, yukseklik_mm, adet, kenar_islemi (edge processing), poz (building position), menfez_cap_mm, kucuk_cam (BOOLEAN)
+   - cita_stok_id (FK stok, SET NULL), uretim_durumu ('bekliyor'|'kesildi'|'yikandi'|'etiketlendi'|'tamamlandi')
+   - notlar, created_at; CHECKs: adet > 0, genislik/yukseklik > 0
+   - Dropped columns: `ara_bosluk_mm`, `dis_kalinlik_mm`, `katman_sayisi`, `orta_kalinlik_mm`, `ara_bosluk_2_mm`, `katman_yapisi` (composition now lives on `stok.katman_yapisi`, migrations 021, 036–039)
 
 5. **uretim_emirleri** - Production Batches
    - id (UUID), batch_no (TEXT unique, format: BATCH-YYYY-NNNN)
-   - durum ('hazirlaniyor'|'onaylandi'|'export_edildi'|'yikamada'|'tamamlandi'|'eksik_var')
+   - durum ('hazirlaniyor'|'export_edildi'|'yikamada'|'tamamlandi'|'eksik_var'|'iptal')
    - notlar, olusturulma_tarihi, export_tarihi
 
 6. **uretim_emri_detaylari** - Batch Line Items
-   - id (UUID), uretim_emri_id (FK), siparis_detay_id (FK)
-   - sira_no (sequence number)
-   - Unique constraint: (uretim_emri_id, siparis_detay_id)
+   - id (UUID), uretim_emri_id (FK CASCADE), siparis_detay_id (FK siparis_detaylari, RESTRICT)
+   - sira_no (in-batch short GLS label, INTEGER)
+   - Unique constraints: (uretim_emri_id, siparis_detay_id), (uretim_emri_id, sira_no)
 
 7. **yikama_loglari** - Wash Station Logs
-   - id (UUID), cam_kodu (TEXT), siparis_detay_id (FK)
+   - id (UUID), cam_kodu (TEXT), siparis_detay_id (FK, SET NULL), uretim_emri_detay_id (FK, SET NULL)
    - giris_zamani, operatör
 
 8. **sayaclar** - Atomic ID Generation
    - anahtar (TEXT primary key), deger (INTEGER)
    - Used for: cam_kodu, cari_kod, stok_kod, siparis_no_YYYY, batch_no_YYYY
 
-9. **hr_personel** - Human Resources / Operator Management
-   - id (UUID), ad_soyad (TEXT), foto_url (TEXT), rol ('Direkt'|'Endirekt')
-   - is_aktif (BOOLEAN), kullanici_adi (TEXT), giris_sifresi (TEXT)
-   - created_at (TIMESTAMPTZ)
+9. **tamir_kayitlari** - Repair/Scrap Records
+   - id (UUID), cam_kodu, siparis_detay_id (FK, SET NULL), uretim_emri_id (FK, SET NULL), batch_no, sira_no, adet
+   - kaynak_istasyon ('poz_giris'|'kumanda'|'manuel'), sorun_tipi ('kirik'|'cizik'|'olcum_hatasi'|'diger'), aciklama
+   - durum ('bekliyor'|'tamamlandi'|'hurda')
+   - Denormalized display fields: musteri, nihai_musteri, siparis_no, genislik_mm, yukseklik_mm, stok_ad
+   - created_at, tamamlanma_tarihi, tamamlanma_notu
 
-10. **telegram_ayarlari** - Telegram Bot Configuration (singleton)
-    - id (UUID), bot_token (TEXT), chat_id (TEXT), aktif (BOOLEAN)
-    - olusturma (TIMESTAMPTZ)
+10. **ayarlar** - System Settings (JSON key-value store)
+    - id (UUID), anahtar (TEXT unique), deger (JSONB), guncelleme
+    - Keys: `etiket_ayarlari`, `opti_export`, `admin_ayarlar_gorunum`, `telegram_edge_config` (edge fn URL/auth for cron, migrations 042–043)
 
-11. **telegram_rapor_saatleri** - Scheduled Report Times
+11. **takvim_notlari** - Calendar Notes (one per day)
+    - id (UUID), tarih (DATE unique), not_metni, created_at, guncelleme
+
+12. **araclar** - Vehicles for Shipping
+    - id (UUID), plaka (TEXT unique), ad, kapasite_m2 (NUMERIC), aktif (BOOLEAN), notlar, created_at
+
+13. **sevkiyat_planlari** - Shipping Plans (Drag & Drop)
+    - id (UUID), siparis_id (FK CASCADE), arac_id (FK CASCADE), tarih (DATE), notlar, created_at, guncelleme
+    - Unique constraint: (siparis_id, tarih)
+
+14. **hr_personel** - Human Resources / Operator Management
+    - id (UUID), ad_soyad, foto_url, rol ('Direkt'|'Endirekt')
+    - is_aktif (BOOLEAN), kullanici_adi, giris_sifresi (plain-text operator login), olusturma
+
+15. **uretim_saat_sablonlari** - Hourly Shift Templates
+    - id (UUID), sablon_adi, saat_araligi (e.g. "08:00 - 18:00"), sira_no, olusturma
+
+16. **uretim_saatlik_hedefler** - Per-hour Targets Within a Shift Template
+    - id (UUID), sablon_id (FK CASCADE), saat_araligi (e.g. "08:00 - 09:00"), hedef_adet, sira_no
+
+17. **gunluk_uretim_takip** - Daily/Hourly Production Tracking Board
+    - id (UUID), tarih (DATE), saat_araligi (TEXT)
+    - hedef_adet, gerceklesen_adet, fire_adet (INTEGER), aksiyon_notu, npt_orani (Non-Productive Time %)
+    - sira_no, olusturma
+    - Unique constraint: (tarih, saat_araligi)
+
+18. **uretim_istasyonlari** - Production Station Definitions
+    - id (UUID), ad, sira_no, aktif (BOOLEAN), fire_var (BOOLEAN — tracks scrap), created_at
+    - Seeded: Kesim, Çıta Büküm, Çıta Kesim, Isıcam Hattı, Robot, Tamir
+
+19. **gunluk_uretim_raporlari** - Daily Operator Production Entry Reports
+    - id (UUID), tarih (DATE), operator_id (FK hr_personel, SET NULL), toplam_personel (INTEGER), notlar
+    - created_at, updated_at; Unique constraint: (tarih, operator_id)
+
+20. **gunluk_uretim_istasyon_kayitlari** - Per-station Counts Within an Operator Report
+    - id (UUID), rapor_id (FK CASCADE), istasyon_id (FK uretim_istasyonlari, CASCADE), adet, fire_adet
+    - Unique constraint: (rapor_id, istasyon_id)
+
+21. **gunluk_uretim_arac_yuklemeleri** - Vehicle Loading Counts Within an Operator Report
+    - id (UUID), rapor_id (FK CASCADE), arac_id (FK araclar, SET NULL), dis_arac_plakasi, dis_arac_adi, adet, created_at
+
+22. **telegram_ayarlari** - Telegram Bot Configuration (singleton)
+    - id (UUID), bot_token (TEXT), chat_id (TEXT), aktif (BOOLEAN), olusturma
+    - Template toggles: sablon_baslik, sablon_saatlik_detay, sablon_saatlik_ozet, sablon_istasyonlar, sablon_araclar, sablon_personel, sablon_operator, sablon_notlar
+
+23. **telegram_rapor_saatleri** - Scheduled Report Times
     - id (UUID), saat (TEXT, format: HH:MM), aktif (BOOLEAN)
-    - olusturma (TIMESTAMPTZ)
+    - rapor_tipi ('saatlik'|'uretim_giris'|'her_ikisi'), olusturma
 
-12. **telegram_rapor_log** - Duplicate Send Prevention Log
+24. **telegram_rapor_log** - Duplicate Send Prevention Log
     - id (UUID), tarih (DATE), saat (TEXT)
     - gonderildi_at (TIMESTAMPTZ)
     - Unique constraint: (tarih, saat)
 
-13. **tamir_kayitlari** - Repair/Scrap Records
-    - id (UUID), siparis_detay_id (FK), adet (INTEGER)
-    - durum ('beklemede'|'tamir_alindi'|'tamamlandi'|'hurda')
-    - tamamlanma_tarihi, tamamlanma_notu
-    - created_at (TIMESTAMPTZ)
+> Note: `siparis_taslaklari` (order drafts) and `cam_aile_katalogu` (glass family catalog) are **not** database tables — drafts live in `localStorage`, and the glass-family catalog is derived logic over `stok` (see `lib/cam.ts`).
 
-14. **araclar** - Vehicles for Shipping
-    - id (UUID), plaka (TEXT unique), ad (TEXT), kapasite_m2 (NUMERIC)
-    - aktif (BOOLEAN), created_at (TIMESTAMPTZ)
+### Postgres Functions
 
-15. **sevkiyat_planlari** - Shipping Plans (Drag & Drop)
-    - id (UUID), siparis_id (FK), arac_id (FK), tarih (DATE)
-    - notlar (TEXT)
-    - Unique constraint: (siparis_id, tarih)
+| Function | Purpose |
+|---|---|
+| `sonraki_sayac(p_anahtar, p_adet=1)` | Atomic counter increment (UPSERT on `sayaclar`) — GLS codes, order/batch numbers |
+| `saatlik_sayac_arttir(p_id, p_delta=1)` | Atomically increments `gunluk_uretim_takip.gerceklesen_adet` (SECURITY DEFINER) |
+| `saatlik_fire_arttir(p_id, p_delta=1)` | Atomically increments `gunluk_uretim_takip.fire_adet` (SECURITY DEFINER) |
+| `telegram_saat_normalize(p_saat)` | Normalizes time strings to `HH:MM` |
+| `telegram_saatlik_rapor_metni` / `telegram_uretim_giris_rapor_metni` / `telegram_rapor_mesaji` | SQL-side Telegram message builders |
+| `telegram_otomatik_rapor_gonder()` | Current auto-send path (043): checks schedule/settings, POSTs to `check-and-send-report` edge function via `pg_net` |
 
-16. **takvim_notlari** - Calendar Notes
-    - id (UUID), tarih (DATE), notlar (TEXT), created_at (TIMESTAMPTZ)
-
-17. **ayarlar** - System Settings (singleton key-value store)
-    - anahtar (TEXT primary key), deger (JSONB)
-
-18. **gunluk_uretim_takip** - Daily Production Tracking
-    - id (UUID), tarih (DATE), saat_araligi (TEXT)
-    - hedef_adet (INTEGER), gerceklesen_adet (INTEGER), fire_adet (INTEGER)
-    - sira_no (INTEGER), created_at (TIMESTAMPTZ)
+**Extensions:** `pg_net`, `pg_cron`. **pg_cron job:** `telegram-rapor-gonder` runs every minute (`* * * * *`), calling `telegram_otomatik_rapor_gonder()`.
 
 ## Pages (src/pages/)
 
-1. **Dashboard.tsx**
-   - Shows KPIs: total orders, active orders, active batches, completed batches, customers, stock
-   - Last 5 orders list
+15 page files, plus one route rendered directly from a component (`SaatlikTakipPanosu`).
+
+1. **Dashboard.tsx** (`/`)
+   - KPI cards (orders/batches/cari/stok) with links to other modules
+   - Monthly delivery calendar (Teslim Takvimi) with drag-and-drop order pills to reschedule `teslim_tarihi`
+   - Per-day/today notes (`takvim_notlari`), "Yıkamada" batch panel (30s polling), shipping plan entry (`SevkiyatPlanlama` modal)
    - Status labels: beklemede, batchte, yikamada, tamamlandi, eksik_var, iptal
 
-2. **UretimIstasyonlariPage.tsx**
-   - Production station menu (3 stations with keyboard shortcuts 1-3)
-   - Stations: Poz Giriş (Planning), Kumanda Paneli (Çıta/Frame), Gösterge Ekranı (Display)
-   - Full-screen layouts without sidebar
+2. **CariPage.tsx** (`/cari`)
+   - Customer/supplier CRUD via `useCari`; müşteri/tedarikçi counts
 
-3. **PozGirisPage.tsx** (Full-screen, no sidebar)
-   - Position entry station for barcode scanning
-   - Batch selection from export_edildi/yikamada/eksik_var batches
-   - Tracks individual glass piece processing
-   - Realtime Supabase channel for broadcast updates
-   - Status colors: basarili (green), tekrar (yellow), yanlis_batch (red), tamamlandi (emerald)
-   - Groups by customer and "nihai müşteri" (end customer from notes)
+3. **StokPage.tsx** (`/stok`)
+   - Stock catalog: 3 category tabs (Cam, Çıta, Yan Malzemeler)
+   - Active/passive toggle, delete with reference migration, orphaned-reference migration banners (`stokMigrasyon`)
 
-4. **KumandaPaneliPage.tsx** (Full-screen, no sidebar)
-   - Control panel for frame station
-   - 3-column layout: customers left, active cards middle, customer glass list right
-   - Displays batch details: cam_kodu, musteri, boyut, çita (spacing)
-   - Receives realtime broadcasts from PozGirisPage
+4. **SiparisPage.tsx** (`/siparisler`)
+   - Order management; paginated list (20/page), status/customer/alt-müşteri filters
+   - New order form, PDF import, drafts panel (`useSiparisTaslaklari`), order detail/edit modal
+   - Virtual "Tamirde" filter for orders with pending repairs; realtime subscription on `tamir_kayitlari`
 
-5. **GostergeEkraniPage.tsx**
-   - Display screen for macun robot
-   - Shows only dimension information
+5. **UretimPage.tsx** (`/uretim`)
+   - Production batch management; new batch modal, batch detail modal with status transitions
+   - CSV/IMP export for PerfectCut, batch cancel (reverts orders to beklemede) and delete
 
-6. **UretimPage.tsx**
-   - Production orders management
-   - Create new batches from selected orders
-   - Status transitions with validation
-   - Batch deletion with cascade handling
-   - CSV export for PerfectCut
+6. **UretimIstasyonlariPage.tsx** (`/istasyonlar`)
+   - Station launcher hub ("ISICAM PROV2 LINK"): 4 cards → Poz Giriş, Kumanda, Gösterge, Tamir
+   - Keyboard shortcuts `1`–`4` navigate to stations
 
-7. **SiparisPage.tsx**
-   - Order management
-   - Status filters: hepsi, beklemede, batchte, yikamada, tamamlandi, eksik_var, iptal
-   - Pagination (20 per page)
-   - New order form, PDF import modal
-   - Order detail modal with edge processing info
+7. **SaatlikTakipPage.tsx** (`/saatlik-takip`)
+   - Embedded hourly production tracking board (`SaatlikTakipPanosu`, sidebar mode); link to full TV board
 
-8. **StokPage.tsx**
-   - Stock/catalog management
-   - 3 category tabs: Cam, Çıta, Yan Malzemeler
-   - Edit/delete functionality
+8. **AyarlarPage.tsx** (`/ayarlar`)
+   - Settings hub with category grid, visibility-filtered from admin: Etiket, Araçlar, Personel, Hedef & Vardiya, Aksiyon Notu Presets, Telegram, Üretim İstasyonları
 
-9. **CariPage.tsx**
-   - Customer and supplier management
-   - Shows counts: customers vs suppliers
+9. **AdminPage.tsx** (`/admin`)
+   - Password-gated admin console
+   - Tab 1: all setting panels (includes Opti Export, not shown on `/ayarlar`); controls `/ayarlar` category visibility
+   - Tab 2: Üretim Girişi (operator report) history — date-range table, day detail edit/delete, Excel export
 
-10. **AyarlarPage.tsx**
-    - Settings hub with tabs: Etiket, Araçlar, Katman, Personel, Hedef, Presets, Telegram
-    - Aggregates all settings panels
-    - Keyboard shortcuts and persistent state
+10. **PozGirisPage.tsx** (`/istasyonlar/poz-giris`, full-screen, no sidebar)
+    - Planning/office station — batch selection (export_edildi/yikamada/eksik_var) and GLS/poz barcode scanning
+    - 3-column layout: customers, scan status, per-customer glass list; auto label print (Datamax DPL), `yikama_loglari`, hourly counter increment
+    - Realtime broadcast channel `uretim-istasyonlar`; status: bos, yukleniyor, basarili, hata, tekrar, yanlis_batch, tamamlandi
+    - Keyboard shortcut: `X` sends last scanned glass to repair
 
-11. **TamirIstasyonuPage.tsx** (Full-screen)
-    - Repair station for scrap/damage management
-    - Status tracking: beklemede → tamir_alindi → tamamlandi/hurda
-    - Realtime updates via Supabase
-    - Cascade updates when marking glass as scrap
+11. **KumandaPaneliPage.tsx** (`/istasyonlar/kumanda`, full-screen)
+    - Spacer (çıta) station control panel; listens for scan broadcasts from Poz Giriş
+    - 3-column layout: customers, active cards, customer glass list with çıta mm; çıta onay status banner from Gösterge
 
-12. **SevkiyatPlanlama.tsx** (Full-screen)
-    - Shipping plan drag-and-drop interface
-    - 3-panel: unassigned orders (left), vehicles (center), schedules (right)
-    - Calendar view with date navigation
-    - Order assignment to vehicles
+12. **GostergeEkraniPage.tsx** (`/istasyonlar/gosterge`, full-screen)
+    - Macun robot display — large çıta (spacer) thickness readout with change-approval flow
+    - Broadcasts `cita_onay_durumu` to Kumanda; keyboard shortcut `Enter` confirms change
 
-13. **NotFoundPage.tsx**
+13. **TamirIstasyonuPage.tsx** (`/istasyonlar/tamir`, full-screen)
+    - Repair/scrap station; tabs: Tümü / Bekliyor / Tamamlandı / Hurda
+    - Status: bekliyor → tamamlandi/hurda (terminal); realtime updates on `tamir_kayitlari`
+    - Cascade updates to order/production status when marking glass as scrap or completing repairs
+
+14. **OperatorGirisPage.tsx** (`/istasyonlar/uretim-giris`, full-screen, opens in new tab from sidebar)
+    - Operator daily production report form ("Üretim Takip Çizelgesi")
+    - Login via `hr_personel` password; per-station adet/fire, vehicle loading, personnel count, notes
+    - Saves to `gunluk_uretim_raporlari` + child tables; "Son 10 Günlük Rapor" history; resumes today's report on login
+
+15. **NotFoundPage.tsx** (`*`, standalone)
     - 404 error page
+
+**Rendered directly from a component (not `src/pages/`):**
+- **SaatlikTakipPanosu** (`src/components/uretim/SaatlikTakipPanosu.tsx`) at `/istasyonlar/uretim-panosu` — full-screen TV board version of the hourly tracking board (`tamEkran={true}`)
 
 ## Components
 
 ### Layout (src/components/layout/)
-- **AppLayout.tsx** - Main sidebar layout wrapper with Outlet
-- **Sidebar.tsx** - Navigation menu (Dashboard, Cari, Stok, Siparişler, Üretim Emirleri, Üretim İstasyonları)
-
-### Cari (src/components/cari/)
-- **CariForm.tsx** - Create/edit customer/supplier
-- **CariListesi.tsx** - Customer/supplier list table
+- **AppLayout.tsx** - Root shell: fixed sidebar + scrollable `<main>` with React Router `<Outlet />`
+- **Sidebar.tsx** - Grouped navigation: Ana Sayfa, Saatlik Takip / Kayıtlar (Cari, Stok) / Operasyon (Siparişler, Üretim Emirleri, Üretim İstasyonları) / Girişler (Üretim Girişi, opens new tab) / footer (Admin Paneli, Ayarlar)
 
 ### Siparis (src/components/siparis/)
-- **SiparisForm.tsx** - Create/edit order with dynamic glass rows
-- **SiparisListesi.tsx** - Order list table
-- **SiparisDetayModal.tsx** - Order details with glass pieces
-- **PDFImportModal.tsx** - PDF file import with parsing
-
-### Stok (src/components/stok/)
-- **StokForm.tsx** - Create/edit stock items
-- **StokListesi.tsx** - Stock list table
+- **CamStokPicker.tsx** - Portal-based searchable glass stock picker, grouped by cam family, keyboard navigation
+- **CitaStokSelect.tsx** - `<select>` for active spacer (çıta) stock, sorted by thickness
+- **PDFImportModal.tsx** - 4-step wizard: PDF upload → cari/stok/çıta matching → preview → delivery type (PIMAPEN/Ercom Smart PDFs)
+- **SevkiyatPlanModal.tsx** - Set delivery type for an order: pickup vs shipment (vehicle + date + notes)
+- **SiparisDetayModal.tsx** - Order detail/edit: header, wash progress, glass line table, bulk glass-type replace, nested edit modal
+- **SiparisEditModal.tsx** - Multi-step edit modal for existing orders (customer, glass list when beklemede, shipping)
+- **SiparisForm.tsx** - 3-step "New Order" wizard (React Hook Form + Zod); auto-saves draft on close
+- **SiparisListesi.tsx** - Order table: status badges, PDF/manual source, delivery type, repair badge, actions
+- **TaslaklarPanel.tsx** - Modal listing localStorage order drafts with resume/delete
 
 ### Uretim (src/components/uretim/)
-- **UretimListesi.tsx** - Batch list table
-- **UretimDetayModal.tsx** - Batch details with glass pieces
-- **YeniBatchModal.tsx** - Create new batch from orders
+- **SaatlikTakipPanosu.tsx** - Full-screen hourly production dashboard: theme toggle, archive date picker, target vs actual table, workforce summary, action-note modal
+- **UretimDetayModal.tsx** - Batch detail: summary cards, glass lines grouped by order, Opti IMP / çıta-bending CSV export
+- **UretimListesi.tsx** - Batch table with status-colored rows and linked order chips
+- **YeniBatchModal.tsx** - Create batch by searching/multi-selecting eligible pending orders
+
+### Cari (src/components/cari/)
+- **CariForm.tsx** - Add/edit customer/supplier modal (Zod validation)
+- **CariListesi.tsx** - Searchable, filterable, paginated cari table
+
+### Stok (src/components/stok/)
+- **StokForm.tsx** - Add/edit stock card modal, category-specific fields
+- **StokListesi.tsx** - Category-scoped stock table with search/filter/pagination and migration actions
 
 ### UI (src/components/ui/)
-- **ConfirmDialog.tsx** - Reusable confirmation modal
-- **Pagination.tsx** - Page navigation component
-
-### Yikama (src/components/yikama/)
-- Empty directory (placeholder for future wash station components)
+- **ConfirmDialog.tsx** - Reusable confirmation modal with loading state and confirm color variants
+- **EmptyState.tsx** - Centered empty-state block (icon + title + description + action slot)
+- **ErrorBoundary.tsx** - Class-based React error boundary with Turkish error screen
+- **KatmanCombobox.tsx** - Searchable combobox for glass layer composition strings
+- **PageHeader.tsx** - Reusable page header (title, description, icon, actions)
+- **Pagination.tsx** - Table pagination footer
+- **Skeleton.tsx** - `Skeleton`, `TableSkeleton`, `CardSkeleton` loading placeholders
+- **StatusBadge.tsx** - Status pill badge (siparis | uretim), centralized Turkish labels/colors
 
 ### Ayarlar (src/components/ayarlar/)
-- **AyarlarPage.tsx** - Settings hub (wrapper for all panels)
-- **PersonelYonetimiPanel.tsx** - HR management, operator login credentials
-- **TelegramAyarlariPanel.tsx** - Telegram bot token, chat ID, report times
-- **EtiketAyarlariPanel.tsx** - Label template customization
-- **AraclarPanel.tsx** - Vehicle management
-- **KatmanYapilariPanel.tsx** - Glass layer structure presets
-- **HedefVardiyaPanel.tsx** - Production targets by shift
-- **AksiyonNotuPresetsPanel.tsx** - Action note templates
+- **AksiyonNotuPresetsPanel.tsx** - Preset action notes for hourly board (text + 1–9 shortcut), localStorage
+- **AraclarPanel.tsx** - Vehicle CRUD (plate, name, m² capacity, notes, active)
+- **EtiketAyarlariPanel.tsx** - Label printer settings: bridge server, printer, size/content toggles, live preview, DPL test print
+- **HedefVardiyaPanel.tsx** - Shift template manager: hourly target slots, weekday assignment, apply-to-today
+- **IstasyonYonetimiPanel.tsx** - Production station CRUD (name, order, active, scrap-tracking flag)
+- **OptiExportAyarlariPanel.tsx** - Opti/PerfectCut export settings: IMP counter, spacer deduction mm, per-stock FAM mapping
+- **PersonelYonetimiPanel.tsx** - HR personnel CRUD (name, photo via R2 upload, role, login credentials, active)
+- **TelegramAyarlariPanel.tsx** - Telegram integration: connection, scheduled times/types, message template toggles, test send
+
+### Tamir (src/components/tamir/)
+- **TamireGonderModal.tsx** - Send defective glass to repair (problem type, quantity, notes); keyboard shortcuts 1–4/Enter/Delete
 
 ### Sevkiyat (src/components/sevkiyat/)
-- **SevkiyatPlanlama.tsx** - Shipping plan interface (drag-and-drop)
+- **SevkiyatPlanlama.tsx** - Full-screen shipment planning board: calendar, unassigned order pool, drag-and-drop vehicle assignment
 
 ## Types (src/types/)
 
@@ -217,52 +270,72 @@ interface Cari { id, kod, ad, tipi, telefon, email, adres, notlar, created_at }
 // siparis.ts
 type SiparisDurum = 'beklemede'|'batchte'|'yikamada'|'tamamlandi'|'eksik_var'|'iptal'
 type UretimDurumu = 'bekliyor'|'kesildi'|'yikandi'|'etiketlendi'|'tamamlandi'
-interface Siparis { id, siparis_no, cari_id, tarih, teslim_tarihi, durum, notlar, created_at, cari? }
-interface SiparisDetay { id, siparis_id, stok_id, cam_kodu, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, cita_stok_id, kenar_islemi, notlar, uretim_durumu, created_at, stok?, cita_stok? }
+interface Siparis { id, siparis_no, cari_id, tarih, teslim_tarihi, durum, notlar, alt_musteri, harici_siparis_no, created_at, cari?, siparis_detaylari?, sevkiyat_planlari?, teslimat_tipi?, tamamlandi_tarihi?, kaynak? }
+interface SiparisDetay { id, siparis_id, stok_id, cam_kodu, genislik_mm, yukseklik_mm, adet, cita_stok_id, kenar_islemi, notlar, poz, menfez_cap_mm?, kucuk_cam?, uretim_durumu, created_at, stok?, cita_stok? }
 
 // stok.ts
 type StokKategori = 'cam'|'cita'|'yan_malzeme'
-interface Stok { id, kod, ad, kategori, kalinlik_mm, renk, tip, birim, birim_fiyat, tedarikci_id, marka, mevcut_miktar, created_at, tedarikci_ad? }
+interface Stok { id, kod, ad, kategori, grup, katman_yapisi, kalinlik_mm, birim, birim_fiyat, tedarikci_id, marka, mevcut_miktar, aktif, created_at, tedarikci_ad? }
 
 // uretim.ts
-type UretimEmriDurum = 'hazirlaniyor'|'onaylandi'|'export_edildi'|'yikamada'|'tamamlandi'|'eksik_var'
-interface UretimEmri { id, batch_no, durum, notlar, olusturulma_tarihi, export_tarihi }
+type UretimEmriDurum = 'hazirlaniyor'|'export_edildi'|'yikamada'|'tamamlandi'|'eksik_var'|'iptal'
+interface UretimEmri { id, batch_no, durum, notlar, olusturulma_tarihi, export_tarihi, cam_sayisi?, siparis_listesi? }
 interface UretimEmriDetay { id, uretim_emri_id, siparis_detay_id, sira_no, siparis_detaylari? }
+
+// tamir.ts
+type TamirDurum = 'bekliyor'|'tamamlandi'|'hurda'
+type TamirSorun = 'kirik'|'cizik'|'olcum_hatasi'|'diger'
+type TamirKaynak = 'poz_giris'|'kumanda'|'manuel'
+interface TamirKayit { id, cam_kodu, siparis_detay_id, uretim_emri_id, batch_no, sira_no, kaynak_istasyon, sorun_tipi, aciklama, durum, adet, musteri, nihai_musteri, siparis_no, genislik_mm, yukseklik_mm, stok_ad, created_at, tamamlanma_tarihi, tamamlanma_notu }
+
+// ayarlar.ts
+interface EtiketAyarlari { yazici, boyut, icerik, yazdirma_kosulu, dpl_sablonu }
+interface OptiExportAyarlari { sayac, cita_dusme, fam_haritasi: OptiFamEsleme[] }
+function dplUret(ayarlar, veri): string  // Datamax M-4206 DPL label generator
+
+// taslak.ts
+interface SiparisTaslak { id, created_at, updated_at, veri: SiparisTaslakVerisi }  // localStorage order drafts
+
+// saatlikUretim.ts
+type PersonelRol = 'Direkt' | 'Endirekt'
+interface HrPersonel { id, ad_soyad, foto_url, rol, is_aktif, kullanici_adi?, giris_sifresi? }
+interface GunlukUretimSatiri { id, tarih, saat_araligi, hedef_adet, gerceklesen_adet, fire_adet, aksiyon_notu, npt_orani, sira_no }
+interface HesaplanmisSatir extends GunlukUretimSatiri { kumulatifHedef, kumulatifGerceklesen, kumulatifFire, durumRengi, zamanDurumu }
+type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 ```
 
 ## Services (src/services/)
 
 **exportService.ts**
-- `exportDetaylariCSV(detaylar, batchNo)` - Export batch to PerfectCut CSV format
-- `exportTarihiGuncelle(uretimEmriId)` - Update batch status to exported with timestamp
-
-Exports with columns: cam_kodu, siparis_no, musteri, genislik_mm, yukseklik_mm, adet, ara_bosluk_mm, cam_tipi, kenar_islemi, notlar
+- `exportOptiIMP(detaylar, hedefFam, sayac, famHaritasi?, citaDusme?)` - Builds PerfectCut-6 `.IMP` file content via `lib/optiExport.ts` and downloads it to the browser
+- `exportTarihiGuncelle(uretimEmriId)` - Sets batch `export_tarihi` and `durum='export_edildi'` (only from `hazirlaniyor`/`eksik_var`)
+- `exportCitaBukumCSV(detaylar, batchNo, citaStoklar?)` - Builds semicolon-delimited, BOM-prefixed CSV for the çıta (spacer) bending machine and downloads it
 
 ## Edge Functions (supabase/functions/)
 
 **mistral-ocr/index.ts**
-- Deno Edge Function for PDF OCR via Mistral API
-- Handles both raw PDF and page-by-page processing
-- Fallback mechanism if Edge Function unavailable
+- Deno Edge Function proxying PDF/image OCR requests to the Mistral OCR API (API key kept server-side)
+- Accepts `document_base64` (PDF) or `image_base64` (PNG); returns page markdown; CORS enabled
 
 **check-and-send-report/index.ts**
-- Triggered by pg_cron every minute (`* * * * *`)
-- Fetches Telegram settings, scheduled times, production data
-- Validates duplicate sends via unique (tarih, saat) constraint
-- Sends formatted MarkdownV2 messages to Telegram
-- Force mode for manual testing
+- Scheduled/manual Telegram production report sender
+- Checks Turkish time against `telegram_ayarlari` + `telegram_rapor_saatleri` (or `force: true`), dedupes via `telegram_rapor_log`
+- Pulls `gunluk_uretim_takip` (hourly) and/or `gunluk_uretim_raporlari` (operator entry) data and sends a MarkdownV2 Telegram message with configurable template sections
+
+**yazici-test/index.ts**
+- Sends a raw DPL command string to a Datamax label printer over TCP (`ip`, `port`, `dpl` in request body); returns success/error JSON; CORS enabled
 
 ## Hooks (src/hooks/)
 
-**useCari()** 
+**useCari()**
 - State: cariler[], yukleniyor, hata
 - Methods: getir(), ekle(), guncelle(), sil(), yenile()
 
 **useSiparis()**
-- State: siparisler[], yukleniyor, hata
-- Methods: ekle(form), guncelle(id, form), durumGuncelle(id, durum), sil(id), yenile()
-- Valid status transitions defined in GECERLI_GECISLER
-- Export function: getSiparisDetaylari(siparisId)
+- State: siparisler[] (cari/detay-count/sevkiyat joins), yukleniyor, hata
+- Methods: ekle(form) (expands form rows into physical glass pieces via `tekilSiparisDetayRows`), guncelle(id, form), durumGuncelle(id, durum), sil(id), yenile()
+- Valid status transitions defined in `GECERLI_GECISLER`
+- Standalone export: `getSiparisDetaylari(siparisId)`
 
 **useStok()**
 - State: stoklar[], yukleniyor, hata
@@ -270,10 +343,35 @@ Exports with columns: cam_kodu, siparis_no, musteri, genislik_mm, yukseklik_mm, 
 - Maps tedarikci FK to tedarikci_ad display
 
 **useUretim()**
-- State: emirler[], yukleniyor, hata
-- Methods: yeniBatch(siparisIds, notlar), durumGuncelle(id, durum), sil(id), yenile()
-- Valid status transitions defined in GECERLI_GECISLER
-- Handles cascade updates: siparis_detaylari uretim_durumu and siparisler durum
+- State: emirler[] (enriched with cam_sayisi, siparis_listesi), yukleniyor, hata
+- Methods: yeniBatch(siparisIds, notlar?), durumGuncelle(id, durum), sil(id), iptalEt(id), yenile()
+- Exported helpers: getBatchDetaylari(uretimEmriId), batcheCamEkle(uretimEmriId, siparisDetayId), batchtenCamCikar(uretimEmriDetayId)
+- Valid status transitions defined in `GECERLI_GECISLER`; handles cascade updates between batch/order/detay statuses
+
+**useSevkiyat.ts**
+- `useAraclar()` - State: araclar[] (active vehicles), yukleniyor
+- `sevkiyatKaydet(siparisId, aracId, tarih, notlar?)` - Upserts `sevkiyat_planlari`, updates order `teslimat_tipi`/`teslim_tarihi`
+
+**useAyarlar()**
+- State: etiketAyarlari (merged with defaults), yukleniyor, kaydediyor, hata
+- Methods: getir()/yenile(), etiketAyarlariGuncelle(yeni)
+
+**useOptiExportAyarlari()**
+- State: ayarlar (sayac, cita_dusme, fam_haritasi), yukleniyor, kaydediyor, hata
+- Methods: getir()/yenile(), kaydet(yeni), sayacArttir()
+
+**useSaatlikUretim()**
+- State: satirlar, personeller, seciliTarih, yukleniyor, hata; computed hesaplanmisSatirlar (cumulative target/actual/scrap, color, time status), isGucuOzeti (workforce summary)
+- Methods: veriGetir(tarih)/yenile(), handleGlsRead(barkod?), handleFireDetected(saatAraligi?), fetchPastDateData(tarih), buguneDon(), aksiyonNotuGuncelle(id, not), nptGuncelle(id, npt)
+- Realtime Supabase subscription on `gunluk_uretim_takip` for today
+
+**useSiparisTaslaklari()**
+- State: taslaklar[] (localStorage-backed order drafts)
+- Methods: upsert(veri, id?), sil(id), getir(id); standalone helper `taslakBosMu(v)`
+- Cross-tab sync via `storage` event
+
+**useEscape(onClose, enabled?)**
+- Side-effect only hook: calls `onClose()` on Escape keydown (with IME composition guard)
 
 ## Utilities (src/lib/)
 
@@ -285,11 +383,62 @@ Exports with columns: cam_kodu, siparis_no, musteri, genislik_mm, yukseklik_mm, 
 - generateBatchNo() → BATCH-YYYY-NNNN
 - Uses PostgreSQL `sonraki_sayac()` function with UPSERT for atomic increments
 
-**supabase.ts** - Supabase client initialization
+**supabase.ts** - Supabase client initialization from Vite env vars
 
 **utils.ts**
 - cn() - Tailwind class merging (clsx + tailwind-merge)
-- formatDate(dateStr) - Format to Turkish locale (16.04.2026)
+- formatDate(dateStr) - Format to Turkish locale
+- camTipiAd(stokAd) - Strips thickness prefix from stock name
+
+**cam.ts** - Glass composition / stock matching
+- Çıta (spacer): citaStokAdi, citaKodOnerisi, aktifCitaStoklari, citaEslestir, citaStokSira, eksikCitaBoyutlari, citaBukumMalzemeEtiketi
+- Katman (layer)/OCR: isValidKatmanYapisi, normalizeKatmanYapisi, extractKatmanYapisiFromText, getStokKatmanYapisi, getAraBoslukMm
+- Glass family: detectCamAilesi, normalizeCamAilesiAd, camAilesiEsit, cozumleOcrCam, varsayilanCamAileleri
+- Matching/display: stokKartEslestir, adKatmanUyumlu, getCamKompozisyon, getStokGosterimAciklamasi, getEtiketCamTipi
+
+**siparisDetay.ts**
+- fizikselCamAdedi(adet), fizikselGlsKodu(siraNo, fallback?), siparisDetayGosterimKodu(siraNo, stokKod?)
+- tekilSiparisDetayRows(siparisId, camlar, uretimDurumu?) - Expands form quantities into one-row-per-physical-glass with GLS codes
+
+**optiExport.ts** - PerfectCut-6 IMP export
+- optiFamKodu / optiFamKoduOtomatik / optiPaneFamKodu - FAM code resolution
+- optiParcalariUret / optiTumParcalar - Piece list generation
+- optiExportTurleri(detaylar, famHaritasi?) - Exportable glass types
+- optiImpOlustur(parcalar) - Builds `[PIECES]` IMP content
+- optiDosyaAdi(sayac) → OP_NNNNN.IMP
+
+**fiyat.ts**
+- camMetrekareHesapla(satir), camSatirTutariHesapla(satir, birimFiyat)
+
+**tarih.ts** - Europe/Istanbul timezone helpers
+- bugunTarih(), bugunGoster(), trSaatStr(), formatTarihTr(dateStr), tarihEkleTr(gunSayisi, fromDate?)
+
+**audio.ts**
+- beep(type: 'success'|'error'|'complete'), beepAlert() - Web Audio alerts
+
+**pdfParser.ts** - PIMAPEN/Ercom PDF order import
+- pdfToText(file, onProgress?) - Mistral OCR (edge fn → direct API) → page-by-page fallback → pdf.js text
+- parsePDF(file, onProgress?) - Format detection, header/line parsing, quantity/m² validation
+- cariEslestir(pdfCariKodu, pdfCariUnvan, cariler, minSkor?), stokEslestir(aciklama, stoklar)
+
+**r2Upload.ts**
+- r2Upload(dosya, onProgress?) - Uploads personnel photos to Cloudflare R2 via Worker (max 5MB)
+
+**stokMigrasyon.ts**
+- eskiStokReferanslariniMigrate() / pasifCitaReferanslariniMigrate() - Migrates stale/passive stock references to active combination cards
+- detayStokReferansiGuncelle(detayId, alan, yeniStokId) - Manual single-row reference fix
+
+**saatlikSayac.ts**
+- glsSayacArttir() - Fire-and-forget increment of the active hourly slot via `saatlik_sayac_arttir` RPC
+
+**saatlikVardiyaAuto.ts**
+- bugununVardiyaSablonlariniUygula(tarih) - Auto-creates today's hourly slots from shift templates if empty
+
+**telegramEdgeConfig.ts**
+- telegramEdgeConfigSenkronize() / telegramEdgeConfigVarMi() - Syncs edge function URL/auth into `ayarlar` for the pg_cron job
+
+**aksiyonPresets.ts**
+- presetsOku() / presetleriYaz(presets) / yeniPresetId() - localStorage-backed action note presets (1–9 shortcuts)
 
 ## Routing Structure
 
@@ -299,31 +448,37 @@ Exports with columns: cam_kodu, siparis_no, musteri, genislik_mm, yukseklik_mm, 
 /stok                       Stock Management
 /siparisler                 Order Management
 /uretim                     Production Orders
-/ayarlar                    Settings (Etiket, Araçlar, Katman, Personel, Hedef, Presets, Telegram)
-/istasyonlar                Production Stations Menu
-  /istasyonlar/poz-giris    Barcode Entry (full screen)
-  /istasyonlar/kumanda      Control Panel (full screen)
-  /istasyonlar/gosterge     Display Screen (full screen)
-  /istasyonlar/tamir        Repair/Scrap Station (full screen)
-  /istasyonlar/sevkiyat     Shipping Plan (full screen)
+/istasyonlar                Production Stations Hub
+/saatlik-takip              Hourly Production Tracking (embedded)
+/ayarlar                    Settings (Etiket, Araçlar, Personel, Hedef, Presets, Telegram, İstasyon)
+/admin                      Admin Panel (password-gated: settings + operator report history)
+/istasyonlar/poz-giris      Barcode Entry Station (full screen)
+/istasyonlar/kumanda        Çıta Control Panel (full screen)
+/istasyonlar/gosterge       Display Screen / Macun Robot (full screen)
+/istasyonlar/tamir          Repair/Scrap Station (full screen)
+/istasyonlar/uretim-giris   Operator Daily Report Entry (full screen, opens in new tab)
+/istasyonlar/uretim-panosu  Hourly Tracking TV Board (full screen)
 *                           404 Not Found
 ```
 
 ## Key Features & Patterns
 
-1. **Status Transitions**: Strict state machine with GECERLI_GECISLER validation
+1. **Status Transitions**: Strict state machine with GECERLI_GECISLER validation (siparis, uretim_emri, tamir)
 2. **Atomic ID Generation**: PostgreSQL function with UPSERT prevents race conditions
-3. **Realtime Broadcasting**: Supabase channels for station synchronization
-4. **Cascade Operations**: Batch deletion properly resets order statuses
-5. **CSV Export**: PerfectCut compatible format
-6. **PDF Import**: Order data extraction from PDF documents with OCR (Mistral API)
-7. **Customer Metadata**: "Nihai Müşteri" (end customer) extracted from siparis.notlar field
-8. **Turkish UI**: All text in Turkish, locale-specific formatting
-9. **Operator Login**: Optional login credentials (kullanici_adi, giris_sifresi) for factory floor terminals
-10. **Telegram Reporting**: Automated daily production reports sent to Telegram via pg_cron scheduler
-11. **Repair Management**: Scrap/damage tracking with cascade updates to production status
+3. **Realtime Broadcasting**: Supabase broadcast channel (`uretim-istasyonlar`) synchronizes Poz Giriş / Kumanda / Gösterge stations; `postgres_changes` realtime for Tamir, Saatlik Takip, and repair-aware Sipariş list
+4. **Cascade Operations**: Batch/order deletion and repair completion properly reset dependent statuses
+5. **IMP/CSV Export**: PerfectCut-compatible IMP export and çıta-bending machine CSV export
+6. **PDF Import**: Order data extraction from PIMAPEN/Ercom PDF documents via OCR (Mistral API, with pdf.js fallback)
+7. **Customer Metadata**: "Alt Müşteri" (end customer) stored directly on `siparisler.alt_musteri`
+8. **Turkish UI**: All text in Turkish, locale-specific formatting (Europe/Istanbul)
+9. **Operator Login**: Login credentials (kullanici_adi, giris_sifresi) for factory floor terminals and daily report entry
+10. **Telegram Reporting**: Automated daily production reports (hourly + operator entry) sent to Telegram via pg_cron → edge function, with duplicate-send prevention
+11. **Repair Management**: Scrap/damage tracking with cascade updates to production/order status
 12. **Shipping Planning**: Drag-and-drop vehicle assignment with calendar view
-13. **System Settings**: JSONB-based key-value store for ERP-level configurations
+13. **System Settings**: JSONB-based key-value store for ERP-level configurations (labels, Opti export, admin visibility, Telegram edge config)
+14. **Order Drafts**: In-progress "new order" forms auto-saved to localStorage and resumable (`useSiparisTaslaklari`)
+15. **Label Printing**: DPL command generation/templating for Datamax printers, with a TCP test-print edge function
+16. **Hourly Production Board**: Shift templates → daily hourly targets vs actuals vs scrap, with NPT tracking and a dedicated TV display mode
 
 ## Status Mappings
 
@@ -344,16 +499,22 @@ Exports with columns: cam_kodu, siparis_no, musteri, genislik_mm, yukseklik_mm, 
 
 ### Uretim Emri Durum
 - hazirlaniyor → Preparing
-- onaylandi → Approved
 - export_edildi → Exported (to PerfectCut)
 - yikamada → In Washing
 - tamamlandi → Completed
 - eksik_var → Incomplete/Missing
+- iptal → Cancelled
+
+### Tamir Durum
+- bekliyor → Waiting
+- tamamlandi → Completed
+- hurda → Scrap
 
 ## Dependencies
 - React 19.2.4, React Router 7.14.1
 - Supabase JS 2.103.3
 - TypeScript 6.0.2, Vite 8.0.4
 - Tailwind CSS 4.2.2, Lucide React 1.8.0
-- React Hook Form 7.72.1, Zod 4.3.6
-- PapaParse 5.5.3, PDF.js 5.6.205
+- React Hook Form 7.72.1, Zod 4.3.6, @hookform/resolvers 5.2.2
+- @tanstack/react-table 8.21.3
+- PapaParse 5.5.3, PDF.js (pdfjs-dist) 5.6.205

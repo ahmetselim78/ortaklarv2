@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { generateBatchNo } from '@/lib/idGenerator'
+import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
+import { tumSatirlariGetir } from '@/lib/supabasePagination'
+import { batchYikamaOzetiHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
 
 /* ===== Durum geçiş matrisi ===== */
@@ -75,8 +78,11 @@ export function useUretim() {
       .select(`
         *,
         uretim_emri_detaylari(
+          id,
+          siparis_detay_id,
           siparis_detaylari(
             adet,
+            uretim_durumu,
             siparisler(id, siparis_no, alt_musteri, notlar, cari(ad))
           )
         )
@@ -86,10 +92,30 @@ export function useUretim() {
     if (error) {
       setHata(error.message)
     } else {
-      const enriched = (data as any[]).map((emir) => {
+      const rawEmirler = data as any[]
+      const emirIds = rawEmirler.map((e) => e.id as string)
+
+      let logMap = new Map<string, number>()
+      if (emirIds.length > 0) {
+        try {
+          logMap = await yikamaLogSayilariGetir(emirIds)
+        } catch (err) {
+          console.error('Yıkama logları alınamadı:', err)
+        }
+      }
+
+      const enriched = rawEmirler.map((emir) => {
         const detaylar: any[] = emir.uretim_emri_detaylari ?? []
-        // cam_sayisi = satır değil, adet toplamı
         const cam_sayisi = detaylar.reduce((sum, d) => sum + (d.siparis_detaylari?.adet ?? 1), 0)
+        const { taranan: taranan_cam } = batchYikamaOzetiHesapla(
+          detaylar.map((d) => ({
+            id: d.id as string,
+            siparis_detay_id: d.siparis_detay_id as string,
+            uretim_durumu: d.siparis_detaylari?.uretim_durumu,
+            adet: d.siparis_detaylari?.adet ?? 1,
+          })),
+          logMap,
+        )
         const siparisMap = new Map<string, { id: string; siparis_no: string; musteri_ad: string; alt_musteri: string | null; ref_no: string | null }>()
         for (const d of detaylar) {
           const sip = d.siparis_detaylari?.siparisler
@@ -105,7 +131,7 @@ export function useUretim() {
           }
         }
         const { uretim_emri_detaylari: _, ...rest } = emir
-        return { ...rest, cam_sayisi, siparis_listesi: Array.from(siparisMap.values()) } as UretimEmri
+        return { ...rest, cam_sayisi, taranan_cam, siparis_listesi: Array.from(siparisMap.values()) } as UretimEmri
       })
       setEmirler(enriched)
     }
@@ -125,23 +151,34 @@ export function useUretim() {
 
     const uretimEmriId = data.id as string
 
-    // Seçilen siparişlerin cam parçalarını getir — sadece bekliyor/kesildi olanları al
-    const { data: detaylar, error: detayHata } = await supabase
-      .from('siparis_detaylari')
-      .select('id, siparis_id')
-      .in('siparis_id', siparisIds)
-      .or('uretim_durumu.in.(bekliyor,kesildi),uretim_durumu.is.null')
-      .order('created_at')
-
-    if (detayHata) throw new Error(detayHata.message)
-    if ((detaylar ?? []).length === 0) {
+    // Seçilen siparişlerin cam parçalarını getir — sadece bekliyor/kesildi olanları al.
+    // 1000+ satırlı siparişlerde Supabase'in varsayılan max_rows sınırını aşmamak için
+    // sayfalı okunur (bkz. tumSatirlariGetir) — aksi halde büyük siparişlerden eksik batch oluşur.
+    let detaylar: { id: string; siparis_id: string }[]
+    try {
+      detaylar = await tumSatirlariGetir<{ id: string; siparis_id: string }>(
+        (from, to) =>
+          supabase
+            .from('siparis_detaylari')
+            .select('id, siparis_id', { count: 'exact' })
+            .in('siparis_id', siparisIds)
+            .or('uretim_durumu.in.(bekliyor,kesildi),uretim_durumu.is.null')
+            .order('created_at')
+            .range(from, to),
+        { baglam: 'yeni batch - uygun cam detayları' },
+      )
+    } catch (e) {
+      await supabase.from('uretim_emirleri').delete().eq('id', uretimEmriId)
+      throw e
+    }
+    if (detaylar.length === 0) {
       await supabase.from('uretim_emirleri').delete().eq('id', uretimEmriId)
       throw new Error('Seçilen siparişlerde üretime alınacak cam detayı bulunamadı.')
     }
 
     // Aynı cam başka bir aktif batch'e zaten eklenmiş olabilir
     // (örn. eksik_var senaryosu). Bu detayları hariç tut — bir cam yalnızca tek batch'te bulunabilir.
-    let eklenecekDetaylar = detaylar ?? []
+    let eklenecekDetaylar = detaylar
     if (eklenecekDetaylar.length > 0) {
       const detayIdleri = eklenecekDetaylar.map(d => d.id)
       const zatenBatchte = await batchtekiDetaylariGetir(detayIdleri)
@@ -175,17 +212,13 @@ export function useUretim() {
       }
     }
 
-    // Sadece bu batch'e gerçekten cam eklenen siparişlerin durumunu 'batchte' yap.
+    // Sadece bu batch'e gerçekten cam eklenen siparişlerin durumunu yeniden hesapla.
     // (Tüm camları zaten başka batch'te olan siparişlerin durumunu değiştirme.)
     const guncellenecekSipIds = [...new Set(eklenecekDetaylar.map(d => d.siparis_id))]
-    if (guncellenecekSipIds.length > 0) {
-      const { error: siparisGuncelleHata } = await supabase
-        .from('siparisler')
-        .update({ durum: 'batchte' })
-        .in('id', guncellenecekSipIds)
-        .or('durum.eq.beklemede,durum.eq.eksik_var,durum.is.null')
-      if (siparisGuncelleHata) throw new Error(siparisGuncelleHata.message)
+    for (const sipId of guncellenecekSipIds) {
+      await recalculateSiparisDurumu(sipId)
     }
+    await recalculateUretimEmriDurumu(uretimEmriId)
 
     await getir()
     return uretimEmriId
@@ -233,42 +266,10 @@ export function useUretim() {
     const { error } = await supabase.from('uretim_emirleri').delete().eq('id', id)
     if (error) throw new Error(error.message)
 
-    // 3. Artık başka batch'te olmayan siparişleri 'beklemede'ye döndür
-    if (siparisIds.length > 0) {
-      // Tüm siparis_detaylari al
-      const { data: tumDetaylar, error: tumDetayHata } = await supabase
-        .from('siparis_detaylari')
-        .select('id, siparis_id')
-        .in('siparis_id', siparisIds)
-      if (tumDetayHata) throw new Error(tumDetayHata.message)
-
-      const tumDetayIds = (tumDetaylar ?? []).map(d => d.id)
-
-      // Hâlâ başka batch'te olan detayları bul
-      const halaBatchte = tumDetayIds.length > 0
-        ? await batchtekiDetaylariGetir(tumDetayIds)
-        : []
-
-      const halaBatchDetayIds = new Set(
-        halaBatchte
-          .filter(d => joinDurum(d) !== 'iptal')
-          .map(d => d.siparis_detay_id)
-      )
-
-      // Hiçbir camı batch'te olmayan siparişleri resetle
-      const resetSiparisIds = siparisIds.filter(sipId => {
-        const sipDetaylar = (tumDetaylar ?? []).filter(d => d.siparis_id === sipId)
-        return !sipDetaylar.some(d => halaBatchDetayIds.has(d.id))
-      })
-
-      if (resetSiparisIds.length > 0) {
-        const { error: resetHata } = await supabase
-          .from('siparisler')
-          .update({ durum: 'beklemede' })
-          .in('id', resetSiparisIds)
-          .eq('durum', 'batchte')
-        if (resetHata) throw new Error(resetHata.message)
-      }
+    // 3. Etkilenen siparişlerin durumunu yeniden hesapla
+    // (hâlâ başka aktif batch'te camı varsa doğru duruma düşer, yoksa 'beklemede'ye döner)
+    for (const sipId of siparisIds) {
+      await recalculateSiparisDurumu(sipId)
     }
 
     await getir()
@@ -309,14 +310,10 @@ export function useUretim() {
     const { error } = await supabase.from('uretim_emirleri').update({ durum: 'iptal' }).eq('id', id)
     if (error) throw new Error(error.message)
 
-    // 3. Siparişleri 'beklemede'ye döndür
-    if (siparisIds.length > 0) {
-      const { error: siparisGuncelleHata } = await supabase
-        .from('siparisler')
-        .update({ durum: 'beklemede' })
-        .in('id', siparisIds)
-        .eq('durum', 'batchte')
-      if (siparisGuncelleHata) throw new Error(siparisGuncelleHata.message)
+    // 3. Etkilenen siparişlerin durumunu yeniden hesapla
+    // (hâlâ başka aktif batch'te camı varsa doğru duruma düşer, yoksa 'beklemede'ye döner)
+    for (const sipId of siparisIds) {
+      await recalculateSiparisDurumu(sipId)
     }
 
     await getir()
@@ -327,21 +324,26 @@ export function useUretim() {
 
 /** Bir batch'in detaylarını (cam listesi) getirir */
 export async function getBatchDetaylari(uretimEmriId: string): Promise<UretimEmriDetay[]> {
-  const { data, error } = await supabase
-    .from('uretim_emri_detaylari')
-    .select(`
-      id, uretim_emri_id, siparis_detay_id, sira_no,
-      siparis_detaylari (
-        cam_kodu, genislik_mm, yukseklik_mm, adet, kenar_islemi, notlar, poz, cita_stok_id,
-        stok!stok_id ( kod, ad, grup, kalinlik_mm, katman_yapisi, birim_fiyat ),
-        cita_stok:stok!cita_stok_id ( ad, kalinlik_mm ),
-        siparisler ( id, siparis_no, alt_musteri, cari ( ad ) )
-      )
-    `)
-    .eq('uretim_emri_id', uretimEmriId)
-    .order('sira_no')
+  // 1000+ camlı büyük batch'lerde satır kesilmesin diye sayfalı okunur.
+  const data = await tumSatirlariGetir(
+    (from, to) =>
+      supabase
+        .from('uretim_emri_detaylari')
+        .select(`
+          id, uretim_emri_id, siparis_detay_id, sira_no,
+          siparis_detaylari (
+            cam_kodu, genislik_mm, yukseklik_mm, adet, uretim_durumu, kenar_islemi, notlar, poz, cita_stok_id,
+            stok!stok_id ( kod, ad, grup, kalinlik_mm, katman_yapisi, birim_fiyat ),
+            cita_stok:stok!cita_stok_id ( ad, kalinlik_mm ),
+            siparisler ( id, siparis_no, harici_siparis_no, alt_musteri, cari ( ad ) )
+          )
+        `, { count: 'exact' })
+        .eq('uretim_emri_id', uretimEmriId)
+        .order('sira_no')
+        .range(from, to),
+    { baglam: `batch ${uretimEmriId} detayları` },
+  )
 
-  if (error) throw new Error(error.message)
   return data as unknown as UretimEmriDetay[]
 }
 

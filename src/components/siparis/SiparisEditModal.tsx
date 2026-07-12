@@ -283,6 +283,8 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
         }
 
         // 3. Mevcut satırları TEK upsert ile güncelle (N+1 round-trip yerine 1 istek)
+        // adet doğrudan kullanıcının girdiği değere güncellenir — satır çoğaltma yok
+        // (1 sipariş satırı = 1 DB satırı, adet fiziksel cam sayısını taşır).
         const mevcutlar = camlar.filter(c => c.id)
         if (mevcutlar.length > 0) {
           const updates = mevcutlar.map(c => ({
@@ -293,7 +295,7 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
               cita_stok_id: c.cita_stok_id || null,
               genislik_mm: Number(c.genislik_mm) || 0,
               yukseklik_mm: Number(c.yukseklik_mm) || 0,
-              adet: 1,
+              adet: fizikselCamAdedi(c.adet),
               kenar_islemi: c.kenar_islemi || null,
               notlar: c.notlar || null,
               poz: c.poz || null,
@@ -308,12 +310,8 @@ export default function SiparisEditModal({ siparis, detaylar, cariler, stoklar, 
 
         // 4. Yeni satırları ekle (tek istek)
         const yeniler = camlar.filter(c => !c.id)
-        const mevcutEkleri = mevcutlar
-          .map(c => ({ ...c, adet: String(Math.max(fizikselCamAdedi(c.adet) - 1, 0)) }))
-          .filter(c => fizikselCamAdedi(c.adet) > 0)
-        const eklenecekCamlar = [...mevcutEkleri, ...yeniler]
-        if (eklenecekCamlar.length > 0) {
-          const rows = await tekilSiparisDetayRows(siparis.id, eklenecekCamlar)
+        if (yeniler.length > 0) {
+          const rows = await tekilSiparisDetayRows(siparis.id, yeniler)
           const { error } = await supabase.from('siparis_detaylari').insert(rows)
           if (error) throw new Error(error.message)
         }

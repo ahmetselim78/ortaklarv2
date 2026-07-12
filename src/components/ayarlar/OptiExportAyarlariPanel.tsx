@@ -129,7 +129,7 @@ export default function OptiExportAyarlariPanel() {
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"
           />
           <p className="text-xs text-gray-400 mt-1">
-            Her kenardan düşülecek mm. IMP boyutları: B/H − çıta düşme.
+            IMP exportunda uygulanmaz; boyutlar sipariş satırındaki üretim ölçüsü olarak yazılır.
           </p>
         </div>
       </div>

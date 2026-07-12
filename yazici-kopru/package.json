@@ -1,0 +1,6 @@
+{
+  "name": "yazici-kopru",
+  "private": true,
+  "type": "commonjs",
+  "description": "Datamax yazıcı HTTP köprüsü — Node CommonJS (üst proje ESM olsa da bağımsız çalışır)"
+}

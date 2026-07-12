@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { EtiketAyarlari } from '@/types/ayarlar'
-import { VARSAYILAN_ETIKET_AYARLARI } from '@/types/ayarlar'
+import { etiketAyarlariBirlestir, VARSAYILAN_ETIKET_AYARLARI } from '@/types/ayarlar'
 
 const ANAHTAR = 'etiket_ayarlari'
 
@@ -33,24 +33,7 @@ export function useAyarlar(): UseAyarlarReturn {
       if (error) throw error
 
       if (data?.deger) {
-        // Varsayılan ile birleştir — eksik anahtarları tamamla
-        const merged: EtiketAyarlari = {
-          ...VARSAYILAN_ETIKET_AYARLARI,
-          ...(data.deger as Partial<EtiketAyarlari>),
-          yazici: {
-            ...VARSAYILAN_ETIKET_AYARLARI.yazici,
-            ...((data.deger as Partial<EtiketAyarlari>).yazici ?? {}),
-          },
-          boyut: {
-            ...VARSAYILAN_ETIKET_AYARLARI.boyut,
-            ...((data.deger as Partial<EtiketAyarlari>).boyut ?? {}),
-          },
-          icerik: {
-            ...VARSAYILAN_ETIKET_AYARLARI.icerik,
-            ...((data.deger as Partial<EtiketAyarlari>).icerik ?? {}),
-          },
-        }
-        setEtiketAyarlari(merged)
+        setEtiketAyarlari(etiketAyarlariBirlestir(data.deger))
       }
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Ayarlar yüklenemedi')
@@ -67,16 +50,17 @@ export function useAyarlar(): UseAyarlarReturn {
     setKaydediyor(true)
     setHata(null)
     try {
+      const normalizeEdilmis = etiketAyarlariBirlestir(yeni)
       const { error } = await supabase
         .from('ayarlar')
         .upsert(
-          { anahtar: ANAHTAR, deger: yeni as unknown as Record<string, unknown>, guncelleme: new Date().toISOString() },
+          { anahtar: ANAHTAR, deger: normalizeEdilmis as unknown as Record<string, unknown>, guncelleme: new Date().toISOString() },
           { onConflict: 'anahtar' }
         )
 
       if (error) throw error
 
-      setEtiketAyarlari(yeni)
+      setEtiketAyarlari(normalizeEdilmis)
       return true
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Ayarlar kaydedilemedi')

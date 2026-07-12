@@ -28,6 +28,13 @@ function toDateStr(d: Date): string {
 function addDays(d: Date, n: number): Date {
   const date = new Date(d); date.setDate(date.getDate() + n); return date
 }
+
+// Varsayılan sorgu ufku: sevkiyat_planlari zamanla sınırsız büyüyen bir tablo,
+// "tüm tarihler" sorgusu tablo büyüdükçe yavaşlar. Varsayılan olarak yakın geçmiş +
+// yakın gelecek ile sınırlanır; kullanıcı takvimde daha ileri/geri giderse pencere
+// otomatik genişler, "Tüm geçmişi göster" ile sınır tamamen kaldırılabilir.
+const VARSAYILAN_GECMIS_GUN = 60
+const VARSAYILAN_GELECEK_GUN = 90
 function getMonday(d: Date): Date {
   const date = new Date(d); date.setHours(0, 0, 0, 0)
   const day = date.getDay(); date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day)); return date
@@ -88,6 +95,7 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
   const [kaldirilacakPlan, setKaldirilacakPlan] = useState<PlanliSiparis | null>(null)
   const [planKaldiriliyor, setPlanKaldiriliyor] = useState(false)
   const [planKaldirHata, setPlanKaldirHata] = useState<string | null>(null)
+  const [tumGecmisAktif, setTumGecmisAktif] = useState(false)
 
   // Load aktif araçlar
   useEffect(() => {
@@ -116,12 +124,34 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
     setListYukleniyor(false)
   }, [])
 
-  // Load TÜM planlar (tüm tarihler) — tek sorgu, sağ panel + takvim noktaları + atanmış filtresi için
-  const yuklePlanlar = useCallback(async () => {
+  // Takvimde şu an görünen tarih aralığı (aylık: önceki-sonraki ay taşmalarıyla, haftalık: hafta)
+  const gorunenAralik = useMemo(() => {
+    if (takvimGorunum === 'haftalik') return { baslangic: weekStart, bitis: addDays(weekStart, 6) }
+    const ayBaslangic = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
+    const aySonu = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0)
+    return { baslangic: addDays(ayBaslangic, -7), bitis: addDays(aySonu, 7) }
+  }, [takvimGorunum, currentMonth, weekStart])
+
+  // Sorgu penceresi: varsayılan ufuk ile takvimde görünen aralığın birleşimi.
+  // Kullanıcı takvimde ileri/geri gittiğinde pencere otomatik genişler, veri eksik görünmez.
+  const sorguAraligi = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const varsayilanBaslangic = addDays(today, -VARSAYILAN_GECMIS_GUN)
+    const varsayilanBitis = addDays(today, VARSAYILAN_GELECEK_GUN)
+    const baslangic = gorunenAralik.baslangic < varsayilanBaslangic ? gorunenAralik.baslangic : varsayilanBaslangic
+    const bitis = gorunenAralik.bitis > varsayilanBitis ? gorunenAralik.bitis : varsayilanBitis
+    return { baslangic: toDateStr(baslangic), bitis: toDateStr(bitis) }
+  }, [gorunenAralik])
+
+  // Load planlar — varsayılanda sınırlı tarih aralığı, "Tüm geçmişi göster" ile sınırsız.
+  // Sağ panel + takvim noktaları + atanmış filtresi bu veriyi kullanır.
+  const yuklePlanlar = useCallback(async (baslangic: string, bitis: string, tumu: boolean) => {
     const cam = (det: any[]) => (det ?? []).reduce((s: number, d: any) => s + (d.adet ?? 1), 0)
-    const { data, error } = await supabase.from('sevkiyat_planlari')
+    let sorgu = supabase.from('sevkiyat_planlari')
       .select('id, siparis_id, arac_id, tarih, notlar, siparisler(siparis_no, teslim_tarihi, notlar, alt_musteri, cari(ad, kod), siparis_detaylari(id, adet))')
       .order('tarih')
+    if (!tumu) sorgu = sorgu.gte('tarih', baslangic).lte('tarih', bitis)
+    const { data, error } = await sorgu
     if (error) console.error('[Sevkiyat] planlar yüklenemedi:', error)
     setTumPlanlar((data ?? []).map((p: any) => ({
       plan_id: p.id, siparis_id: p.siparis_id, arac_id: p.arac_id, tarih: p.tarih,
@@ -137,7 +167,9 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
   }, [])
 
   useEffect(() => { yukleSevkiyatlar() }, [yukleSevkiyatlar])
-  useEffect(() => { yuklePlanlar() }, [yuklePlanlar])
+  useEffect(() => {
+    yuklePlanlar(sorguAraligi.baslangic, sorguAraligi.bitis, tumGecmisAktif)
+  }, [yuklePlanlar, sorguAraligi, tumGecmisAktif])
 
   // Türev veriler
   const atanmisIds = useMemo(() => new Set(tumPlanlar.map(p => p.siparis_id)), [tumPlanlar])
@@ -525,6 +557,22 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
               </div>
             </div>
           </div>
+
+          {/* Tarih aralığı sınırı — varsayılan yükte performans için, açıldığında tüm geçmiş getirilir */}
+          <div className="mx-4 mb-4 shrink-0">
+            <button
+              onClick={() => setTumGecmisAktif(v => !v)}
+              className={`w-full flex items-center justify-center gap-1.5 text-[10px] font-semibold px-3 py-2 rounded-xl border transition-all ${
+                tumGecmisAktif
+                  ? 'bg-blue-50 border-blue-200 text-blue-600'
+                  : 'bg-white border-gray-100 text-gray-400 hover:text-gray-600 hover:border-gray-200'
+              }`}
+              title={tumGecmisAktif ? 'Sorgu yalnızca yakın tarih aralığıyla sınırlanır' : 'Tüm sevkiyat geçmişini getir (yavaş olabilir)'}
+            >
+              <CalendarRange size={11} />
+              {tumGecmisAktif ? 'Tüm geçmiş gösteriliyor · gizle' : 'Daha fazla göster (tüm geçmiş)'}
+            </button>
+          </div>
           <div className="flex-1" />
         </div>
 
@@ -679,7 +727,7 @@ export default function SevkiyatPlanlama({ onKapat }: Props) {
               Sevkiyat Listesi
             </h3>
             <p className="text-[10px] text-gray-400 mt-0.5">
-              {tumPlanlar.length} planlı atama · tüm tarihler
+              {tumPlanlar.length} planlı atama · {tumGecmisAktif ? 'tüm tarihler' : 'yakın tarih aralığı'}
             </p>
           </div>
 

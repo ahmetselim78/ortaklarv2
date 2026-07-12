@@ -1,9 +1,60 @@
-import { getStokKatmanYapisi } from '@/lib/cam'
+import {
+  isicamPaneFamCoz,
+  isicamStokMu,
+  monolitFamCoz,
+  hctFamEtiketi,
+  optiExportSorunlariTekillestir,
+  type HctFamSonuc,
+  type OptiExportSorun,
+} from '@/lib/hctFam'
+import {
+  OptiPaneCozumlemeHatasi,
+  paneCamTipleriGuvenli,
+  paneKalinliklari,
+  type PaneCamTipi,
+} from '@/lib/paneCamTipi'
 import type { OptiFamEsleme } from '@/types/ayarlar'
 import type { UretimEmriDetay } from '@/types/uretim'
 
 type StokLite = NonNullable<UretimEmriDetay['siparis_detaylari']>['stok']
 
+export class OptiExportSiraNoHatasi extends Error {
+  readonly detayId: string
+  readonly siraNo: number | null | undefined
+
+  constructor(detayId: string, siraNo: number | null | undefined) {
+    super(
+      `IMP export durduruldu — batch sıra numarası geçersiz (detay: ${detayId}, sira_no: ${siraNo ?? '—'})`,
+    )
+    this.name = 'OptiExportSiraNoHatasi'
+    this.detayId = detayId
+    this.siraNo = siraNo
+  }
+}
+
+export class OptiExportKritikHatasi extends Error {
+  readonly sorunlar: OptiExportSorun[]
+
+  constructor(sorunlar: OptiExportSorun[]) {
+    super('IMP export durduruldu — kritik çözümleme sorunları var.')
+    this.name = 'OptiExportKritikHatasi'
+    this.sorunlar = sorunlar
+  }
+}
+
+export interface ImpPiece {
+  sourceLineId: string
+  sourceSiraNo: number
+  nota3: string
+  n: number
+  b: number
+  h: number
+  cl: string
+  ord: string
+  fam: string
+}
+
+/** @deprecated ImpPiece kullanın */
 export interface OptiParca {
   b: number
   h: number
@@ -13,131 +64,110 @@ export interface OptiParca {
 }
 
 export interface OptiExportTuru {
-  /** FAM kodu — seçim anahtarı */
   anahtar: string
-  /** UI etiketi, örn. "4 mm DC" */
   etiket: string
   adet: number
 }
 
+export interface OptiPaneAnaliz {
+  index: number
+  kalinlik: number
+  tip: PaneCamTipi
+  fam: string
+  famSonuc: HctFamSonuc
+}
+
+export interface OptiSatirAnaliz {
+  detayId: string
+  stokKod: string
+  stokAd: string
+  adet: number
+  isicam: boolean
+  paneller: OptiPaneAnaliz[]
+  monolitFam?: HctFamSonuc
+  paneHata?: OptiPaneCozumlemeHatasi
+  famHata?: string
+}
+
+export interface OptiExportAnaliz {
+  satirlar: OptiSatirAnaliz[]
+  turler: OptiExportTuru[]
+  sorunlar: OptiExportSorun[]
+  kritikVar: boolean
+}
+
 const CL_MAX_UZUNLUK = 48
 
-/** Migration kataloğundan varsayılan FAM eşlemeleri */
+export { OptiPaneCozumlemeHatasi }
+export type { OptiExportSorun } from '@/lib/hctFam'
+
+export function impSiraNoDogrula(
+  siraNo: number | null | undefined,
+  detayId = '',
+): number {
+  if (
+    typeof siraNo === 'number' &&
+    Number.isInteger(siraNo) &&
+    siraNo > 0
+  ) {
+    return siraNo
+  }
+  throw new OptiExportSiraNoHatasi(detayId, siraNo)
+}
+
 export const VARSAYILAN_FAM_HARITASI: OptiFamEsleme[] = [
   { stok_kod: '01002', fam_kodu: '4DC' },
   { stok_kod: '01003', fam_kodu: '5DC' },
   { stok_kod: '01004', fam_kodu: '6DC' },
   { stok_kod: '01005', fam_kodu: '8DC' },
-  { stok_kod: '01006', fam_kodu: '10DC' },
-  { stok_kod: '01008', fam_kodu: '4BUZ' },
+  { stok_kod: '01008', fam_kodu: '4BC' },
   { stok_kod: '01009', fam_kodu: '4REN' },
   { stok_kod: '01012', fam_kodu: '4SAT' },
-  { stok_kod: '01013', fam_kodu: '4FUME' },
-  { stok_kod: '01014', fam_kodu: '8FUME' },
+  { stok_kod: '01013', fam_kodu: '4FM' },
+  { stok_kod: '01014', fam_kodu: '8FM' },
   { stok_kod: '01015', fam_kodu: '4BRZ' },
-  { stok_kod: '01016', fam_kodu: '44LAM' },
-  { stok_kod: '01017', fam_kodu: '4AYN' },
+  { stok_kod: '01016', fam_kodu: '44LM' },
+  { stok_kod: '01017', fam_kodu: 'AYN' },
   { stok_kod: '01018', fam_kodu: '4BRZREF' },
   { stok_kod: '01019', fam_kodu: '4FUMEREF' },
-  { stok_kod: '01020', fam_kodu: '4SIN' },
-  { stok_kod: '01022', fam_kodu: '4KON' },
-  { stok_kod: '01023', fam_kodu: '6KON' },
+  { stok_kod: '01020', fam_kodu: '4SN' },
+  { stok_kod: '01022', fam_kodu: '4KF' },
+  { stok_kod: '01023', fam_kodu: '6KF' },
 ]
 
-function normalizeMetin(s: string): string {
-  return s
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[ıİ]/g, 'i')
-    .toLowerCase()
+function sorunEkle(
+  liste: OptiExportSorun[],
+  sorun: Omit<OptiExportSorun, 'etkilenenSatir' | 'etkilenenAdet'> & { etkilenenSatir?: number; etkilenenAdet?: number },
+) {
+  liste.push({
+    ...sorun,
+    etkilenenSatir: sorun.etkilenenSatir ?? 1,
+    etkilenenAdet: sorun.etkilenenAdet ?? 1,
+  })
 }
 
-function famHaritasindanBul(stokKod: string | null | undefined, harita: OptiFamEsleme[]): string | null {
-  if (!stokKod) return null
-  const esleme = harita.find((e) => e.stok_kod === stokKod)
-  return esleme?.fam_kodu?.trim() || null
-}
-
-/** Stok kartından otomatik FAM kodu türetir. */
-export function optiFamKoduOtomatik(stok: StokLite): string {
-  const ad = normalizeMetin(stok?.ad ?? '')
-  const kal = stok?.kalinlik_mm != null ? Math.round(stok.kalinlik_mm) : null
-  const katman = getStokKatmanYapisi(stok)
-
-  if (katman) {
-    const parts = katman.split('+').map((p) => parseInt(p, 10))
-    const dis = parts[0]
-    if (Number.isFinite(dis)) {
-      if (ad.includes('fume')) return `${dis}FUME`
-      if (ad.includes('sinerji')) return `${dis}SIN`
-      if (ad.includes('konfor')) return `${dis}KON`
-      if (ad.includes('reflekte')) return `${dis}REF`
-      if (ad.includes('buzlu')) return `${dis}BUZ`
-      return `${dis}DC`
-    }
-  }
-
-  const k = kal ?? 4
-  if (ad.includes('fume') && ad.includes('reflekte')) return `${k}FUMEREF`
-  if (ad.includes('bronz') && ad.includes('reflekte')) return `${k}BRZREF`
-  if (ad.includes('fume')) return `${k}FUME`
-  if (ad.includes('bronz')) return `${k}BRZ`
-  if (ad.includes('sinerji')) return `${k}SIN`
-  if (ad.includes('konfor')) return `${k}KON`
-  if (ad.includes('reflekte')) return `${k}REF`
-  if (ad.includes('buzlu')) return `${k}BUZ`
-  if (ad.includes('ayna')) return `${k}AYN`
-  if (ad.includes('renkli')) return `${k}REN`
-  if (ad.includes('satina')) return `${k}SAT`
-  if (ad.includes('lamine')) return `${k}LAM`
-  if (stok?.grup === 'DÜZCAM' || ad.includes('dc') || ad.includes('duz')) return `${k}DC`
-  return `${k}DC`
-}
-
-/** Admin haritası + otomatik türetim ile FAM kodu. */
-export function optiFamKodu(stok: StokLite, famHaritasi: OptiFamEsleme[] = []): string {
-  const kayitli = famHaritasindanBul(stok?.kod, famHaritasi)
-  if (kayitli) return kayitli
-  return optiFamKoduOtomatik(stok)
-}
-
-/** Pane kalınlığı + cam tipi için FAM (ısıcam pane export). */
-export function optiPaneFamKodu(
-  kalinlikMm: number,
-  camTipi: 'dc' | 'fume' | 'sinerji' | 'konfor' | 'reflekte' | 'buzlu',
-): string {
-  const k = Math.round(kalinlikMm)
-  switch (camTipi) {
-    case 'fume': return `${k}FUME`
-    case 'sinerji': return `${k}SIN`
-    case 'konfor': return `${k}KON`
-    case 'reflekte': return `${k}REF`
-    case 'buzlu': return `${k}BUZ`
-    default: return `${k}DC`
+function famUyariSonuc(sonuc: HctFamSonuc, stokKod: string, stokAd: string, adet: number, sorunlar: OptiExportSorun[]) {
+  if (!sonuc.destekleniyor) {
+    sorunEkle(sorunlar, {
+      seviye: 'uyari',
+      kod: 'HCT_DISI_FAM',
+      stokKod,
+      stokAd,
+      fam: sonuc.fam,
+      mesaj: sonuc.uyari,
+      etkilenenAdet: adet,
+    })
   }
 }
 
-function stokCamTipi(stok: StokLite): 'dc' | 'fume' | 'sinerji' | 'konfor' | 'reflekte' | 'buzlu' {
-  const ad = normalizeMetin(stok?.ad ?? '')
-  if (ad.includes('fume')) return 'fume'
-  if (ad.includes('sinerji')) return 'sinerji'
-  if (ad.includes('konfor')) return 'konfor'
-  if (ad.includes('reflekte')) return 'reflekte'
-  if (ad.includes('buzlu')) return 'buzlu'
-  return 'dc'
+function famEtiketi(fam: string): string {
+  return hctFamEtiketi(fam)
 }
 
-function isicamMi(stok: StokLite): boolean {
-  return !!getStokKatmanYapisi(stok)
-}
-
-function paneKalinliklari(stok: StokLite): number[] {
-  const katman = getStokKatmanYapisi(stok)
-  if (!katman) return []
-  const parts = katman.split('+').map((p) => parseInt(p, 10)).filter(Number.isFinite)
-  if (parts.length < 2) return []
-  if (parts.length === 2) return [parts[0], parts[1]]
-  return [parts[0], parts[parts.length - 1]]
+export function impBoyutlari(genislik: number, yukseklik: number): { b: number; h: number } {
+  const w = Math.round(genislik)
+  const h = Math.round(yukseklik)
+  return { b: Math.max(w, h), h: Math.min(w, h) }
 }
 
 function musteriEtiketi(d: NonNullable<UretimEmriDetay['siparis_detaylari']>): string {
@@ -145,128 +175,312 @@ function musteriEtiketi(d: NonNullable<UretimEmriDetay['siparis_detaylari']>): s
   return ad.length > CL_MAX_UZUNLUK ? ad.slice(0, CL_MAX_UZUNLUK) : ad
 }
 
-function famEtiketi(fam: string, stokOrnek: StokLite | null, famHaritasi: OptiFamEsleme[]): string {
-  if (stokOrnek) {
-    const kod = stokOrnek.kod
-    const haritada = famHaritasi.find((e) => e.fam_kodu === fam && e.stok_kod === kod)
-    if (haritada && stokOrnek.ad) return stokOrnek.ad
-    if (stokOrnek.ad && optiFamKodu(stokOrnek, famHaritasi) === fam) return stokOrnek.ad
-  }
-  if (fam.endsWith('DC')) return `${fam.replace('DC', '')} mm DC`
-  if (fam.endsWith('FUME')) return `${fam.replace('FUME', '')}mm Fume`
-  return fam
+function siparisOrd(d: NonNullable<UretimEmriDetay['siparis_detaylari']>): string {
+  return (
+    d.siparisler?.harici_siparis_no?.trim() ||
+    d.siparisler?.siparis_no?.trim() ||
+    ''
+  )
 }
 
-/** Tek sipariş satırından export parçaları üretir. */
-export function optiParcalariUret(
+function satirAnalizEt(
   item: UretimEmriDetay,
-  hedefFam: string,
-  famHaritasi: OptiFamEsleme[] = [],
-  citaDusme = 0,
-): OptiParca[] {
+  famHaritasi: OptiFamEsleme[],
+  sorunlar: OptiExportSorun[],
+): OptiSatirAnaliz | null {
   const d = item.siparis_detaylari
-  if (!d) return []
+  if (!d) return null
 
   const stok = d.stok ?? null
+  const stokKod = stok?.kod?.trim() ?? ''
+  const stokAd = stok?.ad ?? ''
   const adet = Math.max(1, d.adet ?? 1)
-  const cl = musteriEtiketi(d)
-  const ord = d.siparisler?.siparis_no ?? ''
-  const dusme = Math.max(0, Math.round(citaDusme))
-  const b = Math.max(1, d.genislik_mm - dusme)
-  const h = Math.max(1, d.yukseklik_mm - dusme)
-  const parcalar: OptiParca[] = []
+  const isicam = isicamStokMu(stok)
 
-  if (isicamMi(stok)) {
-    const panes = paneKalinliklari(stok)
-    const tip = stokCamTipi(stok)
-    for (const kal of panes) {
-      const paneTip = hedefFam.endsWith('DC') ? 'dc' : tip
-      const fam = optiPaneFamKodu(kal, paneTip)
-      if (fam !== hedefFam) continue
-      for (let i = 0; i < adet; i++) {
-        parcalar.push({ b, h, cl, ord, fam })
+  if (isicam) {
+    const paneSonuc = paneCamTipleriGuvenli(stok)
+    if ('hata' in paneSonuc) {
+      sorunEkle(sorunlar, {
+        seviye: 'kritik',
+        kod: 'PANE_COZULEMEDI',
+        stokKod,
+        stokAd,
+        mesaj: paneSonuc.hata.belirsizPane,
+        etkilenenAdet: adet,
+      })
+      return {
+        detayId: item.id,
+        stokKod,
+        stokAd,
+        adet,
+        isicam: true,
+        paneller: [],
+        paneHata: paneSonuc.hata,
       }
     }
-    return parcalar
-  }
 
-  const fam = optiFamKodu(stok, famHaritasi)
-  if (fam !== hedefFam) return []
+    const kalinliklar = paneKalinliklari(stok)
+    const tipler = paneSonuc.tipler
+    const paneller: OptiPaneAnaliz[] = []
 
-  for (let i = 0; i < adet; i++) {
-    parcalar.push({ b, h, cl, ord, fam })
-  }
-  return parcalar
-}
-
-/** Batch'teki tüm export parçalarını hedef FAM için üretir. */
-export function optiTumParcalar(
-  detaylar: UretimEmriDetay[],
-  hedefFam: string,
-  famHaritasi: OptiFamEsleme[] = [],
-  citaDusme = 0,
-): OptiParca[] {
-  return detaylar.flatMap((item) => optiParcalariUret(item, hedefFam, famHaritasi, citaDusme))
-}
-
-/** Batch içinde export edilebilir cam türlerini listeler. */
-export function optiExportTurleri(
-  detaylar: UretimEmriDetay[],
-  famHaritasi: OptiFamEsleme[] = [],
-): OptiExportTuru[] {
-  const sayac = new Map<string, { adet: number; ornekStok: StokLite }>()
-
-  for (const item of detaylar) {
-    const d = item.siparis_detaylari
-    if (!d) continue
-    const stok = d.stok ?? null
-    const adet = Math.max(1, d.adet ?? 1)
-
-    if (isicamMi(stok)) {
-      const panes = paneKalinliklari(stok)
-      const tip = stokCamTipi(stok)
-      for (const kal of panes) {
-        const famDc = optiPaneFamKodu(kal, 'dc')
-        const famOzel = optiPaneFamKodu(kal, tip)
-        for (const fam of new Set([famDc, famOzel])) {
-          const mevcut = sayac.get(fam) ?? { adet: 0, ornekStok: stok }
-          mevcut.adet += adet
-          sayac.set(fam, mevcut)
+    for (let i = 0; i < tipler.length; i++) {
+      try {
+        const famSonuc = isicamPaneFamCoz(kalinliklar[i], tipler[i])
+        famUyariSonuc(famSonuc, stokKod, stokAd, adet, sorunlar)
+        paneller.push({
+          index: i,
+          kalinlik: kalinliklar[i],
+          tip: tipler[i],
+          fam: famSonuc.fam,
+          famSonuc,
+        })
+      } catch (e) {
+        const mesaj = e instanceof Error ? e.message : 'Pane FAM çözülemedi.'
+        sorunEkle(sorunlar, {
+          seviye: 'kritik',
+          kod: 'FAM_COZULEMEDI',
+          stokKod,
+          stokAd,
+          fam: tipler[i],
+          mesaj,
+          etkilenenAdet: adet,
+        })
+        return {
+          detayId: item.id,
+          stokKod,
+          stokAd,
+          adet,
+          isicam: true,
+          paneller,
+          famHata: mesaj,
         }
       }
-    } else {
-      const fam = optiFamKodu(stok, famHaritasi)
-      const mevcut = sayac.get(fam) ?? { adet: 0, ornekStok: stok }
-      mevcut.adet += adet
-      sayac.set(fam, mevcut)
+    }
+
+    return {
+      detayId: item.id,
+      stokKod,
+      stokAd,
+      adet,
+      isicam: true,
+      paneller,
+    }
+  }
+
+  try {
+    const { sonuc, legacyNormalize } = monolitFamCoz(stok, famHaritasi)
+    if (legacyNormalize) {
+      sorunEkle(sorunlar, {
+        seviye: 'uyari',
+        kod: 'LEGACY_FAM_NORMALIZE',
+        stokKod,
+        stokAd,
+        fam: sonuc.fam,
+        mesaj: !sonuc.destekleniyor ? sonuc.uyari : `Legacy FAM normalize edildi → ${sonuc.fam}`,
+        etkilenenAdet: adet,
+      })
+    }
+    famUyariSonuc(sonuc, stokKod, stokAd, adet, sorunlar)
+    return {
+      detayId: item.id,
+      stokKod,
+      stokAd,
+      adet,
+      isicam: false,
+      paneller: [],
+      monolitFam: sonuc,
+    }
+  } catch (e) {
+    const mesaj = e instanceof Error ? e.message : 'Monolit FAM çözülemedi.'
+    sorunEkle(sorunlar, {
+      seviye: 'kritik',
+      kod: 'FAM_COZULEMEDI',
+      stokKod,
+      stokAd,
+      mesaj,
+      etkilenenAdet: adet,
+    })
+    return {
+      detayId: item.id,
+      stokKod,
+      stokAd,
+      adet,
+      isicam: false,
+      paneller: [],
+      famHata: mesaj,
+    }
+  }
+}
+
+function turleriHesapla(satirlar: OptiSatirAnaliz[]): OptiExportTuru[] {
+  const sayac = new Map<string, number>()
+
+  for (const satir of satirlar) {
+    if (satir.paneHata || satir.famHata) continue
+
+    if (satir.isicam) {
+      const famAdet = new Map<string, number>()
+      for (const p of satir.paneller) {
+        famAdet.set(p.fam, (famAdet.get(p.fam) ?? 0) + 1)
+      }
+      for (const [fam, paneCount] of famAdet) {
+        sayac.set(fam, (sayac.get(fam) ?? 0) + satir.adet * paneCount)
+      }
+    } else if (satir.monolitFam) {
+      const fam = satir.monolitFam.fam
+      sayac.set(fam, (sayac.get(fam) ?? 0) + satir.adet)
     }
   }
 
   return [...sayac.entries()]
-    .map(([anahtar, { adet, ornekStok }]) => ({
+    .map(([anahtar, adet]) => ({
       anahtar,
-      etiket: famEtiketi(anahtar, ornekStok, famHaritasi),
+      etiket: famEtiketi(anahtar),
       adet,
     }))
     .sort((a, b) => a.etiket.localeCompare(b.etiket, 'tr'))
 }
 
-/** Parçaları gruplayıp IMP içeriği üretir. */
-export function optiImpOlustur(parcalar: OptiParca[]): string {
-  const grup = new Map<string, OptiParca & { n: number }>()
+/** Merkezi export analizi — throw etmez */
+export function optiExportAnalizEt(
+  detaylar: UretimEmriDetay[],
+  famHaritasi: OptiFamEsleme[] = [],
+): OptiExportAnaliz {
+  const hamSorunlar: OptiExportSorun[] = []
+  const satirlar: OptiSatirAnaliz[] = []
 
-  for (const p of parcalar) {
-    const key = `${p.b}|${p.h}|${p.cl}|${p.ord}|${p.fam}`
-    const mevcut = grup.get(key)
-    if (mevcut) {
-      mevcut.n += 1
-    } else {
-      grup.set(key, { ...p, n: 1 })
+  for (const item of detaylar) {
+    const d = item.siparis_detaylari
+    if (!d) continue
+
+    const satir = satirAnalizEt(item, famHaritasi, hamSorunlar)
+    if (satir) satirlar.push(satir)
+  }
+
+  const sorunlar = optiExportSorunlariTekillestir(hamSorunlar)
+  const kritikVar = sorunlar.some((s) => s.seviye === 'kritik')
+  const turler = kritikVar ? [] : turleriHesapla(satirlar)
+
+  return { satirlar, turler, sorunlar, kritikVar }
+}
+
+export function optiExportTurleri(
+  detaylar: UretimEmriDetay[],
+  famHaritasi: OptiFamEsleme[] = [],
+): OptiExportTuru[] {
+  return optiExportAnalizEt(detaylar, famHaritasi).turler
+}
+
+export function optiExportSorunlari(
+  detaylar: UretimEmriDetay[],
+  famHaritasi: OptiFamEsleme[] = [],
+): OptiExportSorun[] {
+  return optiExportAnalizEt(detaylar, famHaritasi).sorunlar
+}
+
+function parcalarForFam(
+  analiz: OptiExportAnaliz,
+  detaylar: UretimEmriDetay[],
+  hedefFam: string,
+): ImpPiece[] {
+  if (analiz.kritikVar) {
+    throw new OptiExportKritikHatasi(analiz.sorunlar.filter((s) => s.seviye === 'kritik'))
+  }
+
+  const parcalar: ImpPiece[] = []
+  const satirMap = new Map(analiz.satirlar.map((s) => [s.detayId, s]))
+
+  for (const item of detaylar) {
+    const satir = satirMap.get(item.id)
+    if (!satir || satir.paneHata || satir.famHata) continue
+
+    const d = item.siparis_detaylari
+    if (!d) continue
+
+    const cl = musteriEtiketi(d)
+    const ord = siparisOrd(d)
+    const { b, h } = impBoyutlari(d.genislik_mm, d.yukseklik_mm)
+
+    if (satir.isicam) {
+      const eslesenPaneSayisi = satir.paneller.filter((p) => p.fam === hedefFam).length
+      if (eslesenPaneSayisi === 0) continue
+
+      const sourceSiraNo = impSiraNoDogrula(item.sira_no, item.id)
+      parcalar.push({
+        sourceLineId: item.id,
+        sourceSiraNo,
+        nota3: String(sourceSiraNo),
+        n: satir.adet * eslesenPaneSayisi,
+        b,
+        h,
+        cl,
+        ord,
+        fam: hedefFam,
+      })
+    } else if (satir.monolitFam?.fam === hedefFam) {
+      const sourceSiraNo = impSiraNoDogrula(item.sira_no, item.id)
+      parcalar.push({
+        sourceLineId: item.id,
+        sourceSiraNo,
+        nota3: String(sourceSiraNo),
+        n: satir.adet,
+        b,
+        h,
+        cl,
+        ord,
+        fam: hedefFam,
+      })
     }
   }
 
-  const satirlar = [...grup.values()].map((p, idx) => {
-    return `N${idx + 1}=;N=${p.n};B=${p.b};H=${p.h};CL=${p.cl};ORD=${p.ord};FAM=${p.fam};MOL=0;STND=0;PRIO=0;NOROT=;TOOL=;NOSTETI=;NUMETI=;DES=;NOTA1=;NOTA2=;NOTA3= `
+  return parcalar
+}
+
+/** Tek batch satırından hedef FAM için en fazla bir ImpPiece üretir. */
+export function optiParcalariUret(
+  item: UretimEmriDetay,
+  hedefFam: string,
+  famHaritasi: OptiFamEsleme[] = [],
+): ImpPiece[] {
+  const analiz = optiExportAnalizEt([item], famHaritasi)
+  return parcalarForFam(analiz, [item], hedefFam)
+}
+
+/** Batch'teki tüm parçaları hedef FAM için üretir. */
+export function optiTumParcalar(
+  detaylar: UretimEmriDetay[],
+  hedefFam: string,
+  famHaritasi: OptiFamEsleme[] = [],
+): ImpPiece[] {
+  const analiz = optiExportAnalizEt(detaylar, famHaritasi)
+  return parcalarForFam(analiz, detaylar, hedefFam)
+}
+
+/** Monolit stok için otomatik FAM (ayarlar paneli önizlemesi) */
+export function optiFamKoduOtomatik(stok: StokLite): string {
+  try {
+    return monolitFamCoz(stok, []).sonuc.fam
+  } catch {
+    return '4DC'
+  }
+}
+
+/** Monolit stok FAM — override dahil (kombinasyon stoklarda kullanılmaz) */
+export function optiFamKodu(stok: StokLite, famHaritasi: OptiFamEsleme[] = []): string {
+  if (isicamStokMu(stok)) {
+    return '—'
+  }
+  try {
+    return monolitFamCoz(stok, famHaritasi).sonuc.fam
+  } catch {
+    return optiFamKoduOtomatik(stok)
+  }
+}
+
+/** Parçaları kaynak sırasıyla IMP metnine dönüştürür (birleştirme yok). */
+export function optiImpOlustur(parcalar: ImpPiece[]): string {
+  const satirlar = parcalar.map((p, idx) => {
+    return `N${idx + 1}=;N=${p.n};B=${p.b};H=${p.h};CL=${p.cl};ORD=${p.ord};FAM=${p.fam};MOL=0;STND=0;PRIO=0;NOROT=;TOOL=;NOSTETI=;NUMETI=;DES=;NOTA1=;NOTA2=;NOTA3=${p.nota3} `
   })
 
   return `[PIECES]\r\n${satirlar.join('\r\n')}\r\n`
@@ -274,4 +488,9 @@ export function optiImpOlustur(parcalar: OptiParca[]): string {
 
 export function optiDosyaAdi(sayac: number): string {
   return `OP_${String(sayac).padStart(5, '0')}.IMP`
+}
+
+/** @deprecated HCT FAM kullanın */
+export function optiPaneFamKodu(kalinlikMm: number, camTipi: PaneCamTipi): string {
+  return isicamPaneFamCoz(kalinlikMm, camTipi).fam
 }

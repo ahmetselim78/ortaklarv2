@@ -9,6 +9,7 @@ import type { TamirDurum, TamirKayit } from '@/types/tamir'
 import {
   DURUM_ETIKETLERI, SORUN_ETIKETLERI, KAYNAK_ETIKETLERI,
 } from '@/types/tamir'
+import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
 
 /* ========== Yardımcı renkler ========== */
 
@@ -132,45 +133,19 @@ export default function TamirIstasyonuPage() {
       }
     }
 
-    // Tamir tamamlandı veya hurda → bu camın siparişinde başka bekleyen tamir var mı?
-    // Yoksa ve tüm siparis_detaylari yıkandıysa → sipariş 'tamamlandi' olarak işaretle.
+    // Tamir tamamlandı veya hurda → ilgili sipariş ve üretim emri durumunu yeniden hesapla
     if (yeniDurum === 'tamamlandi' || yeniDurum === 'hurda') {
       const kayit = kayitlar.find(k => k.id === id)
       if (kayit?.siparis_detay_id) {
-        // Bu siparis_detay'ın bağlı olduğu siparişi bul
         const { data: detay } = await supabase
           .from('siparis_detaylari')
           .select('siparis_id')
           .eq('id', kayit.siparis_detay_id)
           .maybeSingle()
-        const sipId = (detay as any)?.siparis_id
-        if (sipId) {
-          // Siparişteki tüm detayları ve bu siparişe ait bekleyen tamirler
-          const [{ data: sipDetaylar }, { data: bekleyenTamirler }] = await Promise.all([
-            supabase.from('siparis_detaylari').select('id, uretim_durumu').eq('siparis_id', sipId),
-            supabase.from('tamir_kayitlari')
-              .select('id')
-              .eq('durum', 'bekliyor')
-              .in(
-                'siparis_detay_id',
-                (await supabase.from('siparis_detaylari').select('id').eq('siparis_id', sipId)).data?.map((d: any) => d.id) ?? [],
-              ),
-          ])
-          const hepsiYikandi = (sipDetaylar ?? []).length > 0
-            && (sipDetaylar ?? []).every((d: any) => d.uretim_durumu === 'yikandi')
-          // bekleyenTamirler, bu tamir ID'si henüz güncellenmeden sorguluyoruz —
-          // yani mevcut kayıt hala 'bekliyor' olarak görünebilir; sayısının 1 olması bu kayıt demektir.
-          const bekleyenSayisi = (bekleyenTamirler ?? []).length
-          if (hepsiYikandi && bekleyenSayisi <= 1) {
-            // Son bekleyen tamirdi, artık sipariş gerçekten tamamlandı
-            await supabase
-              .from('siparisler')
-              .update({ durum: 'tamamlandi', tamamlandi_tarihi: new Date().toISOString() })
-              .eq('id', sipId)
-              .in('durum', ['yikamada', 'eksik_var'])
-          }
-        }
+        const sipId = detay?.siparis_id
+        if (sipId) await recalculateSiparisDurumu(sipId)
       }
+      if (kayit?.uretim_emri_id) await recalculateUretimEmriDurumu(kayit.uretim_emri_id)
     }
 
     // optimistic update

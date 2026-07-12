@@ -5,6 +5,7 @@ import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfPar
 import type { PDFParseResult, PDFCamSatir } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
 import type { CamFormSatiri } from '@/types/siparis'
+import type { EkleIlerleme } from '@/hooks/useSiparis'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { getDocument } from 'pdfjs-dist'
@@ -170,11 +171,13 @@ interface Props {
   }) => Promise<{ id: string; siparis_no: string; teslim_tarihi: string | null }>
   onStokYenile?: () => Promise<void> | void
   onKapat: () => void
+  /** Büyük siparişlerde (300+ satır) parçalı ekleme ilerlemesi (opsiyonel gösterge). */
+  ekleIlerleme?: EkleIlerleme | null
 }
 
 type Adim = 'yukleme' | 'eslestirme' | 'onizleme' | 'sevkiyat'
 
-export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYenile, onKapat }: Props) {
+export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYenile, onKapat, ekleIlerleme }: Props) {
   useEscape(onKapat)
   const [adim, setAdim] = useState<Adim>('yukleme')
   const [yukleniyor, setYukleniyor] = useState(false)
@@ -1306,7 +1309,11 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                 disabled={iceAktariliyor}
                 className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
-                {iceAktariliyor ? 'İçe Aktarılıyor...' : `${parseResult?.satirlar.reduce((s, r) => s + r.adet, 0)} Adet (${parseResult?.satirlar.length} Satır) İçe Aktar`}
+                {iceAktariliyor
+                  ? (ekleIlerleme && ekleIlerleme.toplam > 300
+                      ? `İçe Aktarılıyor... (${ekleIlerleme.eklenen}/${ekleIlerleme.toplam})`
+                      : 'İçe Aktarılıyor...')
+                  : `${parseResult?.satirlar.reduce((s, r) => s + r.adet, 0)} Adet (${parseResult?.satirlar.length} Satır) İçe Aktar`}
               </button>
             )}
             {adim === 'sevkiyat' && (

@@ -4,6 +4,7 @@ import { useEscape } from '@/hooks/useEscape'
 import { AlertTriangle, X, Wrench } from 'lucide-react'
 import type { TamirKaynak, TamirSorun } from '@/types/tamir'
 import { SORUN_ETIKETLERI } from '@/types/tamir'
+import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
 
 const SORUN_LIST: TamirSorun[] = ['kirik', 'cizik', 'olcum_hatasi', 'diger']
 
@@ -33,24 +34,41 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
   useEscape(onClose)
   const [sorunTipi, setSorunTipi] = useState<TamirSorun>('kirik')
   const [tamirAdeti, setTamirAdeti] = useState(1)
+  const [adetGirisAktif, setAdetGirisAktif] = useState(false)
+  const [manuelAdetMetin, setManuelAdetMetin] = useState('')
   const [aciklama, setAciklama] = useState('')
   const [yukleniyor, setYukleniyor] = useState(false)
   const [hata, setHata] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
   const aciklamaRef = useRef<HTMLTextAreaElement>(null)
+  const adetInputRef = useRef<HTMLInputElement>(null)
+
+  const hizliAdetSecimi = cam.adet <= 2
 
   // cam değiştiğinde formu sıfırla
   useEffect(() => {
     setSorunTipi('kirik')
     setTamirAdeti(1)
+    setAdetGirisAktif(false)
+    setManuelAdetMetin('')
     setAciklama('')
     setHata('')
   }, [cam.siparis_detay_id])
+
+  // Manuel adet alanı açıldığında odağı input'a ver
+  useEffect(() => {
+    if (adetGirisAktif) {
+      setManuelAdetMetin('')
+      const t = setTimeout(() => adetInputRef.current?.focus(), 50)
+      return () => clearTimeout(t)
+    }
+  }, [adetGirisAktif])
 
   // Klavye kısayolları
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isTextarea = document.activeElement === aciklamaRef.current
+      const isAdetInput = document.activeElement === adetInputRef.current
 
       // Delete → iptal
       if (e.key === 'Delete') {
@@ -59,8 +77,8 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
         return
       }
 
-      // Textarea odaktayken sadece Delete çalışır; diğer kısayollar devre dışı
-      if (isTextarea) return
+      // Textarea veya adet girişi odaktayken sadece Delete çalışır
+      if (isTextarea || isAdetInput) return
 
       // 1-4 → sorun türü seçimi
       const idx = parseInt(e.key, 10) - 1
@@ -82,6 +100,20 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
   }, [onClose])
 
   const doSubmit = async () => {
+    const gecerliAdet = cam.adet > 2 && adetGirisAktif
+      ? parseInt(manuelAdetMetin, 10)
+      : cam.adet > 2 && !adetGirisAktif
+        ? 1
+        : tamirAdeti
+    if (!Number.isFinite(gecerliAdet) || gecerliAdet < 1 || gecerliAdet > cam.adet) {
+      setHata(`Tamir adedi 1 ile ${cam.adet} arasında olmalıdır.`)
+      return
+    }
+    if (adetGirisAktif && cam.adet > 2 && gecerliAdet < 2) {
+      setHata('Farklı adet için 2 veya daha fazla bir değer girin.')
+      return
+    }
+
     setYukleniyor(true)
     setHata('')
 
@@ -95,7 +127,7 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
       sorun_tipi: sorunTipi,
       aciklama: aciklama.trim() || null,
       durum: 'bekliyor',
-      adet: tamirAdeti,
+      adet: gecerliAdet,
       musteri: cam.musteri,
       nihai_musteri: cam.nihai_musteri,
       siparis_no: cam.siparis_no,
@@ -104,13 +136,25 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
       stok_ad: cam.stok_ad,
     })
 
-    setYukleniyor(false)
-
     if (error) {
+      setYukleniyor(false)
       setHata('Kayıt oluşturulamadı: ' + error.message)
       return
     }
 
+    // Bu cam daha önce "yikandi" olarak işaretlenmiş olabilir (tarama sonrası tamire gönderiliyor) —
+    // artık bekleyen bir tamir kaydı olduğu için sipariş/batch durumu yeniden hesaplanmalı
+    // (örn. son cam tarandığı anda 'tamamlandi' olan sipariş, tamir bekliyorsa 'eksik_var'a düşmeli).
+    const { data: detay } = await supabase
+      .from('siparis_detaylari')
+      .select('siparis_id')
+      .eq('id', cam.siparis_detay_id)
+      .maybeSingle()
+    const siparisId = detay?.siparis_id
+    if (siparisId) await recalculateSiparisDurumu(siparisId)
+    await recalculateUretimEmriDurumu(cam.uretim_emri_id)
+
+    setYukleniyor(false)
     onSuccess()
   }
 
@@ -177,28 +221,76 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
 
         {/* Form */}
         <form ref={formRef} onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          {/* Adet seçimi — sadece adet > 1 ise göster */}
+          {/* Adet seçimi */}
           {cam.adet > 1 && (
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
                 Kaç Adet Tamire Gönderiliyor? *
               </label>
-              <div className="flex gap-2">
-                {Array.from({ length: cam.adet }, (_, i) => i + 1).map((n) => (
+              {hizliAdetSecimi ? (
+                <div className="flex gap-2">
+                  {Array.from({ length: cam.adet }, (_, i) => i + 1).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setTamirAdeti(n)}
+                      className={`flex-1 py-2.5 rounded-xl border text-sm font-bold transition-colors ${
+                        tamirAdeti === n
+                          ? 'bg-red-900/50 border-red-600 text-red-200'
+                          : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'
+                      }`}
+                    >
+                      {n} Adet
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-stretch gap-2">
                   <button
-                    key={n}
                     type="button"
-                    onClick={() => setTamirAdeti(n)}
+                    onClick={() => {
+                      setTamirAdeti(1)
+                      setAdetGirisAktif(false)
+                      setManuelAdetMetin('')
+                    }}
                     className={`flex-1 py-2.5 rounded-xl border text-sm font-bold transition-colors ${
-                      tamirAdeti === n
+                      tamirAdeti === 1 && !adetGirisAktif
                         ? 'bg-red-900/50 border-red-600 text-red-200'
                         : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'
                     }`}
                   >
-                    {n} Adet
+                    1 Adet
                   </button>
-                ))}
-              </div>
+                  {adetGirisAktif ? (
+                    <div className="flex-1 flex items-center gap-1.5 bg-gray-800 border border-red-600/60 rounded-xl px-3 py-2 focus-within:ring-1 focus-within:ring-red-600/30">
+                      <input
+                        ref={adetInputRef}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={manuelAdetMetin}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, '')
+                          setManuelAdetMetin(v)
+                          const parsed = parseInt(v, 10)
+                          if (!Number.isNaN(parsed)) setTamirAdeti(parsed)
+                        }}
+                        placeholder="2"
+                        className="w-full min-w-0 bg-transparent text-white text-sm font-bold text-center focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="text-xs text-gray-500 shrink-0 whitespace-nowrap">/ {cam.adet}</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAdetGirisAktif(true)}
+                      className="flex-1 py-2.5 rounded-xl border border-dashed border-gray-600 bg-gray-800/50 text-gray-500 text-xs font-medium hover:border-gray-500 hover:text-gray-300 transition-colors px-2"
+                    >
+                      Farklı adet girmek için tıklayın
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

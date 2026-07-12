@@ -3,15 +3,19 @@ import { supabase } from '@/lib/supabase'
 import type { OptiExportAyarlari } from '@/types/ayarlar'
 import { VARSAYILAN_OPTI_EXPORT_AYARLARI } from '@/types/ayarlar'
 import { VARSAYILAN_FAM_HARITASI } from '@/lib/optiExport'
+import { normalizeFamHaritasi } from '@/lib/hctFam'
 
 const ANAHTAR = 'opti_export'
 
 function birlestir(ham: Partial<OptiExportAyarlari> | null | undefined): OptiExportAyarlari {
-  const kayitliHarita = ham?.fam_haritasi ?? []
   const varsayilanMap = new Map(VARSAYILAN_FAM_HARITASI.map((e) => [e.stok_kod, e.fam_kodu]))
-  for (const e of kayitliHarita) {
+
+  const kayitliHam = ham?.fam_haritasi ?? []
+  const { harita: kayitliNormalize } = normalizeFamHaritasi(kayitliHam)
+  for (const e of kayitliNormalize) {
     if (e.stok_kod && e.fam_kodu) varsayilanMap.set(e.stok_kod, e.fam_kodu)
   }
+
   const fam_haritasi = [...varsayilanMap.entries()].map(([stok_kod, fam_kodu]) => ({
     stok_kod,
     fam_kodu,
@@ -25,6 +29,11 @@ function birlestir(ham: Partial<OptiExportAyarlari> | null | undefined): OptiExp
         : VARSAYILAN_OPTI_EXPORT_AYARLARI.cita_dusme,
     fam_haritasi,
   }
+}
+
+function kaydaHazirla(ayarlar: OptiExportAyarlari): OptiExportAyarlari {
+  const { harita } = normalizeFamHaritasi(ayarlar.fam_haritasi)
+  return { ...ayarlar, fam_haritasi: harita }
 }
 
 export function useOptiExportAyarlari() {
@@ -44,7 +53,31 @@ export function useOptiExportAyarlari() {
         .maybeSingle()
 
       if (error) throw error
-      setAyarlar(birlestir(data?.deger as Partial<OptiExportAyarlari> | undefined))
+      const birlesik = birlestir(data?.deger as Partial<OptiExportAyarlari> | undefined)
+      setAyarlar(birlesik)
+
+      const ham = data?.deger as Partial<OptiExportAyarlari> | undefined
+      const hamHarita = ham?.fam_haritasi ?? []
+      const { harita: normalizeHarita, normalizeUyari } = normalizeFamHaritasi(hamHarita)
+      const persistGerekli =
+        normalizeUyari.length > 0 ||
+        normalizeHarita.length !== hamHarita.length ||
+        normalizeHarita.some((e, i) => e.fam_kodu !== hamHarita[i]?.fam_kodu)
+
+      if (persistGerekli && data) {
+        const persistDeger = kaydaHazirla({
+          ...birlesik,
+          fam_haritasi: birlesik.fam_haritasi,
+        })
+        await supabase.from('ayarlar').upsert(
+          {
+            anahtar: ANAHTAR,
+            deger: persistDeger as unknown as Record<string, unknown>,
+            guncelleme: new Date().toISOString(),
+          },
+          { onConflict: 'anahtar' },
+        )
+      }
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Opti ayarları yüklenemedi')
     } finally {
@@ -60,16 +93,17 @@ export function useOptiExportAyarlari() {
     setKaydediyor(true)
     setHata(null)
     try {
+      const hazir = kaydaHazirla(yeni)
       const { error } = await supabase.from('ayarlar').upsert(
         {
           anahtar: ANAHTAR,
-          deger: yeni as unknown as Record<string, unknown>,
+          deger: hazir as unknown as Record<string, unknown>,
           guncelleme: new Date().toISOString(),
         },
         { onConflict: 'anahtar' },
       )
       if (error) throw error
-      setAyarlar(birlestir(yeni))
+      setAyarlar(birlestir(hazir))
       return true
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Opti ayarları kaydedilemedi')

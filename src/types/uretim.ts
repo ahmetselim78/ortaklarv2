@@ -16,6 +16,7 @@ export interface UretimEmri {
   olusturulma_tarihi: string
   export_tarihi: string | null
   cam_sayisi?: number
+  taranan_cam?: number
   siparis_listesi?: UretimEmriSiparisOzet[]
 }
 
@@ -29,6 +30,7 @@ export interface UretimEmriDetay {
     genislik_mm: number
     yukseklik_mm: number
     adet: number
+    uretim_durumu?: string | null
     kenar_islemi: string | null
     notlar: string | null
     poz: string | null
@@ -45,6 +47,7 @@ export interface UretimEmriDetay {
     siparisler?: {
       id: string
       siparis_no: string
+      harici_siparis_no?: string | null
       alt_musteri: string | null
       cari?: { ad: string } | null
     } | null

@@ -1,13 +1,57 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   Save, Printer, Wifi, RefreshCw, ChevronDown, ChevronUp,
-  Info, Tag, LayoutTemplate, Settings2, X, ZoomIn,
-  Send, CheckCircle2, AlertCircle, FlaskConical,
+  Info, Settings2, Crosshair, MousePointer2,
+  Send, CheckCircle2, AlertCircle, FlaskConical, Ruler,
 } from 'lucide-react'
-import type { EtiketAyarlari, EtiketVeri } from '@/types/ayarlar'
-import { dplUret } from '@/types/ayarlar'
+import type { EtiketAlanAnahtari, EtiketAyarlari } from '@/types/ayarlar'
+import {
+  dplKonumKalibrasyonUret,
+  dplMetinOlcekTestiUret,
+  dplUret,
+  etiketAyarlariBirlestir,
+  etiketYerlesimUyarilari,
+} from '@/types/ayarlar'
+import EtiketYerlesimEditor from '@/components/ayarlar/EtiketYerlesimEditor'
+import { ETIKET_ALAN_META } from '@/lib/etiketAlanlari'
+import { ORNEK_ETIKET_VERI } from '@/lib/etiketOrnek'
 
 const VARSAYILAN_KOPRU_PORT = 9876
+
+const BOLUMLER_STORAGE_KEY = 'etiket-ayarlari-bolumler'
+
+const VARSAYILAN_BOLUMLER = {
+  yazici: true,
+  yerlesim: true,
+  yazdirma: false,
+  gelismis: false,
+  test: true,
+} as const
+
+type BolumlerState = typeof VARSAYILAN_BOLUMLER
+
+function bolumlerOku(): BolumlerState {
+  try {
+    const raw = localStorage.getItem(BOLUMLER_STORAGE_KEY)
+    if (!raw) return { ...VARSAYILAN_BOLUMLER }
+    const parsed = JSON.parse(raw) as Partial<BolumlerState>
+    return {
+      yazici: typeof parsed.yazici === 'boolean' ? parsed.yazici : VARSAYILAN_BOLUMLER.yazici,
+      yerlesim: typeof parsed.yerlesim === 'boolean' ? parsed.yerlesim : VARSAYILAN_BOLUMLER.yerlesim,
+      yazdirma: typeof parsed.yazdirma === 'boolean' ? parsed.yazdirma : VARSAYILAN_BOLUMLER.yazdirma,
+      gelismis: typeof parsed.gelismis === 'boolean' ? parsed.gelismis : VARSAYILAN_BOLUMLER.gelismis,
+      test: typeof parsed.test === 'boolean' ? parsed.test : VARSAYILAN_BOLUMLER.test,
+    }
+  } catch {
+    return { ...VARSAYILAN_BOLUMLER }
+  }
+}
+
+function bolumlerKaydet(state: BolumlerState) {
+  try {
+    localStorage.setItem(BOLUMLER_STORAGE_KEY, JSON.stringify(state))
+  } catch { /* localStorage kullanılamıyor */ }
+}
 
 interface Props {
   ayarlar: EtiketAyarlari
@@ -15,36 +59,6 @@ interface Props {
   hata: string | null
   onKaydet: (yeni: EtiketAyarlari) => Promise<boolean>
   onFormChange?: (f: EtiketAyarlari) => void
-}
-
-/* ── Örnek veri (dışarıdan da kullanılabilir) ────────────────────────────── */
-
-export const ORNEK_VERI: EtiketVeri = {
-  cam_kodu: '37',
-  cam_tipi: '4+16+4 Temp Isıcam',
-  musteri: 'NOVEL — AKYOL LOUNGE',
-  genislik_mm: 600,
-  yukseklik_mm: 400,
-  sira_no: 7,
-  siparis_no: 'SIP-2026-0123',
-}
-
-/* ── Checkbox satırı ─────────────────────────────────────────────────────── */
-
-function IcerikSatiri({
-  label, kontrol, onChange,
-}: { label: string; kontrol: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-3 cursor-pointer group py-1.5">
-      <input
-        type="checkbox"
-        checked={kontrol}
-        onChange={e => onChange(e.target.checked)}
-        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-      />
-      <span className="text-sm text-gray-700 group-hover:text-gray-900">{label}</span>
-    </label>
-  )
 }
 
 /* ── Bölüm başlığı ───────────────────────────────────────────────────────── */
@@ -76,163 +90,27 @@ function Bolum({
   )
 }
 
-/* ── Etiket içerik render (paylaşımlı) ───────────────────────────────────── */
-
-function EtiketIcerik({ ic, veri, scale }: {
-  ic: EtiketAyarlari['icerik']
-  veri: EtiketVeri
-  scale: number
-}) {
-  return (
-    <div
-      className="absolute inset-0 p-2 flex flex-col gap-0.5"
-      style={{ fontSize: Math.max(scale * 1.8, 7) }}
-    >
-      {ic.barkod && (
-        <div className="flex gap-px mb-1" style={{ height: scale * 8 }}>
-          {Array.from({ length: 48 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-black"
-              style={{ width: i % 3 === 0 ? 2 : 1, opacity: i % 5 === 0 ? 0.25 : 1 }}
-            />
-          ))}
-        </div>
-      )}
-      {ic.cam_kodu && (
-        <div className="font-bold leading-tight truncate" style={{ fontSize: Math.max(scale * 2.2, 8) }}>
-          {veri.cam_kodu}
-        </div>
-      )}
-      {ic.cam_tipi && veri.cam_tipi && (
-        <div className="leading-tight truncate text-gray-700 font-medium">
-          {veri.cam_tipi}
-        </div>
-      )}
-      {ic.boyut && (
-        <div className="leading-tight truncate text-gray-700">
-          {veri.genislik_mm} × {veri.yukseklik_mm} mm
-        </div>
-      )}
-      {ic.musteri_adi && (
-        <div className="leading-tight truncate text-gray-600">
-          {veri.musteri}
-        </div>
-      )}
-      {ic.sira_no && veri.sira_no !== null && (
-        <div className="leading-tight truncate text-gray-500">
-          SIRA: {veri.sira_no}
-        </div>
-      )}
-      {ic.siparis_no && (
-        <div className="leading-tight truncate text-gray-500">
-          {veri.siparis_no}
-        </div>
-      )}
-      {ic.tarih && (
-        <div className="leading-tight truncate text-gray-400">
-          {new Date().toLocaleDateString('tr-TR')}
-        </div>
-      )}
-    </div>
-  )
-}
-
 /* ── Etiket Önizlemesi (dışa aktarılır) ──────────────────────────────────── */
-
-export function EtiketOnizleme({ ayarlar, veri }: { ayarlar: EtiketAyarlari; veri: EtiketVeri }) {
-  const [buyuk, setBuyuk] = useState(false)
-  const ic = ayarlar.icerik
-
-  const maxW = 280
-  const scale = Math.min(maxW / ayarlar.boyut.genislik_mm, 7)
-  const w = ayarlar.boyut.genislik_mm * scale
-  const h = ayarlar.boyut.yukseklik_mm * scale
-
-  const bigMaxW = 560
-  const bigScale = Math.min(bigMaxW / ayarlar.boyut.genislik_mm, 14)
-  const bigW = ayarlar.boyut.genislik_mm * bigScale
-  const bigH = ayarlar.boyut.yukseklik_mm * bigScale
-
-  return (
-    <>
-      <div className="flex flex-col items-center gap-3">
-        <p className="text-xs font-medium text-gray-500 tracking-wide uppercase">Önizleme</p>
-        <p className="text-xs text-gray-400">
-          {ayarlar.boyut.genislik_mm} × {ayarlar.boyut.yukseklik_mm} mm
-        </p>
-        {/* Küçük önizleme — tıklanabilir */}
-        <button
-          type="button"
-          onClick={() => setBuyuk(true)}
-          title="Büyütmek için tıklayın"
-          className="relative group border-2 border-gray-300 bg-white rounded shadow-md overflow-hidden focus:outline-none focus:ring-2 focus:ring-blue-400"
-          style={{ width: w, height: h, fontFamily: 'monospace' }}
-        >
-          <EtiketIcerik ic={ic} veri={veri} scale={scale} />
-          {/* hover overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-            <ZoomIn size={20} className="text-white opacity-0 group-hover:opacity-100 drop-shadow transition-opacity" />
-          </div>
-        </button>
-        <p className="text-xs text-gray-400 italic">— tıklayarak büyütün —</p>
-      </div>
-
-      {/* Modal */}
-      {buyuk && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
-          onClick={() => setBuyuk(false)}
-        >
-          <div
-            className="relative flex flex-col items-center gap-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between w-full">
-              <p className="text-white text-sm font-medium">
-                {ayarlar.boyut.genislik_mm} × {ayarlar.boyut.yukseklik_mm} mm — örnek veri
-              </p>
-              <button
-                type="button"
-                onClick={() => setBuyuk(false)}
-                className="text-white/70 hover:text-white transition-colors ml-6"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div
-              className="border-2 border-white/30 bg-white rounded-lg shadow-2xl overflow-hidden relative"
-              style={{ width: bigW, height: bigH, fontFamily: 'monospace' }}
-            >
-              <EtiketIcerik ic={ic} veri={veri} scale={bigScale} />
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
 
 /* ── Ana bileşen ─────────────────────────────────────────────────────────── */
 
 export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKaydet, onFormChange }: Props) {
-  const [form, setForm] = useState<EtiketAyarlari>(ayarlar)
-  const [bolumler, setBolumler] = useState({
-    yazici: true,
-    boyut: true,
-    icerik: true,
-    yazdirma: true,
-    gelismis: false,
-    test: true,
-  })
+  const [form, setForm] = useState<EtiketAyarlari>(() => etiketAyarlariBirlestir(ayarlar))
+  const [seciliAlan, setSeciliAlan] = useState<EtiketAlanAnahtari | null>(null)
+  const [bolumler, setBolumler] = useState<BolumlerState>(bolumlerOku)
 
   const [testGonderiyor, setTestGonderiyor] = useState(false)
   const [testSonucu, setTestSonucu] = useState<{ basarili: boolean; mesaj: string } | null>(null)
   const [basarili, setBasarili] = useState(false)
+  const [dogrulamaHatasi, setDogrulamaHatasi] = useState<string | null>(null)
 
   const [yazicilarYukleniyor, setYazicilarYukleniyor] = useState(false)
   const [yaziciListesi, setYaziciListesi] = useState<Array<{ Name: string; PortName: string; Tip?: string }> | null>(null)
   const [yaziciListeHata, setYaziciListeHata] = useState<string | null>(null)
+
+  useEffect(() => {
+    setForm(etiketAyarlariBirlestir(ayarlar))
+  }, [ayarlar])
 
   async function handleYaziciListele() {
     if (!form.yazici.kopru_adresi.trim()) {
@@ -242,23 +120,48 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
     setYazicilarYukleniyor(true)
     setYaziciListesi(null)
     setYaziciListeHata(null)
+    const kopruHost = form.yazici.kopru_adresi.trim()
+    const kopruPort = form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT
     try {
-      const url = `http://${form.yazici.kopru_adresi.trim()}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}/yazicilar`
+      const url = `http://${kopruHost}:${kopruPort}/yazicilar`
       const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-      const data = await res.json()
-      if (!Array.isArray(data?.yazicilar)) throw new Error('Geçersiz yanıt.')
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        throw new Error(data?.hata ?? `Köprü HTTP ${res.status}`)
+      }
+      if (!data || !Array.isArray(data.yazicilar)) {
+        throw new Error('Geçersiz yanıt — köprü dosyası güncel mi?')
+      }
+      if (data.hata) {
+        throw new Error(String(data.hata))
+      }
       if (data.yazicilar.length === 0) {
-        const debugMsg = data.ham ? ` (PS çıktısı: ${String(data.ham).slice(0, 200)})` : ''
-        setYaziciListeHata(`Hiç yazıcı/USB portu bulunamadı.${debugMsg}`)
-      } else setYaziciListesi(data.yazicilar)
+        const ek = [
+          data.ham ? `PS: ${String(data.ham).slice(0, 120)}` : '',
+          data.stderr ? `stderr: ${String(data.stderr).slice(0, 120)}` : '',
+        ].filter(Boolean).join(' | ')
+        setYaziciListeHata(
+          `Hiç yazıcı/USB portu bulunamadı (${kopruHost}:${kopruPort}).`
+          + (ek ? ` ${ek}` : '')
+          + ' Datamax USB ise alana USB001 yazıp test edebilirsiniz.',
+        )
+      } else {
+        setYaziciListesi(data.yazicilar)
+      }
     } catch (e) {
-      setYaziciListeHata(e instanceof Error ? e.message : 'Listelenemiyor.')
+      const mesaj = e instanceof Error ? e.message : 'Listelenemiyor.'
+      const ag = mesaj.includes('fetch') || mesaj.includes('Failed') || mesaj.includes('abort')
+      setYaziciListeHata(
+        ag
+          ? `Köprüye ulaşılamıyor (${kopruHost}:${kopruPort}). Köprü o bilgisayarda çalışıyor mu? Ayarlarda IP yazıcı PC'nin adresi mi (localhost değil)?`
+          : mesaj,
+      )
     } finally {
       setYazicilarYukleniyor(false)
     }
   }
 
-  async function handleTestBaski() {
+  async function kopruDplGonder(dpl: string, basariMesaji: string) {
     if (!form.yazici.kopru_adresi.trim()) {
       setTestSonucu({ basarili: false, mesaj: 'Köprü sunucu adresini girin.' })
       return
@@ -274,11 +177,11 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 10000)
     try {
-      const body: Record<string, unknown> = { dpl: dplCiktisi }
+      const body: Record<string, unknown> = { dpl }
       if (usb) {
         body.yazici_adi = usb
       } else {
-        body.ip   = form.yazici.ip_adresi.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+        body.ip = form.yazici.ip_adresi.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
         body.port = form.yazici.port
       }
       const res = await fetch(kopruUrl, {
@@ -289,7 +192,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
       })
       const data = await res.json()
       if (data?.hata) throw new Error(data.hata)
-      setTestSonucu({ basarili: true, mesaj: data?.mesaj ?? 'Test etiketi başarıyla gönderildi.' })
+      setTestSonucu({ basarili: true, mesaj: data?.mesaj ?? basariMesaji })
     } catch (e) {
       const mesaj = e instanceof Error ? e.message : 'Bağlantı hatası.'
       const zaman_asimi = mesaj.includes('abort') || mesaj.includes('AbortError')
@@ -299,7 +202,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
         mesaj: zaman_asimi
           ? `Bağlantı zaman aşımı (10s) — ${form.yazici.kopru_adresi}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT} adresine ulaşılamıyor. Köprü servisi çalışıyor mu?`
           : kopruHatasi
-          ? 'Köprü servisi bulunamadı. Yazıcı bilgisayarında yazici-kopru.exe çalışıyor mu?'
+          ? 'Köprü servisi bulunamadı. Yazıcı bilgisayarında node yazici-kopru.js çalışıyor mu?'
           : mesaj,
       })
     } finally {
@@ -308,28 +211,73 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
     }
   }
 
+  async function guvenliTestGonder(uret: () => string, basariMesaji: string) {
+    try {
+      await kopruDplGonder(uret(), basariMesaji)
+    } catch (e) {
+      setTestSonucu({ basarili: false, mesaj: e instanceof Error ? e.message : 'DPL üretilemedi.' })
+    }
+  }
+
+  async function handleKalibrasyonTesti() {
+    await guvenliTestGonder(() => dplKonumKalibrasyonUret(form), 'Konum kalibrasyon etiketi gönderildi.')
+  }
+
+  async function handleMetinTesti() {
+    await guvenliTestGonder(() => dplMetinOlcekTestiUret(form), '1×1, 2×2 ve 3×3 metin testi gönderildi.')
+  }
+
+  async function handleBarkodTesti() {
+    await guvenliTestGonder(
+      () => dplUret(form, ORNEK_ETIKET_VERI, { sadece_alan: 'barkod', paneli_zorla: true }),
+      'Paneldeki barkod ayarlarıyla test gönderildi.',
+    )
+  }
+
+  async function handleSeciliAlanTesti() {
+    if (!seciliAlan) return
+    await guvenliTestGonder(
+      () => dplUret(form, ORNEK_ETIKET_VERI, { sadece_alan: seciliAlan, paneli_zorla: true }),
+      `${ETIKET_ALAN_META[seciliAlan].baslik} alan testi gönderildi.`,
+    )
+  }
+
+  async function handleTestBaski() {
+    if (dplSonucu.hata) {
+      setTestSonucu({ basarili: false, mesaj: dplSonucu.hata })
+      return
+    }
+    await kopruDplGonder(dplSonucu.dpl, 'Tam etiket testi başarıyla gönderildi.')
+  }
+
   // Canlı form değişikliklerini üst bileşene bildir
   useEffect(() => {
     onFormChange?.(form)
   }, [form, onFormChange])
 
-  function toggle(b: keyof typeof bolumler) {
-    setBolumler(prev => ({ ...prev, [b]: !prev[b] }))
+  function toggle(b: keyof BolumlerState) {
+    setBolumler(prev => {
+      const next = { ...prev, [b]: !prev[b] }
+      bolumlerKaydet(next)
+      return next
+    })
   }
 
   function setYazici(key: keyof typeof form.yazici, val: string | number) {
     setForm(f => ({ ...f, yazici: { ...f.yazici, [key]: val } }))
   }
 
-  function setBoyut(key: keyof typeof form.boyut, val: number) {
-    setForm(f => ({ ...f, boyut: { ...f.boyut, [key]: val } }))
-  }
-
-  function setIcerik(key: keyof typeof form.icerik, val: boolean) {
-    setForm(f => ({ ...f, icerik: { ...f.icerik, [key]: val } }))
-  }
-
   async function handleKaydet() {
+    const hatalar = etiketYerlesimUyarilari(form, ORNEK_ETIKET_VERI).filter(uyari => uyari.seviye === 'hata')
+    if (hatalar.length) {
+      setDogrulamaHatasi(hatalar.map(uyari => uyari.mesaj).join(' '))
+      return
+    }
+    if (dplSonucu.hata) {
+      setDogrulamaHatasi(dplSonucu.hata)
+      return
+    }
+    setDogrulamaHatasi(null)
     const ok = await onKaydet(form)
     if (ok) {
       setBasarili(true)
@@ -337,17 +285,23 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
     }
   }
 
-  const dplCiktisi = useMemo(() => dplUret(form, ORNEK_VERI), [form])
+  const dplSonucu = useMemo(() => {
+    try {
+      return { dpl: dplUret(form, ORNEK_ETIKET_VERI), hata: null as string | null }
+    } catch (e) {
+      return { dpl: '', hata: e instanceof Error ? e.message : 'DPL üretilemedi.' }
+    }
+  }, [form])
 
   return (
-    <div className="space-y-3 max-w-xl">
+    <div className="max-w-6xl space-y-4">
       {/* Yazıcı Bağlantısı */}
       <Bolum icon={Wifi} baslik="Yazıcı Bağlantısı" acik={bolumler.yazici} onToggle={() => toggle('yazici')}>
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex gap-2 text-xs text-blue-700">
             <Info size={14} className="shrink-0 mt-0.5" />
             <span>
-              Yazıcının bağlı olduğu bilgisayara <strong>yazici-kopru.exe</strong>'yi kopyalayıp çalıştırın.<br />
+              Yazıcının bağlı olduğu bilgisayarda <strong>node yazici-kopru.js</strong> çalıştırın.<br />
               • <strong>USB yazıcı:</strong> Köprü Sunucu Adresi + Windows Yazıcı Adı yeterli.<br />
               • <strong>Ağ yazıcısı:</strong> Köprü Sunucu Adresi + Yazıcı IP + Port kullanın.
             </span>
@@ -355,7 +309,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Köprü Sunucu Adresi
-              <span className="ml-1 font-normal text-gray-400">(yazici-kopru.exe hangi bilgisayarda?)</span>
+              <span className="ml-1 font-normal text-gray-400">(yazici-kopru.js hangi bilgisayarda?)</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -474,49 +428,15 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
         </div>
       </Bolum>
 
-      {/* Etiket Boyutu */}
-      <Bolum icon={Tag} baslik="Etiket Boyutu" acik={bolumler.boyut} onToggle={() => toggle('boyut')}>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Genişlik (mm)</label>
-            <input
-              type="number"
-              value={form.boyut.genislik_mm}
-              onChange={e => setBoyut('genislik_mm', Number(e.target.value))}
-              min={20}
-              max={300}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Yükseklik (mm)</label>
-            <input
-              type="number"
-              value={form.boyut.yukseklik_mm}
-              onChange={e => setBoyut('yukseklik_mm', Number(e.target.value))}
-              min={20}
-              max={300}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-        <p className="mt-2 text-xs text-gray-400">
-          Yazıcınızdaki kağıt/etiket boyutuna göre ayarlayın (Datamax M-serisi için tipik: 100×50 mm).
-        </p>
-      </Bolum>
-
-      {/* Etiket İçeriği */}
-      <Bolum icon={LayoutTemplate} baslik="Etiket İçeriği" acik={bolumler.icerik} onToggle={() => toggle('icerik')}>
-        <div className="space-y-0.5">
-          <IcerikSatiri label="Barkod (Code 128 — kısa GLS)" kontrol={form.icerik.barkod} onChange={v => setIcerik('barkod', v)} />
-          <IcerikSatiri label="Kısa GLS / Sıra No" kontrol={form.icerik.cam_kodu} onChange={v => setIcerik('cam_kodu', v)} />
-          <IcerikSatiri label="Cam Tipi (örn. 4+16+4 Temp Isıcam)" kontrol={form.icerik.cam_tipi} onChange={v => setIcerik('cam_tipi', v)} />
-          <IcerikSatiri label="Boyut (Genişlik × Yükseklik mm)" kontrol={form.icerik.boyut} onChange={v => setIcerik('boyut', v)} />
-          <IcerikSatiri label="Müşteri Adı" kontrol={form.icerik.musteri_adi} onChange={v => setIcerik('musteri_adi', v)} />
-          <IcerikSatiri label="Sıra Numarası" kontrol={form.icerik.sira_no} onChange={v => setIcerik('sira_no', v)} />
-          <IcerikSatiri label="Sipariş Numarası" kontrol={form.icerik.siparis_no} onChange={v => setIcerik('siparis_no', v)} />
-          <IcerikSatiri label="Baskı Tarihi" kontrol={form.icerik.tarih} onChange={v => setIcerik('tarih', v)} />
-        </div>
+      {/* Hassas etiket yerleşimi */}
+      <Bolum icon={Crosshair} baslik="Hassas Etiket Yerleşimi" acik={bolumler.yerlesim} onToggle={() => toggle('yerlesim')}>
+        <EtiketYerlesimEditor
+          ayarlar={form}
+          veri={ORNEK_ETIKET_VERI}
+          onChange={setForm}
+          seciliAlan={seciliAlan}
+          onSeciliAlanChange={setSeciliAlan}
+        />
       </Bolum>
 
       {/* Yazdırma Koşulu */}
@@ -548,35 +468,65 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
 
       {/* Gelişmiş: DPL Şablonu */}
       <Bolum icon={Printer} baslik="Gelişmiş — DPL Şablonu" acik={bolumler.gelismis} onToggle={() => toggle('gelismis')}>
-        <div className="space-y-3">
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex gap-2 text-xs text-amber-700">
-            <Info size={14} className="shrink-0 mt-0.5" />
-            <span>
-              Boş bırakırsanız yukarıdaki ayarlardan otomatik DPL komutu üretilir.
-              Değişkenler: <code className="bg-amber-100 px-0.5 rounded">{'{cam_kodu}'}</code>{' '}
-              <code className="bg-amber-100 px-0.5 rounded">{'{musteri}'}</code>{' '}
-              <code className="bg-amber-100 px-0.5 rounded">{'{boyut}'}</code>{' '}
-              <code className="bg-amber-100 px-0.5 rounded">{'{sira_no}'}</code>{' '}
-              <code className="bg-amber-100 px-0.5 rounded">{'{siparis_no}'}</code>{' '}
-              <code className="bg-amber-100 px-0.5 rounded">{'{tarih}'}</code>
-            </span>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+            <button
+              type="button"
+              onClick={() => setForm(current => ({ ...current, dpl_modu: 'panel' }))}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${form.dpl_modu === 'panel' ? 'bg-white text-blue-700 shadow-sm ring-1 ring-gray-200' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              Görsel paneli kullan
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm(current => ({ ...current, dpl_modu: 'ozel' }))}
+              className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${form.dpl_modu === 'ozel' ? 'bg-white text-amber-700 shadow-sm ring-1 ring-amber-200' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              Uzman DPL şablonu
+            </button>
           </div>
-          <textarea
-            rows={8}
-            placeholder={"Örnek (Datamax M-4206):\n\\x02L\\r\\nD11\\r\\n1A11100500030{cam_kodu}\\r\\n1A11100900030{musteri}\\r\\n1Bj20080014000030{cam_kodu}\\r\\nE\\r\\n"}
-            value={form.dpl_sablonu}
-            onChange={e => setForm(f => ({ ...f, dpl_sablonu: e.target.value }))}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+
+          {form.dpl_modu === 'ozel' ? (
+            <>
+              <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span><strong>Görsel panel devre dışı.</strong> Tam etiket ve üretim baskısı aşağıdaki ham şablonu kullanır. Eski/bozuk bir şablon tam etiketin boş çıkmasına neden olabilir.</span>
+              </div>
+              <div className="text-xs text-gray-600">
+                Değişkenler: <code className="rounded bg-gray-100 px-1">{'{cam_kodu}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{cam_tipi}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{cari_adi}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{alt_musteri}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{siparis_no}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{poz}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{liste_adedi}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{batch_sira}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{boyut}'}</code>{' '}
+                <code className="rounded bg-gray-100 px-1">{'{tarih}'}</code>
+              </div>
+              <textarea
+                rows={10}
+                placeholder={"Örnek (Datamax M-4206):\n\\x02L\\r\nH10\\r\nD22\\r\nm\\r\n122200000500050{cam_kodu}\\r\nQ0001\\r\nE\\r"}
+                value={form.dpl_sablonu}
+                onChange={e => setForm(f => ({ ...f, dpl_sablonu: e.target.value }))}
+                className="w-full rounded-lg border border-amber-300 px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-amber-200"
+              />
+            </>
+          ) : (
+            <div className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
+              <span>Hassas yerleşim panelindeki X/Y, font, barkod ve kalibrasyon değerleri doğrudan DPL'ye dönüştürülüyor.</span>
+            </div>
+          )}
+
           <details className="group">
             <summary className="text-xs text-blue-600 cursor-pointer hover:underline flex items-center gap-1">
-              <RefreshCw size={12} /> Otomatik üretilen DPL çıktısını göster
+              <RefreshCw size={12} /> Şu anda gönderilecek DPL çıktısını göster
             </summary>
             <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto whitespace-pre-wrap">
-              {dplCiktisi
-                .replace(/\x02/g, '<STX>')
-                .replace(/\r\n/g, '↵\n')
-              }
+              {dplSonucu.hata
+                ? `HATA: ${dplSonucu.hata}`
+                : dplSonucu.dpl.replace(/\x02/g, '<STX>').replace(/\r/g, '↵\n')}
             </pre>
           </details>
         </div>
@@ -588,15 +538,51 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex gap-2 text-xs text-blue-700">
             <Info size={14} className="shrink-0 mt-0.5" />
             <span>
-              Mevcut ayarlarla test etiketi gönderir. Yazıcının bağlı olduğu bilgisayarda
-              {' '}<strong>yazici-kopru.exe</strong> servisinin çalışıyor olması gerekir.
+              Önerilen sıra: konum kalibrasyonu → metin ölçekleri → barkod → seçili alan → tam etiket.
+              İlk dört test görsel paneli zorunlu kullanır; tam etiket seçili DPL modunu kullanır.<br />
               Köprü: <strong>{form.yazici.kopru_adresi || '—'}:{form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}</strong>
               {' → '}
               Yazıcı: <strong>{form.yazici.yazici_adi || form.yazici.ip_adresi || '—'}</strong>
             </span>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleKalibrasyonTesti}
+              disabled={testGonderiyor}
+              className="flex items-center gap-2 rounded-lg border border-blue-400 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+            >
+              <Ruler size={13} />
+              {testGonderiyor ? 'Gönderiliyor…' : '1. Konum Kalibrasyonu'}
+            </button>
+            <button
+              type="button"
+              onClick={handleMetinTesti}
+              disabled={testGonderiyor}
+              className="flex items-center gap-2 px-3 py-2 border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              <FlaskConical size={13} />
+              {testGonderiyor ? 'Gönderiliyor…' : '2. Metin Ölçekleri'}
+            </button>
+            <button
+              type="button"
+              onClick={handleBarkodTesti}
+              disabled={testGonderiyor}
+              className="flex items-center gap-2 px-3 py-2 border border-orange-400 text-orange-700 bg-orange-50 hover:bg-orange-100 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              <FlaskConical size={13} />
+              {testGonderiyor ? 'Gönderiliyor…' : '3. Barkod Testi'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSeciliAlanTesti}
+              disabled={testGonderiyor || !seciliAlan}
+              className="flex items-center gap-2 rounded-lg border border-violet-400 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 transition hover:bg-violet-100 disabled:opacity-50"
+            >
+              <MousePointer2 size={13} />
+              {testGonderiyor ? 'Gönderiliyor…' : seciliAlan ? `4. Seçili: ${ETIKET_ALAN_META[seciliAlan].kisa}` : '4. Seçili alan yok'}
+            </button>
             <button
               type="button"
               onClick={handleTestBaski}
@@ -606,28 +592,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
               {testGonderiyor
                 ? <RefreshCw size={15} className="animate-spin" />
                 : <Send size={15} />}
-              {testGonderiyor ? 'Gönderiliyor…' : 'Test Etiketi Gönder'}
-            </button>
-            <button
-              type="button"
-              disabled={testGonderiyor}
-              onClick={async () => {
-                if (!form.yazici.kopru_adresi.trim()) return
-                const usb = form.yazici.yazici_adi.trim()
-                const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}/yazdir`
-                // Minimal DPL: Datamax M-Class, heat 15, dot size 1x1, en sade field format
-                const minimalDpl = "\x02H15\r\n\x02L\r\nD11\r\n1A11100500030KOPRU TEST OK\r\n1A1110100003037\r\nE\r\n"
-                const body = usb ? { yazici_adi: usb, dpl: minimalDpl } : { ip: form.yazici.ip_adresi, port: form.yazici.port, dpl: minimalDpl }
-                try {
-                  const res = await fetch(kopruUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) })
-                  const data = await res.json()
-                  setTestSonucu({ basarili: !data?.hata, mesaj: data?.hata ?? data?.mesaj ?? 'Minimal test gönderildi' })
-                } catch (e) { setTestSonucu({ basarili: false, mesaj: e instanceof Error ? e.message : 'Hata' }) }
-              }}
-              className="flex items-center gap-2 px-3 py-2 border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
-            >
-              <FlaskConical size={13} />
-              Minimal Test (sadece metin)
+              {testGonderiyor ? 'Gönderiliyor…' : `5. Tam Etiket (${form.dpl_modu === 'ozel' ? 'özel DPL' : 'panel'})`}
             </button>
           </div>
 
@@ -649,10 +614,9 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
               <RefreshCw size={12} /> Gönderilecek DPL komutunu göster
             </summary>
             <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto whitespace-pre-wrap">
-              {dplCiktisi
-                .replace(/\x02/g, '<STX>')
-                .replace(/\r\n/g, '↵\n')
-              }
+              {dplSonucu.hata
+                ? `HATA: ${dplSonucu.hata}`
+                : dplSonucu.dpl.replace(/\x02/g, '<STX>').replace(/\r/g, '↵\n')}
             </pre>
           </details>
         </div>
@@ -662,6 +626,12 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
       {hata && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
           {hata}
+        </div>
+      )}
+      {dogrulamaHatasi && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <span>{dogrulamaHatasi}</span>
         </div>
       )}
       {basarili && (

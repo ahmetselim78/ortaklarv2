@@ -1,15 +1,20 @@
 import { useEffect, useLayoutEffect, useState, useMemo } from 'react'
 import {
   X, Download, ChevronDown, ChevronRight,
-  Package, Layers, Square, Calendar,
+  Package, Layers, Square, Calendar, Droplets,
 } from 'lucide-react'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
 import type { Siparis } from '@/types/siparis'
 import { getBatchDetaylari } from '@/hooks/useUretim'
-import { exportOptiIMP, exportCitaBukumCSV, exportTarihiGuncelle } from '@/services/exportService'
-import { optiExportTurleri } from '@/lib/optiExport'
+import {
+  exportOptiIMP,
+  exportCitaBukumCSV,
+  exportTarihiGuncelle,
+  OptiExportKritikHatasi,
+} from '@/services/exportService'
+import { optiExportAnalizEt } from '@/lib/optiExport'
 import { useOptiExportAyarlari } from '@/hooks/useOptiExportAyarlari'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { fizikselGlsKodu } from '@/lib/siparisDetay'
 import { aktifCitaStoklari } from '@/lib/cam'
@@ -18,7 +23,13 @@ import { useStok } from '@/hooks/useStok'
 import { useCari } from '@/hooks/useCari'
 import SiparisDetayModal from '@/components/siparis/SiparisDetayModal'
 import StatusBadge from '@/components/ui/StatusBadge'
+import YikamaAdetBadge from '@/components/ui/YikamaAdetBadge'
 import { TableSkeleton } from '@/components/ui/Skeleton'
+import {
+  camTarananSayisi,
+  tarananAdetHesapla,
+  yikamaLogSayilariGetir,
+} from '@/lib/yikamaLoglari'
 
 interface Props {
   emir: UretimEmri
@@ -27,13 +38,15 @@ interface Props {
   onGuncellendi: () => void
 }
 
+type DetayWithYikama = UretimEmriDetay & { taranan_adet: number }
+
 type SiparisGrup = {
   key: string
   musteriAd: string
   altMusteri: string | null
   siparisNo: string
   siparisId: string
-  satirlar: UretimEmriDetay[]
+  satirlar: DetayWithYikama[]
 }
 
 function toplamM2(detaylar: UretimEmriDetay[]): number {
@@ -49,7 +62,7 @@ function toplamAdet(detaylar: UretimEmriDetay[]): number {
   return detaylar.reduce((sum, d) => sum + (d.siparis_detaylari?.adet ?? 1), 0)
 }
 
-function gruplariOlustur(detaylar: UretimEmriDetay[]): SiparisGrup[] {
+function gruplariOlustur(detaylar: DetayWithYikama[]): SiparisGrup[] {
   const liste: SiparisGrup[] = []
   for (const d of detaylar) {
     const sip = d.siparis_detaylari?.siparisler
@@ -94,8 +107,9 @@ export default function UretimDetayModal({
     }
   }, [])
 
-  const [detaylar, setDetaylar] = useState<UretimEmriDetay[]>([])
+  const [detaylar, setDetaylar] = useState<DetayWithYikama[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
+  const [yikamaLogHata, setYikamaLogHata] = useState(false)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [secilenSiparis, setSecilenSiparis] = useState<Siparis | null>(null)
@@ -104,10 +118,14 @@ export default function UretimDetayModal({
   const { ayarlar: optiAyarlar, sayacArttir } = useOptiExportAyarlari()
   const citaStoklar = useMemo(() => aktifCitaStoklari(stoklar), [stoklar])
 
-  const exportTurleri = useMemo(
-    () => optiExportTurleri(detaylar, optiAyarlar.fam_haritasi),
+  const exportAnaliz = useMemo(
+    () => optiExportAnalizEt(detaylar, optiAyarlar.fam_haritasi),
     [detaylar, optiAyarlar.fam_haritasi],
   )
+  const exportTurleri = exportAnaliz.turler
+  const exportSorunlari = exportAnaliz.sorunlar
+  const exportKritikVar = exportAnaliz.kritikVar
+  const exportUyarilari = exportSorunlari.filter((s) => s.seviye === 'uyari')
 
   const handleSiparisAc = async (siparisId: string) => {
     const { data, error } = await supabase
@@ -121,13 +139,33 @@ export default function UretimDetayModal({
   useEffect(() => {
     let iptal = false
     setYukleniyor(true)
+    setYikamaLogHata(false)
     setDetaylar([])
     setKapaliGruplar(new Set())
 
-    getBatchDetaylari(emir.id).then((data) => {
+    getBatchDetaylari(emir.id).then(async (data) => {
       if (iptal) return
-      const yeniGruplar = gruplariOlustur(data)
-      setDetaylar(data)
+
+      let logMap = new Map<string, number>()
+      try {
+        logMap = await yikamaLogSayilariGetir([emir.id])
+      } catch (error) {
+        console.error('Yıkama logları alınamadı:', error)
+        if (!iptal) setYikamaLogHata(true)
+      }
+
+      const enriched: DetayWithYikama[] = data.map((d) => {
+        const cam = d.siparis_detaylari
+        const adet = cam?.adet ?? 1
+        return {
+          ...d,
+          taranan_adet: tarananAdetHesapla(cam?.uretim_durumu, adet, d.id, logMap),
+        }
+      })
+
+      if (iptal) return
+      const yeniGruplar = gruplariOlustur(enriched)
+      setDetaylar(enriched)
       setKapaliGruplar(new Set(yeniGruplar.map((g) => g.key)))
       setYukleniyor(false)
     })
@@ -156,19 +194,59 @@ export default function UretimDetayModal({
         hedefFam,
         optiAyarlar.sayac,
         optiAyarlar.fam_haritasi,
-        optiAyarlar.cita_dusme,
       )
       await sayacArttir()
       await exportTarihiGuncelle(emir.id)
       onGuncellendi()
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Export sırasında hata oluştu')
+      if (err instanceof OptiExportKritikHatasi) {
+        const mesajlar = err.sorunlar.map((s) => `• ${s.mesaj}`).join('\n')
+        alert(`IMP export durduruldu — kritik sorunlar:\n\n${mesajlar}`)
+      } else if (err instanceof Error && err.name === 'OptiPaneCozumlemeHatasi') {
+        const paneErr = err as import('@/lib/optiExport').OptiPaneCozumlemeHatasi
+        alert(`${paneErr.message}\n\nBelirsiz pane: ${paneErr.belirsizPane}`)
+      } else if (err instanceof Error && err.name === 'OptiExportSiraNoHatasi') {
+        const siraErr = err as import('@/lib/optiExport').OptiExportSiraNoHatasi
+        alert(`${siraErr.message}\n\nSatır kimliği: ${siraErr.detayId}`)
+      } else {
+        alert(err instanceof Error ? err.message : 'Export sırasında hata oluştu')
+      }
     } finally {
       setExportYapiliyor(false)
     }
   }
 
   const gruplar = useMemo(() => gruplariOlustur(detaylar), [detaylar])
+
+  const yikamaOzeti = useMemo(() => {
+    let taranan = 0
+    let toplam = 0
+    for (const d of detaylar) {
+      const adet = d.siparis_detaylari?.adet ?? 1
+      toplam += adet
+      taranan += camTarananSayisi({
+        uretim_durumu: d.siparis_detaylari?.uretim_durumu,
+        adet,
+        taranan_adet: d.taranan_adet,
+      })
+    }
+    return { taranan, toplam }
+  }, [detaylar])
+
+  const grupYikamaOzeti = (satirlar: DetayWithYikama[]) => {
+    let taranan = 0
+    let toplam = 0
+    for (const d of satirlar) {
+      const adet = d.siparis_detaylari?.adet ?? 1
+      toplam += adet
+      taranan += camTarananSayisi({
+        uretim_durumu: d.siparis_detaylari?.uretim_durumu,
+        adet,
+        taranan_adet: d.taranan_adet,
+      })
+    }
+    return { taranan, toplam }
+  }
 
   const toggleGrup = (key: string) => {
     setKapaliGruplar((prev) => {
@@ -207,25 +285,46 @@ export default function UretimDetayModal({
         </div>
 
         {/* Özet kartları */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-6 py-4 border-b border-gray-100 shrink-0 min-h-[88px]">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-6 py-4 border-b border-gray-100 shrink-0 min-h-[88px]">
           {yukleniyor ? (
-            Array.from({ length: 4 }).map((_, i) => (
+            Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-[72px] rounded-xl bg-gray-100 animate-pulse" />
             ))
           ) : detaylar.length > 0 ? (
             [
               { icon: Package, label: 'Sipariş Adedi', value: String(gruplar.length) },
               { icon: Layers, label: 'Toplam Adet', value: String(toplamAdet(detaylar)) },
+              {
+                icon: Droplets,
+                label: 'Yıkama İlerlemesi',
+                value: yikamaLogHata
+                  ? '—'
+                  : `${yikamaOzeti.taranan} / ${yikamaOzeti.toplam}`,
+                progress: !yikamaLogHata && yikamaOzeti.toplam > 0
+                  ? (yikamaOzeti.taranan / yikamaOzeti.toplam) * 100
+                  : null,
+              },
               { icon: Calendar, label: 'Export Tarihi', value: emir.export_tarihi ? formatDate(emir.export_tarihi) : '—' },
               { icon: Square, label: 'Toplam m²', value: toplamM2(detaylar).toFixed(2) },
-            ].map(({ icon: Icon, label, value }) => (
+            ].map(({ icon: Icon, label, value, progress }) => (
               <div key={label} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 border border-gray-100">
                 <div className="p-2 rounded-lg bg-white border border-gray-100 text-gray-500">
                   <Icon size={16} />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-xs text-gray-500">{label}</p>
                   <p className="text-lg font-semibold text-gray-900 tabular-nums">{value}</p>
+                  {progress != null && (
+                    <div className="mt-1.5 w-full bg-gray-200 rounded-full h-1">
+                      <div
+                        className={cn(
+                          'h-1 rounded-full transition-all',
+                          progress >= 100 ? 'bg-emerald-500' : 'bg-cyan-500',
+                        )}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -238,8 +337,40 @@ export default function UretimDetayModal({
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Export</p>
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">PerfectCut <span className="text-xs font-normal text-gray-400">(IMP)</span></p>
+              {exportKritikVar && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 space-y-1">
+                  <p className="font-medium">IMP export engellendi — kritik sorunlar:</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {exportSorunlari.filter((s) => s.seviye === 'kritik').map((s) => (
+                      <li key={`${s.kod}-${s.stokKod}-${s.fam}`}>
+                        {s.stokKod ? `${s.stokKod}: ` : ''}{s.mesaj}
+                        {s.etkilenenSatir > 0 && (
+                          <span className="text-red-600/80"> ({s.etkilenenSatir} satır, {s.etkilenenAdet} adet)</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {!exportKritikVar && exportUyarilari.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+                  <p className="font-medium">Export uyarıları:</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {exportUyarilari.map((s) => (
+                      <li key={`${s.kod}-${s.stokKod}-${s.fam}`}>
+                        {s.stokKod ? `${s.stokKod}: ` : ''}{s.mesaj}
+                        {s.etkilenenSatir > 0 && (
+                          <span className="text-amber-700/80"> ({s.etkilenenSatir} satır, {s.etkilenenAdet} adet)</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {exportTurleri.length === 0 ? (
-                <p className="text-xs text-gray-400">Export edilebilir cam türü bulunamadı.</p>
+                <p className="text-xs text-gray-400">
+                  {exportKritikVar ? 'Kritik sorunlar giderilmeden export yapılamaz.' : 'Export edilebilir cam türü bulunamadı.'}
+                </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {exportTurleri.map((tur) => (
@@ -247,7 +378,7 @@ export default function UretimDetayModal({
                       key={tur.anahtar}
                       type="button"
                       onClick={() => handleOptiExport(tur.anahtar)}
-                      disabled={exportYapiliyor}
+                      disabled={exportYapiliyor || exportKritikVar}
                       className="inline-flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 disabled:opacity-40 transition-colors text-sm"
                     >
                       <Download size={14} className="text-orange-600 shrink-0" />
@@ -297,6 +428,7 @@ export default function UretimDetayModal({
               {gruplar.map((grup) => {
                 const kapali = kapaliGruplar.has(grup.key)
                 const grupAdet = grup.satirlar.reduce((s, d) => s + (d.siparis_detaylari?.adet ?? 1), 0)
+                const grupYikama = grupYikamaOzeti(grup.satirlar)
                 const baslangicSira = globalSira
                 globalSira += grup.satirlar.length
 
@@ -342,7 +474,9 @@ export default function UretimDetayModal({
                         </div>
                       )}
                       <span className="text-xs text-gray-500 tabular-nums shrink-0">
-                        {grupAdet} adet
+                        {yikamaLogHata
+                          ? `${grupAdet} adet`
+                          : `${grupYikama.taranan} / ${grupYikama.toplam} adet`}
                       </span>
                     </div>
 
@@ -356,6 +490,7 @@ export default function UretimDetayModal({
                               <th className="px-4 py-2.5">Cam Cinsi</th>
                               <th className="px-4 py-2.5 w-32">Boyut (mm)</th>
                               <th className="px-4 py-2.5 w-16 text-right">Adet</th>
+                              <th className="px-4 py-2.5 w-24">Yıkama</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -378,6 +513,14 @@ export default function UretimDetayModal({
                                     {cam?.genislik_mm} × {cam?.yukseklik_mm}
                                   </td>
                                   <td className="px-4 py-2.5 text-right text-gray-700 tabular-nums">{cam?.adet}</td>
+                                  <td className="px-4 py-2.5">
+                                    <YikamaAdetBadge
+                                      taranan={d.taranan_adet}
+                                      toplam={cam?.adet ?? 1}
+                                      compact
+                                      veriAlinamadi={yikamaLogHata}
+                                    />
+                                  </td>
                                 </tr>
                               )
                             })}
