@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, Eye, EyeOff, KeyRound } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, Eye, EyeOff, KeyRound, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { r2Upload, R2UploadHata } from '@/lib/r2Upload'
 import type { HrPersonel, YeniPersonel } from '@/types/saatlikUretim'
@@ -24,6 +24,13 @@ const personelSchema = z.object({
 })
 
 type PersonelFormDegerleri = z.infer<typeof personelSchema>
+
+interface YetkiIstasyonu {
+  id: string
+  ad: string
+  sira_no: number
+  aktif: boolean
+}
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
 
@@ -218,6 +225,8 @@ export default function PersonelYonetimiPanel() {
   const [silmeOnayId, setSilmeOnayId] = useState<string | null>(null)
   const [duzenlePersonel, setDuzenlePersonel] = useState<HrPersonel | null>(null)
   const [sifreGoster, setSifreGoster] = useState(false)
+  const [istasyonlar, setIstasyonlar] = useState<YetkiIstasyonu[]>([])
+  const [yetkiliIstasyonIds, setYetkiliIstasyonIds] = useState<string[]>([])
 
   const {
     register,
@@ -232,14 +241,25 @@ export default function PersonelYonetimiPanel() {
   })
 
   const fotoUrl = watch('foto_url')
+  const girisSifresi = watch('giris_sifresi')
 
   // ── Veri getir ────────────────────────────────────────────────────────────
   const getir = useCallback(async () => {
     setYukleniyor(true)
     try {
-      const { data, error } = await supabase.from('hr_personel').select('*').order('ad_soyad')
-      if (error) throw error
-      setPersoneller((data ?? []) as HrPersonel[])
+      const [personelRes, istasyonRes] = await Promise.all([
+        supabase
+          .from('hr_personel')
+          .select('*, hr_personel_istasyon_yetkileri(istasyon_id)')
+          .order('ad_soyad'),
+        supabase.from('uretim_istasyonlari').select('id, ad, sira_no, aktif').eq('aktif', true).order('sira_no'),
+      ])
+      if (personelRes.error) throw personelRes.error
+      if (istasyonRes.error) throw istasyonRes.error
+      const aktifIstasyonlar = (istasyonRes.data ?? []) as YetkiIstasyonu[]
+      setPersoneller((personelRes.data ?? []) as HrPersonel[])
+      setIstasyonlar(aktifIstasyonlar)
+      setYetkiliIstasyonIds(aktifIstasyonlar.map(i => i.id))
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Personel listesi yüklenemedi')
     } finally {
@@ -261,11 +281,30 @@ export default function PersonelYonetimiPanel() {
       kullanici_adi: p.kullanici_adi ?? '',
       giris_sifresi: p.giris_sifresi ?? '',
     })
+    setYetkiliIstasyonIds(
+      p.uretim_yetkileri_sinirli
+        ? (p.hr_personel_istasyon_yetkileri ?? []).map(y => y.istasyon_id)
+        : istasyonlar.map(i => i.id),
+    )
   }
 
   const duzenleIptal = () => {
     setDuzenlePersonel(null)
     reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' })
+    setYetkiliIstasyonIds(istasyonlar.map(i => i.id))
+  }
+
+  const istasyonYetkileriniKaydet = async (personelId: string, sifreVar: boolean) => {
+    const { error: silmeHatasi } = await supabase
+      .from('hr_personel_istasyon_yetkileri')
+      .delete()
+      .eq('personel_id', personelId)
+    if (silmeHatasi) throw silmeHatasi
+    if (!sifreVar || yetkiliIstasyonIds.length === 0) return
+    const { error: eklemeHatasi } = await supabase
+      .from('hr_personel_istasyon_yetkileri')
+      .insert(yetkiliIstasyonIds.map(istasyon_id => ({ personel_id: personelId, istasyon_id })))
+    if (eklemeHatasi) throw eklemeHatasi
   }
 
   // ── Personel ekle / güncelle ───────────────────────────────────────────────
@@ -273,6 +312,7 @@ export default function PersonelYonetimiPanel() {
     setKaydediyor(true)
     setHata(null)
     try {
+      const sifreVar = form.giris_sifresi.trim().length > 0
       if (duzenlePersonel) {
         const { error } = await supabase
           .from('hr_personel')
@@ -282,9 +322,11 @@ export default function PersonelYonetimiPanel() {
             rol: form.rol,
             kullanici_adi: form.kullanici_adi?.trim() || null,
             giris_sifresi: form.giris_sifresi?.trim() || null,
+            uretim_yetkileri_sinirli: sifreVar,
           })
           .eq('id', duzenlePersonel.id)
         if (error) throw error
+        await istasyonYetkileriniKaydet(duzenlePersonel.id, sifreVar)
         setDuzenlePersonel(null)
       } else {
         const yeni: YeniPersonel & { kullanici_adi?: string | null; giris_sifresi?: string | null } = {
@@ -294,11 +336,14 @@ export default function PersonelYonetimiPanel() {
           is_aktif: true,
           kullanici_adi: form.kullanici_adi?.trim() || null,
           giris_sifresi: form.giris_sifresi?.trim() || null,
+          uretim_yetkileri_sinirli: sifreVar,
         }
-        const { error } = await supabase.from('hr_personel').insert([yeni])
+        const { data, error } = await supabase.from('hr_personel').insert([yeni]).select('id').single()
         if (error) throw error
+        await istasyonYetkileriniKaydet(data.id, sifreVar)
       }
       reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' })
+      setYetkiliIstasyonIds(istasyonlar.map(i => i.id))
       await getir()
     } catch (e) {
       setHata(e instanceof Error ? e.message : duzenlePersonel ? 'Personel güncellenemedi' : 'Personel eklenemedi')
@@ -426,6 +471,66 @@ export default function PersonelYonetimiPanel() {
             </div>
           </div>
 
+          {girisSifresi.trim() && (
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <Factory size={13} className="text-amber-500" />
+                  <p className="text-xs font-semibold text-gray-700">Üretim Girişi Yetkilendirme</p>
+                </div>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setYetkiliIstasyonIds(istasyonlar.map(i => i.id))}
+                    className="text-blue-600 hover:text-blue-700"
+                  >
+                    Tümünü seç
+                  </button>
+                  <span className="text-gray-300">·</span>
+                  <button
+                    type="button"
+                    onClick={() => setYetkiliIstasyonIds([])}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    Temizle
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-3">
+                Bu kullanıcı üretim girişinde yalnızca seçilen istasyonları görür. Not alanı herkes için açıktır.
+              </p>
+              {istasyonlar.length === 0 ? (
+                <p className="text-xs text-gray-400 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                  Aktif üretim istasyonu bulunamadı.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {istasyonlar.map(istasyon => {
+                    const secili = yetkiliIstasyonIds.includes(istasyon.id)
+                    return (
+                      <label
+                        key={istasyon.id}
+                        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                          secili ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={secili}
+                          onChange={() => setYetkiliIstasyonIds(ids =>
+                            secili ? ids.filter(id => id !== istasyon.id) : [...ids, istasyon.id],
+                          )}
+                          className="rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+                        />
+                        <span className="text-xs font-medium text-gray-700">{istasyon.ad}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Hata */}
           {hata && (
             <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
@@ -499,7 +604,8 @@ export default function PersonelYonetimiPanel() {
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)
+                    if (duzenlePersonel?.id === p.id) duzenleIptal()
+                    else duzenleBaslat(p)
                   }
                 }}
                 className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer focus:outline-none focus:shadow-[inset_0_0_0_2px_rgba(59,130,246,0.35)] ${
@@ -540,7 +646,8 @@ export default function PersonelYonetimiPanel() {
                   type="button"
                   onClick={e => {
                     e.stopPropagation()
-                    duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)
+                    if (duzenlePersonel?.id === p.id) duzenleIptal()
+                    else duzenleBaslat(p)
                   }}
                   title="Düzenle"
                   className={`p-1.5 rounded-lg transition-colors ${

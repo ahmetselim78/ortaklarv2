@@ -8,19 +8,13 @@ import { fizikselGlsKodu } from '@/lib/siparisDetay'
 import { getCamKompozisyon } from '@/lib/cam'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
+import type { EtiketBasimDurumu } from '@/lib/etiketBasim'
 
 /* ========== Yardımcılar ========== */
 
 /** Cari adı + nihai müşteri → görüntü etiketi: "NOVEL — AKYOL LOUNGE" */
 function musteriEtiket(musteri: string, nihai: string): string {
   return nihai ? `${musteri} \u2014 ${nihai}` : musteri
-}
-
-/** "musteri||nihaiMusteri" bileşik anahtarını görüntü etiketine çevirir */
-function musteriKeyToLabel(key: string): string {
-  const sep = key.indexOf('||')
-  if (sep === -1) return key
-  return musteriEtiket(key.slice(0, sep), key.slice(sep + 2))
 }
 
 /* ========== Tipler ========== */
@@ -35,7 +29,9 @@ interface CamKarti {
   adet: number
   ara_bosluk_mm: number | null
   zaman: number
-  etiket_durumu: 'basildi'
+  etiket_durumu: EtiketBasimDurumu
+  etiket_mesaji: string
+  tamirde: boolean
 }
 
 interface BatchCamKumanda {
@@ -74,7 +70,22 @@ interface YeniCamPayload {
   cam_tipi?: string
   genislik_mm?: number
   yukseklik_mm?: number
+  cita_kalinlik_mm?: number | null
   tekrar?: boolean
+  etiket_durumu?: EtiketBasimDurumu
+  etiket_mesaji?: string
+}
+
+interface EtiketDurumuPayload {
+  cam_kodu?: string
+  zaman?: number
+  etiket_durumu?: EtiketBasimDurumu
+  etiket_mesaji?: string
+}
+
+interface TamirOlayPayload {
+  cam_kodu?: string
+  batch_no?: string
 }
 
 /* ========== Bileşen ========== */
@@ -92,14 +103,15 @@ export default function KumandaPaneliPage() {
   const [batchCamlari, setBatchCamlari] = useState<BatchCamKumanda[]>([])
   const [aktifMusteri, setAktifMusteri] = useState<string | null>(null)
   const [tamirCam, setTamirCam] = useState<TamireGonderCam | null>(null)
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // Çıta onay durumu (gösterge ekranından gelir)
+  // Çıta onay durumu (gösterge ekranından gelir) — her zaman görünür
   const [citaOnay, setCitaOnay] = useState<{
     bekliyor: boolean
     eski: number | null
     yeni: number | null
     mevcut: number | null
-  } | null>(null)
+  }>({ bekliyor: false, eski: null, yeni: null, mevcut: null })
 
   // Saat
   useEffect(() => {
@@ -277,6 +289,7 @@ export default function KumandaPaneliPage() {
       .on('broadcast', { event: 'batch_secildi' }, ({ payload }) => {
         batchYukle(payload.batch_id, payload.batch_no)
         setKartlar([])
+        setCitaOnay({ bekliyor: false, eski: null, yeni: null, mevcut: null })
       })
       .on('broadcast', { event: 'yeni_cam' }, ({ payload }) => {
         const p = payload as YeniCamPayload
@@ -289,8 +302,10 @@ export default function KumandaPaneliPage() {
         // Tekrar girilen camlar kartlara eklenmez, sadece sayı güncellenir
         if (!p.tekrar) {
           const yeniKart: CamKarti = {
-            ...(payload as Omit<CamKarti, 'etiket_durumu'>),
-            etiket_durumu: 'basildi',
+            ...(payload as Omit<CamKarti, 'etiket_durumu' | 'etiket_mesaji' | 'tamirde'>),
+            etiket_durumu: p.etiket_durumu ?? 'gonderiliyor',
+            etiket_mesaji: p.etiket_mesaji ?? 'Yazıcı köprüsünden yanıt bekleniyor.',
+            tamirde: false,
           }
           setKartlar(prev => [yeniKart, ...prev].slice(0, 10))
           setFlash(true)
@@ -311,10 +326,40 @@ export default function KumandaPaneliPage() {
           setAktifMusteri(`${p.musteri}||${nihai}`)
         }
         setSonGelenKod(p.cam_kodu ?? null)
+        // Onay beklenmiyorsa aktif çıta mm bilgisini güncelle
+        if (p.cita_kalinlik_mm != null) {
+          setCitaOnay(prev => prev.bekliyor
+            ? prev
+            : { bekliyor: false, eski: null, yeni: null, mevcut: p.cita_kalinlik_mm ?? null })
+        }
+      })
+      .on('broadcast', { event: 'etiket_durumu' }, ({ payload }) => {
+        const p = payload as EtiketDurumuPayload
+        if (!p.cam_kodu || !p.etiket_durumu) return
+        let ilkEslesmeGuncellendi = false
+        setKartlar(prev => prev.map(k => {
+          if (ilkEslesmeGuncellendi || k.cam_kodu !== p.cam_kodu) return k
+          if (p.zaman != null && k.zaman !== p.zaman) return k
+          ilkEslesmeGuncellendi = true
+          return {
+            ...k,
+            etiket_durumu: p.etiket_durumu!,
+            etiket_mesaji: p.etiket_mesaji ?? k.etiket_mesaji,
+          }
+        }))
+      })
+      .on('broadcast', { event: 'cam_tamire_gonderildi' }, ({ payload }) => {
+        const p = payload as TamirOlayPayload
+        if (!p.cam_kodu) return
+        setKartlar(prev => prev.map(k => k.cam_kodu === p.cam_kodu ? { ...k, tamirde: true } : k))
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
-    return () => { supabase.removeChannel(channel) }
+    channelRef.current = channel
+    return () => {
+      channelRef.current = null
+      supabase.removeChannel(channel)
+    }
   }, [batchYukle])
 
   return (
@@ -322,7 +367,7 @@ export default function KumandaPaneliPage() {
       {/* Üst bar */}
       <div
         className="flex items-center justify-between px-6 py-3 border-b shrink-0"
-        style={citaOnay?.bekliyor ? {
+        style={citaOnay.bekliyor ? {
           animation: 'citaUyariPulse 1.2s ease-in-out infinite',
           borderColor: 'rgba(234,179,8,0.6)',
         } : {
@@ -336,39 +381,39 @@ export default function KumandaPaneliPage() {
           {batchNo && (
             <span className="font-mono font-black text-xl text-blue-400 tracking-widest">{batchNo}</span>
           )}
-          {/* Çıta onay durumu göstergesi */}
-          {citaOnay && (
-            citaOnay.bekliyor ? (
-              <div className="flex items-center gap-3 px-5 py-2.5 rounded-xl font-bold bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300">
-                <span className="w-3 h-3 rounded-full bg-yellow-400 shrink-0" />
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[11px] text-yellow-400 uppercase tracking-widest font-black">Çıta — ONAY BEKLİYOR</span>
-                  <span className="tabular-nums text-lg font-black">
-                    {citaOnay.eski ?? '?'} mm → {citaOnay.yeni ?? '?'} mm
-                  </span>
-                </div>
+          {/* Çıta onay durumu — her zaman görünür; normalde yeşil, onayda sarı */}
+          {citaOnay.bekliyor ? (
+            <div className="h-11 flex items-center gap-2 px-3 rounded-xl font-bold bg-yellow-500/20 border border-yellow-400 text-yellow-300">
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 shrink-0 animate-pulse" />
+              <div className="flex flex-col leading-tight min-w-0">
+                <span className="text-[10px] text-yellow-400/80 uppercase tracking-wide">Çıta — Onay bekliyor</span>
+                <span className="tabular-nums text-sm font-black whitespace-nowrap">
+                  {citaOnay.eski ?? '?'} → {citaOnay.yeni ?? '?'} mm
+                </span>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-900/40 border border-emerald-700/60 text-emerald-300">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[10px] text-emerald-500 uppercase tracking-wide">Çıta — Onaylandı</span>
-                  <span className="tabular-nums">{citaOnay.mevcut ?? '?'} mm</span>
-                </div>
+            </div>
+          ) : (
+            <div className="h-11 flex items-center gap-2 px-3 rounded-xl text-sm font-bold bg-emerald-900/60 border border-emerald-700 text-emerald-300">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+              <div className="flex flex-col leading-tight min-w-0">
+                <span className="text-[10px] text-gray-400 uppercase tracking-wide">Çıta — Aktif</span>
+                <span className="tabular-nums whitespace-nowrap">
+                  {citaOnay.mevcut != null ? `${citaOnay.mevcut} mm` : '—'}
+                </span>
               </div>
-            )
+            </div>
           )}
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
+          <div className={`h-11 flex items-center gap-2 px-3 rounded-xl text-sm font-bold ${
             connected ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300' : 'bg-red-900/60 border border-red-700 text-red-300'
           }`}>
-            {connected ? <Wifi size={16} /> : <WifiOff size={16} />}
-            <div className="flex flex-col leading-tight">
+            {connected ? <Wifi size={16} className="shrink-0" /> : <WifiOff size={16} className="shrink-0" />}
+            <div className="flex flex-col leading-tight min-w-0">
               <span className="text-[10px] text-gray-400">SUNUCU</span>
               <span>{connected ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'}</span>
             </div>
           </div>
         </div>
-        <span className="font-mono text-gray-500 text-sm tabular-nums">
+        <span className="font-mono font-bold text-white text-xl tabular-nums tracking-wide">
           {saat.toLocaleTimeString('tr-TR')}
         </span>
       </div>
@@ -381,7 +426,7 @@ export default function KumandaPaneliPage() {
           <div className="px-5 py-3 border-b-2 border-gray-700 shrink-0">
             <p className="text-xs font-black uppercase tracking-widest text-gray-400">Müşteriler</p>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto kumanda-scroll">
             {musteriListesi.length === 0 ? (
               <div className="flex items-center justify-center h-full px-4 text-center">
                 <p className="text-gray-700 text-xs leading-relaxed">
@@ -403,13 +448,13 @@ export default function KumandaPaneliPage() {
                         : 'hover:bg-gray-800/60'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-base font-bold truncate flex-1 min-w-0 ${
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <span className={`text-base font-bold leading-tight whitespace-normal break-words flex-1 min-w-0 ${
                         tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
                       }`}>
                         {m.etiket || '—'}
                       </span>
-                      <span className={`text-sm font-bold tabular-nums shrink-0 ml-2 ${
+                      <span className={`text-sm font-bold tabular-nums shrink-0 ${
                         tamam ? 'text-emerald-300' : aktif ? 'text-blue-300' : 'text-gray-400'
                       }`}>
                         {m.tamamlandi}/{m.toplam}
@@ -431,7 +476,7 @@ export default function KumandaPaneliPage() {
         </div>
 
         {/* ===== ORTA: Cam Kartları ===== */}
-        <div className="flex-1 flex flex-col px-6 py-3 overflow-y-auto gap-2">
+        <div className="flex-1 flex flex-col px-6 py-3 overflow-y-auto gap-2 kumanda-scroll">
           {kartlar.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center">
               {batchId === null ? (
@@ -455,33 +500,58 @@ export default function KumandaPaneliPage() {
           ) : (
             kartlar.map((k) => {
               const batchCam = batchCamlari.find(c => c.cam_kodu === k.cam_kodu)
+              const etiketDurumu = (() => {
+                switch (k.etiket_durumu) {
+                  case 'yaziciya_gonderildi':
+                    return { metin: 'Yazıcıya Gönderildi', renk: 'text-emerald-400', nokta: 'bg-emerald-400' }
+                  case 'basarisiz':
+                    return { metin: 'Baskı Başarısız', renk: 'text-red-400', nokta: 'bg-red-400' }
+                  case 'devre_disi':
+                    return { metin: 'Baskı Devre Dışı', renk: 'text-gray-400', nokta: 'bg-gray-500' }
+                  default:
+                    return { metin: 'Etiket Gönderiliyor', renk: 'text-amber-300', nokta: 'bg-amber-300 animate-pulse' }
+                }
+              })()
               return (
                 <div
                   key={`${k.cam_kodu}-${k.zaman}`}
-                  className="rounded-2xl border-2 p-4 bg-gray-900/70 border-gray-800"
+                  className={`rounded-xl border-2 px-4 py-3 ${
+                    k.tamirde
+                      ? 'tamir-karti-uyari border-red-500 bg-red-950/70'
+                      : 'bg-gray-900/70 border-gray-800'
+                  }`}
                 >
-                  {/* Ust satir: POZ + BOYUT büyük puntolarla + etiket durumu + tamir butonu */}
-                  <div className="flex items-center justify-between gap-4 mb-2.5">
-                    <div className="flex items-center gap-5 min-w-0">
+                  {/* Üst satır: GLS + BOYUT büyük puntolarla + etiket durumu + tamir butonu */}
+                  <div className="flex items-center justify-between gap-4 mb-2">
+                    <div className="flex items-center gap-4 min-w-0">
                       <div className="shrink-0">
-                        <div className="text-[10px] text-amber-500/80 uppercase tracking-widest font-black mb-0.5">POZ</div>
-                        <div className="font-black text-amber-300 text-5xl leading-none tabular-nums">
+                        <div className="text-[10px] text-amber-500/80 uppercase tracking-widest font-black mb-0.5">GLS</div>
+                        <div className="font-black text-amber-300 text-4xl leading-none tabular-nums">
                           {batchCam?.sira_no != null ? `#${batchCam.sira_no}` : '—'}
                         </div>
                       </div>
-                      <div className="h-12 w-px bg-gray-700 shrink-0" />
+                      <div className="h-10 w-px bg-gray-700 shrink-0" />
                       <div className="min-w-0">
                         <div className="text-[10px] text-gray-500 uppercase tracking-widest font-black mb-0.5">BOYUT</div>
-                        <div className="font-black text-white text-5xl leading-none tabular-nums whitespace-nowrap">
+                        <div className="font-black text-white text-4xl leading-none tabular-nums whitespace-nowrap">
                           {k.genislik_mm} × {k.yukseklik_mm}
-                          <span className="text-2xl text-gray-400 font-bold ml-1.5">mm</span>
+                          <span className="text-xl text-gray-400 font-bold ml-1.5">mm</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="flex items-center gap-1.5 text-xs text-green-400 font-bold whitespace-nowrap">
-                        <span className="w-2 h-2 rounded-full bg-green-400" />
-                        Etiket Basıldı
+                      {k.tamirde && (
+                        <span className="flex items-center gap-1.5 text-xs text-red-200 font-black uppercase tracking-wide whitespace-nowrap bg-red-900/70 border border-red-500 rounded-full px-3 py-1.5">
+                          <Wrench size={13} />
+                          Tamire Gönderildi
+                        </span>
+                      )}
+                      <span
+                        className={`flex items-center gap-1.5 text-xs font-bold whitespace-nowrap ${etiketDurumu.renk}`}
+                        title={k.etiket_mesaji}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${etiketDurumu.nokta}`} />
+                        {etiketDurumu.metin}
                       </span>
                       <button
                         onClick={() => batchCam && setTamirCam({
@@ -499,7 +569,7 @@ export default function KumandaPaneliPage() {
                           adet: batchCam.adet,
                         })}
                         disabled={!batchCam}
-                        className="p-2.5 rounded-lg bg-red-900/60 border border-red-700 text-red-400 hover:bg-red-800/80 hover:text-red-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-2 rounded-lg bg-red-900/60 border border-red-700 text-red-400 hover:bg-red-800/80 hover:text-red-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title="Tamire Gönder"
                       >
                         <Wrench size={20} />
@@ -508,34 +578,29 @@ export default function KumandaPaneliPage() {
                   </div>
 
                   {/* Detay grid: ikincil bilgiler daha küçük */}
-                  <div className="grid grid-cols-4 gap-3 pt-2 border-t border-gray-800">
+                  <div className="grid grid-cols-3 gap-4 pt-2 border-t border-gray-700/80">
                     <div>
-                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">MÜŞTERİ</div>
-                      <div className="font-semibold text-gray-300 text-sm truncate">{k.musteri || '—'}</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0.5">POZ</div>
+                      <div className="font-bold text-white text-base leading-tight break-words">{batchCam?.poz || '—'}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">SİPARİŞ</div>
-                      <div className="font-mono text-gray-300 text-sm">{k.siparis_no}</div>
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0.5">CAM TÜRÜ</div>
+                      <div className="font-bold text-white text-base leading-tight break-words">{k.cam_tipi || batchCam?.stok_ad || '—'}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">ÇITA</div>
-                      <div className="font-bold text-amber-300/90 text-sm tabular-nums">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0.5">ÇITA KALINLIĞI</div>
+                      <div className="font-black text-amber-300 text-base leading-tight tabular-nums">
                         {(() => {
-                          const bc = batchCamlari.find(c => c.cam_kodu === k.cam_kodu)
-                          const mm = bc?.cita_kalinlik_mm
+                          const mm = batchCam?.cita_kalinlik_mm
                           if (mm != null) return `${mm} mm`
-                          if (bc?.katman_yapisi) {
-                            const p = bc.katman_yapisi.split('+')
+                          if (batchCam?.katman_yapisi) {
+                            const p = batchCam.katman_yapisi.split('+')
                             const ara = p.length >= 3 ? Number(p[1]) : null
                             if (ara) return `${ara} mm`
                           }
                           return <span className="text-gray-600">—</span>
                         })()} 
                       </div>
-                    </div>
-                    <div>
-                      <div className="text-[9px] text-gray-500 uppercase tracking-wide mb-0.5">GLS KODU</div>
-                      <div className="font-mono text-gray-400 text-sm truncate">{k.cam_kodu}</div>
                     </div>
                   </div>
                 </div>
@@ -550,13 +615,15 @@ export default function KumandaPaneliPage() {
             {aktifMusteri ? (
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-0.5">Seçili Müşteri</p>
-                <p className="text-base font-bold text-white truncate">{musteriKeyToLabel(aktifMusteri)}</p>
+                <p className="text-base font-bold text-white whitespace-normal break-words leading-tight">
+                  {aktifMusteriCamlari[0]?.nihai_musteri || aktifMusteriCamlari[0]?.musteri || '—'}
+                </p>
               </div>
             ) : (
               <p className="text-xs font-black uppercase tracking-widest text-gray-500">Müşteri seçilmedi</p>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto" ref={sagListeRef}>
+          <div className="flex-1 overflow-y-auto kumanda-scroll" ref={sagListeRef}>
             {aktifMusteriCamlari.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-5 py-8">
                 <p className="text-gray-500 text-sm leading-relaxed">
@@ -602,14 +669,9 @@ export default function KumandaPaneliPage() {
                         <p className={`text-2xl font-black leading-tight tabular-nums ${
                           girildi ? 'text-gray-500' : 'text-white'
                         }`}>{c.genislik_mm} × {c.yukseklik_mm}<span className="text-base font-bold ml-1 text-gray-400">mm</span></p>
-                        {c.adet > 1 && (
-                          <p className={`text-sm font-semibold mt-0.5 ${
-                            girildi ? 'text-gray-600' : 'text-gray-400'
-                          }`}>{c.adet} adet</p>
-                        )}
                         {c.stok_ad && (
-                          <p className={`text-xs mt-0.5 truncate ${
-                            girildi ? 'text-gray-600' : 'text-gray-500'
+                          <p className={`text-sm font-semibold mt-0.5 truncate ${
+                            girildi ? 'text-gray-600' : 'text-white'
                           }`}>{c.stok_ad}</p>
                         )}
                       </div>
@@ -635,7 +697,23 @@ export default function KumandaPaneliPage() {
           cam={tamirCam}
           kaynak="kumanda"
           onClose={() => setTamirCam(null)}
-          onSuccess={() => setTamirCam(null)}
+          onSuccess={() => {
+            const gonderilenCam = tamirCam
+            setKartlar(prev => prev.map(k => k.cam_kodu === gonderilenCam.cam_kodu ? { ...k, tamirde: true } : k))
+            void channelRef.current?.send({
+              type: 'broadcast',
+              event: 'cam_tamire_gonderildi',
+              payload: {
+                cam_kodu: gonderilenCam.cam_kodu,
+                batch_no: gonderilenCam.batch_no,
+                musteri: gonderilenCam.musteri,
+                nihai_musteri: gonderilenCam.nihai_musteri,
+                genislik_mm: gonderilenCam.genislik_mm,
+                yukseklik_mm: gonderilenCam.yukseklik_mm,
+              },
+            })
+            setTamirCam(null)
+          }}
         />
       )}
     </div>

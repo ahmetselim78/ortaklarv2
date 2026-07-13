@@ -27,6 +27,34 @@ interface IstasyonSatir {
   fire_adet: number
 }
 
+interface IstasyonTanimi {
+  id: string
+  ad: string
+  sira_no: number
+  fire_var: boolean
+}
+
+interface KayitliIstasyonDegeri {
+  istasyon_id: string
+  adet: number
+  fire_adet: number
+}
+
+interface KayitliAracYuklemesi {
+  arac_id: string | null
+  dis_arac_plakasi: string | null
+  dis_arac_adi: string | null
+  adet: number
+}
+
+interface KayitliGunlukRapor {
+  id: string
+  toplam_personel: number | null
+  notlar: string | null
+  gunluk_uretim_istasyon_kayitlari: KayitliIstasyonDegeri[] | null
+  gunluk_uretim_arac_yuklemeleri: KayitliAracYuklemesi[] | null
+}
+
 interface AracKayit {
   id: string
   plaka: string
@@ -537,15 +565,25 @@ function GunlukRaporFormu({
       setYukleniyor(true)
       setHata(null)
       try {
-        const [istRes, aracRes] = await Promise.all([
+        const [istRes, aracRes, yetkiRes] = await Promise.all([
           supabase.from('uretim_istasyonlari').select('*').eq('aktif', true).order('sira_no'),
           supabase.from('araclar').select('id, plaka, ad').eq('aktif', true).order('plaka'),
+          supabase
+            .from('hr_personel_istasyon_yetkileri')
+            .select('istasyon_id')
+            .eq('personel_id', personel.id),
         ])
         if (istRes.error) throw istRes.error
         if (aracRes.error) throw aracRes.error
+        if (yetkiRes.error) throw yetkiRes.error
 
         const prevIstasyonlar = initialVeri?.istasyonlar ?? []
-        const istasyonList: IstasyonSatir[] = ((istRes.data ?? []) as any[]).map(ist => {
+        const yetkiliIds = personel.uretim_yetkileri_sinirli
+          ? new Set((yetkiRes.data ?? []).map(y => y.istasyon_id))
+          : null
+        const istasyonList: IstasyonSatir[] = ((istRes.data ?? []) as IstasyonTanimi[])
+          .filter(ist => !yetkiliIds || yetkiliIds.has(ist.id))
+          .map(ist => {
           const prev = prevIstasyonlar.find(i => i.id === ist.id)
           return {
             id: ist.id,
@@ -555,7 +593,7 @@ function GunlukRaporFormu({
             adet: prev?.adet ?? 0,
             fire_adet: prev?.fire_adet ?? 0,
           }
-        })
+          })
         setIstasyonlar(istasyonList)
         setAraclar((aracRes.data ?? []) as AracKayit[])
       } catch (err) {
@@ -834,8 +872,6 @@ function OzetEkrani({
   const [hata, setHata] = useState<string | null>(null)
   const [yerelKaydedildi, setYerelKaydedildi] = useState(false)
 
-  const toplamUretim = veri.istasyonlar.reduce((a, s) => a + s.adet, 0)
-  const toplamFire = veri.istasyonlar.filter(s => s.fire_var).reduce((a, s) => a + s.fire_adet, 0)
   const isKaydedildi = veri.kaydedildi || yerelKaydedildi
 
   function aracAdiGoster(a: AracYuklemeForm): string {
@@ -951,20 +987,6 @@ function OzetEkrani({
             </div>
           )}
 
-          {/* Özet Kartlar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              { label: 'Toplam Üretim', val: toplamUretim, cls: 'text-amber-500', bg: dk ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-100' },
-              { label: 'Toplam Fire', val: toplamFire, cls: 'text-red-400', bg: dk ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-100' },
-              { label: 'Personel', val: veri.toplamPersonel, cls: dk ? 'text-blue-400' : 'text-blue-600', bg: dk ? 'bg-blue-500/10 border-blue-500/20' : 'bg-blue-50 border-blue-100' },
-            ].map(({ label, val, cls, bg }) => (
-              <div key={label} className={`rounded-xl border p-4 text-center ${bg}`}>
-                <p className={`text-2xl font-bold ${cls}`}>{val}</p>
-                <p className={`text-xs mt-1 ${txtMuted(dk)}`}>{label}</p>
-              </div>
-            ))}
-          </div>
-
           {/* İstasyon Detayları */}
           <div className={sectionCls(dk)}>
             <h2 className={`font-semibold text-sm mb-3 ${txtPrimary(dk)}`}>İstasyon Detayları</h2>
@@ -1070,8 +1092,13 @@ type SonKayitRaporu = {
   tarih: string
   created_at?: string
   toplam_personel: number | null
+  notlar: string | null
   hr_personel: SonKayitPersonel | SonKayitPersonel[] | null
-  gunluk_uretim_istasyon_kayitlari?: { adet: number | null; fire_adet: number | null }[] | null
+  gunluk_uretim_istasyon_kayitlari?: Array<{
+    adet: number | null
+    fire_adet: number | null
+    istasyon: { ad: string; sira_no: number } | null
+  }> | null
   gunluk_uretim_arac_yuklemeleri?: { id: string }[] | null
 }
 
@@ -1081,6 +1108,27 @@ type SonGunKaydi = {
 }
 
 type SonKayitOperatorOzeti = { ad: string; foto_url: string | null; count: number }
+
+type SonKayitIstasyonToplami = { ad: string; sira_no: number; adet: number; fire: number }
+
+function sonKayitIstasyonToplamlari(kayitlar: SonKayitRaporu[]): SonKayitIstasyonToplami[] {
+  const toplamlar = new Map<string, SonKayitIstasyonToplami>()
+  kayitlar.forEach(kayit => {
+    ;(kayit.gunluk_uretim_istasyon_kayitlari ?? []).forEach(istasyonKaydi => {
+      const adet = Math.max(0, istasyonKaydi.adet ?? 0)
+      const fire = Math.max(0, istasyonKaydi.fire_adet ?? 0)
+      if (adet === 0 && fire === 0) return
+      const ad = istasyonKaydi.istasyon?.ad ?? 'Bilinmeyen İstasyon'
+      const sira_no = istasyonKaydi.istasyon?.sira_no ?? 0
+      const anahtar = `${sira_no}:${ad}`
+      const mevcut = toplamlar.get(anahtar) ?? { ad, sira_no, adet: 0, fire: 0 }
+      mevcut.adet += adet
+      mevcut.fire += fire
+      toplamlar.set(anahtar, mevcut)
+    })
+  })
+  return [...toplamlar.values()].sort((a, b) => a.sira_no - b.sira_no || a.ad.localeCompare(b.ad, 'tr'))
+}
 
 function sonKayitlariGunlereGrupla(kayitlar: SonKayitRaporu[]): SonGunKaydi[] {
   const map = new Map<string, SonKayitRaporu[]>()
@@ -1165,7 +1213,7 @@ function SonKayitlarEkrani({
       try {
         const { data, error } = await supabase
           .from('gunluk_uretim_raporlari')
-          .select('id, tarih, created_at, toplam_personel, hr_personel(ad_soyad, foto_url), gunluk_uretim_istasyon_kayitlari(adet, fire_adet), gunluk_uretim_arac_yuklemeleri(id)')
+          .select('id, tarih, created_at, toplam_personel, notlar, hr_personel(ad_soyad, foto_url), gunluk_uretim_istasyon_kayitlari(adet, fire_adet, istasyon:istasyon_id(ad, sira_no)), gunluk_uretim_arac_yuklemeleri(id)')
           .order('tarih', { ascending: false })
           .order('created_at', { ascending: false })
           .limit(100)
@@ -1217,12 +1265,21 @@ function SonKayitlarEkrani({
 
           <div className="space-y-3">
             {gunler.map(g => {
-              const istKayitlar = g.kayitlar.flatMap(k => k.gunluk_uretim_istasyon_kayitlari ?? [])
-              const toplamUretim = istKayitlar.reduce((a: number, s: any) => a + (s.adet || 0), 0)
-              const toplamFire = istKayitlar.reduce((a: number, s: any) => a + (s.fire_adet || 0), 0)
-              const aracSayisi = g.kayitlar.reduce((a, k) => a + (k.gunluk_uretim_arac_yuklemeleri ?? []).length, 0)
-              const toplamPersonel = g.kayitlar.reduce((a, k) => Math.max(a, k.toplam_personel ?? 0), 0)
+              const istasyonToplamlari = sonKayitIstasyonToplamlari(g.kayitlar)
+              const aracSayisi = g.kayitlar.reduce(
+                (toplam, kayit) => toplam + (kayit.gunluk_uretim_arac_yuklemeleri ?? []).length,
+                0,
+              )
+              const personelSayisi = g.kayitlar.reduce(
+                (enYuksek, kayit) => Math.max(enYuksek, kayit.toplam_personel ?? 0),
+                0,
+              )
               const operatorlar = operatorleriOzetle(g.kayitlar)
+              const gunNotlari = g.kayitlar.flatMap(kayit => {
+                const not = kayit.notlar?.trim()
+                if (!not) return []
+                return [{ id: kayit.id, operator: sonKayitPersoneli(kayit)?.ad_soyad ?? 'Bilinmiyor', not }]
+              })
               const operatorMetni = operatorlar.map(op => op.count > 1 ? `${op.ad} (${op.count})` : op.ad).join(', ')
               const tekOperator = operatorlar.length === 1 ? operatorlar[0] : null
               const tekOperatorMetni = tekOperator
@@ -1262,19 +1319,59 @@ function SonKayitlarEkrani({
                       </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[
-                      { val: toplamUretim, lbl: 'Üretim', cls: 'text-amber-500', bg: dk ? 'bg-amber-500/10' : 'bg-amber-50' },
-                      { val: toplamFire, lbl: 'Fire', cls: 'text-red-400', bg: dk ? 'bg-red-500/10' : 'bg-red-50' },
-                      { val: aracSayisi, lbl: 'Araç', cls: dk ? 'text-blue-400' : 'text-blue-600', bg: dk ? 'bg-blue-500/10' : 'bg-blue-50' },
-                      { val: toplamPersonel, lbl: 'Personel', cls: dk ? 'text-violet-400' : 'text-violet-600', bg: dk ? 'bg-violet-500/10' : 'bg-violet-50' },
-                    ].map(({ val, lbl, cls, bg }) => (
-                      <div key={lbl} className={`text-center p-2 rounded-xl ${bg}`}>
-                        <p className={`text-base font-bold ${cls}`}>{val}</p>
-                        <p className={`text-[10px] mt-0.5 ${txtMuted(dk)}`}>{lbl}</p>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 ${dk ? 'bg-violet-500/10 border-violet-500/20 text-violet-300' : 'bg-violet-50 border-violet-200 text-violet-700'}`}>
+                      <Users size={14} />
+                      <span className="text-xs"><strong className="text-sm">{personelSayisi}</strong> personel</span>
+                    </div>
+                    <div className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 ${dk ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                      <Truck size={14} />
+                      <span className="text-xs"><strong className="text-sm">{aracSayisi}</strong> araç</span>
+                    </div>
                   </div>
+                  {istasyonToplamlari.length === 0 ? (
+                    <p className={`text-xs rounded-xl px-3 py-2 ${dk ? 'bg-gray-800 text-gray-500' : 'bg-gray-50 text-gray-400'}`}>
+                      Bu gün için istasyon girişi bulunmuyor.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {istasyonToplamlari.map(istasyon => (
+                        <div
+                          key={`${istasyon.sira_no}:${istasyon.ad}`}
+                          className={`rounded-xl border px-3 py-2.5 ${dk ? 'bg-gray-800/60 border-gray-700/60' : 'bg-gray-50 border-gray-200'}`}
+                        >
+                          <p className={`text-xs font-semibold mb-1.5 ${txtPrimary(dk)}`}>{istasyon.ad}</p>
+                          <div className="flex items-center gap-4 text-xs">
+                            {istasyon.adet > 0 && (
+                              <span className={dk ? 'text-amber-400' : 'text-amber-600'}>
+                                <strong className="text-sm">{istasyon.adet}</strong> adet
+                              </span>
+                            )}
+                            {istasyon.fire > 0 && (
+                              <span className={dk ? 'text-red-400' : 'text-red-500'}>
+                                Fire: <strong className="text-sm">{istasyon.fire}</strong>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {gunNotlari.length > 0 && (
+                    <div className={`mt-2 rounded-xl border px-3 py-2.5 ${dk ? 'bg-gray-800/60 border-gray-700/60' : 'bg-gray-50 border-gray-200'}`}>
+                      <p className={`text-xs font-semibold mb-2 flex items-center gap-1.5 ${txtPrimary(dk)}`}>
+                        <FileText size={12} /> Notlar
+                      </p>
+                      <div className="space-y-2">
+                        {gunNotlari.map(gunNotu => (
+                          <div key={gunNotu.id} className="min-w-0">
+                            <p className={`text-[10px] font-semibold ${dk ? 'text-amber-400' : 'text-amber-600'}`}>{gunNotu.operator}</p>
+                            <p className={`text-xs whitespace-pre-wrap break-words ${txtSub(dk)}`}>{gunNotu.not}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1321,7 +1418,7 @@ export default function OperatorGirisPage() {
 
     try {
       const tarih = bugunTarih()
-      const [raporRes, istRes, aracRes] = await Promise.all([
+      const [raporRes, istRes, aracRes, yetkiRes] = await Promise.all([
         supabase
           .from('gunluk_uretim_raporlari')
           .select('*, gunluk_uretim_istasyon_kayitlari(*), gunluk_uretim_arac_yuklemeleri(*)')
@@ -1330,16 +1427,25 @@ export default function OperatorGirisPage() {
           .maybeSingle(),
         supabase.from('uretim_istasyonlari').select('*').eq('aktif', true).order('sira_no'),
         supabase.from('araclar').select('id, plaka, ad').eq('aktif', true).order('plaka'),
+        supabase
+          .from('hr_personel_istasyon_yetkileri')
+          .select('istasyon_id')
+          .eq('personel_id', p.id),
       ])
 
-      const mevcut = raporRes.data as any
+      const mevcut = raporRes.data as unknown as KayitliGunlukRapor | null
       if (mevcut) {
-        const mevcutKayitlar: any[] = mevcut.gunluk_uretim_istasyon_kayitlari ?? []
-        const istasyonlarFull: IstasyonSatir[] = ((istRes.data ?? []) as any[]).map(ist => {
+        const mevcutKayitlar = mevcut.gunluk_uretim_istasyon_kayitlari ?? []
+        const yetkiliIds = p.uretim_yetkileri_sinirli
+          ? new Set((yetkiRes.data ?? []).map(y => y.istasyon_id))
+          : null
+        const istasyonlarFull: IstasyonSatir[] = ((istRes.data ?? []) as IstasyonTanimi[])
+          .filter(ist => !yetkiliIds || yetkiliIds.has(ist.id))
+          .map(ist => {
           const k = mevcutKayitlar.find(x => x.istasyon_id === ist.id)
           return { id: ist.id, ad: ist.ad, sira_no: ist.sira_no, fire_var: ist.fire_var, adet: k?.adet ?? 0, fire_adet: k?.fire_adet ?? 0 }
-        })
-        const yuklemeler: AracYuklemeForm[] = (mevcut.gunluk_uretim_arac_yuklemeleri ?? []).map((y: any) => ({
+          })
+        const yuklemeler: AracYuklemeForm[] = (mevcut.gunluk_uretim_arac_yuklemeleri ?? []).map(y => ({
           uid: Math.random().toString(36).slice(2),
           tip: y.arac_id ? 'mevcut' : 'harici',
           arac_id: y.arac_id ?? null,

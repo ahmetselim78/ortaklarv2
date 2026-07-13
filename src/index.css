@@ -9,6 +9,22 @@
   }
 }
 
+@keyframes tamirKartPulse {
+  0%, 100% {
+    border-color: rgba(248, 113, 113, 0.75);
+    background-color: rgba(69, 10, 10, 0.62);
+  }
+  50% {
+    border-color: rgb(239, 68, 68);
+    background-color: rgba(127, 29, 29, 0.82);
+    box-shadow: 0 0 22px rgba(239, 68, 68, 0.24);
+  }
+}
+
+.tamir-karti-uyari {
+  animation: tamirKartPulse 1.15s ease-in-out infinite;
+}
+
 /* Personel karusel sonsuz yukarı kaydırma */
 @keyframes scrollUp {
   from { transform: translateY(0); }
@@ -28,6 +44,29 @@ input[type=number]::-webkit-outer-spin-button {
 input[type=number] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* Kumanda ekranındaki kaydırma alanlarını koyu panel tasarımıyla bütünleştir. */
+.kumanda-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #080d16;
+  scrollbar-gutter: stable;
+}
+.kumanda-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.kumanda-scroll::-webkit-scrollbar-track {
+  background: #080d16;
+}
+.kumanda-scroll::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 2px solid #080d16;
+  border-radius: 999px;
+  background: #334155;
+}
+.kumanda-scroll::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 * {

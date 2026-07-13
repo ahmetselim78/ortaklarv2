@@ -20,13 +20,18 @@ import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/
 
 /* ========== Tipler ========== */
 
+interface BatchMusteriOzet {
+  musteri: string
+  altMusteri: string
+}
+
 interface BatchSatir {
   id: string
   batch_no: string
   durum: UretimEmriDurum
   toplam_cam: number
   taranan_cam: number
-  musteriler: string[]  // "NOVEL — AKYOL LOUNGE" formatında benzersiz müşteri listesi
+  musteriler: BatchMusteriOzet[]
 }
 
 interface BatchCam {
@@ -57,23 +62,28 @@ interface GecmisSatir {
   musteri: string
   boyut: string
   zaman: Date
-  durum: 'ok' | 'tekrar' | 'hata' | 'yanlis_batch'
+  durum: 'ok' | 'tekrar' | 'hata' | 'yanlis_batch' | 'tamir'
+}
+
+interface TamirOlayPayload {
+  cam_kodu?: string
+  batch_no?: string
+  musteri?: string
+  genislik_mm?: number
+  yukseklik_mm?: number
 }
 
 type TaramaDurum = 'bos' | 'yukleniyor' | 'basarili' | 'hata' | 'tekrar' | 'yanlis_batch' | 'tamamlandi'
 
 /* ========== Yardımcılar ========== */
 
-/** Cari adı + nihai müşteri → görüntü etiketi: "NOVEL — AKYOL LOUNGE" */
-function musteriEtiket(musteri: string, nihai: string): string {
-  return nihai ? `${musteri} \u2014 ${nihai}` : musteri
-}
-
-/** "musteri||nihaiMusteri" bileşik anahtarını görüntü etiketine çevirir */
-function musteriKeyToLabel(key: string): string {
-  const sep = key.indexOf('||')
-  if (sep === -1) return key
-  return musteriEtiket(key.slice(0, sep), key.slice(sep + 2))
+/** Müşteri / alt müşteri alfabetik sıralama (TR) */
+function musteriSirala<T extends { musteri: string; altMusteri?: string; nihai_musteri?: string }>(a: T, b: T) {
+  const c = a.musteri.localeCompare(b.musteri, 'tr')
+  if (c !== 0) return c
+  const aAlt = a.altMusteri ?? a.nihai_musteri ?? ''
+  const bAlt = b.altMusteri ?? b.nihai_musteri ?? ''
+  return aAlt.localeCompare(bAlt, 'tr')
 }
 
 /** Sekme kapanırken Supabase güncellemesi — keepalive ile tamamlanır */
@@ -233,7 +243,21 @@ export default function PozGirisPage() {
 
   // Realtime kanal
   useEffect(() => {
-    const ch = supabase.channel('uretim-istasyonlar')
+    const ch = supabase
+      .channel('uretim-istasyonlar')
+      .on('broadcast', { event: 'cam_tamire_gonderildi' }, ({ payload }) => {
+        const p = payload as TamirOlayPayload
+        if (!p.cam_kodu || (p.batch_no && p.batch_no !== seciliBatchRef.current?.batch_no)) return
+        setGecmis(prev => [{
+          cam_kodu: p.cam_kodu!,
+          musteri: p.musteri ?? '—',
+          boyut: p.genislik_mm != null && p.yukseklik_mm != null
+            ? `${p.genislik_mm}×${p.yukseklik_mm}`
+            : '—',
+          zaman: new Date(),
+          durum: 'tamir' as const,
+        }, ...prev].slice(0, 15))
+      })
     ch.subscribe((status) => setConnected(status === 'SUBSCRIBED'))
     channelRef.current = ch
     return () => { supabase.removeChannel(ch) }
@@ -288,9 +312,9 @@ export default function PozGirisPage() {
 
       const logMap = await yikamaLogSayilariGetir(emirIds)
 
-      const detayMap = new Map<string, { toplam: number; taranan: number; musteriSet: Set<string> }>()
+      const detayMap = new Map<string, { toplam: number; taranan: number; musteriMap: Map<string, BatchMusteriOzet> }>()
       for (const d of tumDetaylar) {
-        const entry = detayMap.get(d.uretim_emri_id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
+        const entry = detayMap.get(d.uretim_emri_id) ?? { toplam: 0, taranan: 0, musteriMap: new Map() }
         const detay = d.siparis_detaylari
         const adet: number = detay?.adet ?? 1
         const uretimDurumu: string = detay?.uretim_durumu ?? ''
@@ -303,20 +327,22 @@ export default function PozGirisPage() {
         )
         const musteriAd: string = detay?.siparisler?.cari?.ad ?? ''
         const nihai: string = detay?.siparisler?.alt_musteri ?? ''
-        const etiket = musteriEtiket(musteriAd, nihai)
-        if (etiket) entry.musteriSet.add(etiket)
+        if (musteriAd || nihai) {
+          const key = `${musteriAd}||${nihai}`
+          entry.musteriMap.set(key, { musteri: musteriAd, altMusteri: nihai })
+        }
         detayMap.set(d.uretim_emri_id, entry)
       }
 
       const sonuc: BatchSatir[] = emirler.map(e => {
-        const d = detayMap.get(e.id) ?? { toplam: 0, taranan: 0, musteriSet: new Set<string>() }
+        const d = detayMap.get(e.id) ?? { toplam: 0, taranan: 0, musteriMap: new Map() }
         return {
           id: e.id,
           batch_no: e.batch_no,
           durum: e.durum as UretimEmriDurum,
           toplam_cam: d.toplam,
           taranan_cam: d.taranan,
-          musteriler: Array.from(d.musteriSet),
+          musteriler: Array.from(d.musteriMap.values()).sort(musteriSirala),
         }
       })
 
@@ -541,19 +567,31 @@ export default function PozGirisPage() {
   )
 
   const musteriListesi = useMemo(() => {
-    const map = new Map<string, { key: string; etiket: string; toplam: number; tamamlandi: number }>()
+    const map = new Map<string, { key: string; musteri: string; altMusteri: string; toplam: number; tamamlandi: number }>()
     for (const c of batchCamlari) {
       const key = `${c.musteri}||${c.nihai_musteri}`
-      const e = map.get(key) ?? { key, etiket: musteriEtiket(c.musteri, c.nihai_musteri), toplam: 0, tamamlandi: 0 }
+      const e = map.get(key) ?? {
+        key,
+        musteri: c.musteri,
+        altMusteri: c.nihai_musteri,
+        toplam: 0,
+        tamamlandi: 0,
+      }
       e.toplam += c.adet
       e.tamamlandi += camTarananSayisi(c)
       map.set(key, e)
     }
-    return Array.from(map.values())
+    return Array.from(map.values()).sort(musteriSirala)
   }, [batchCamlari])
 
   const aktifMusteriCamlari = useMemo(
-    () => aktifMusteri ? batchCamlari.filter(c => `${c.musteri}||${c.nihai_musteri}` === aktifMusteri) : [],
+    () => {
+      if (!aktifMusteri) return []
+      return batchCamlari
+        .filter(c => `${c.musteri}||${c.nihai_musteri}` === aktifMusteri)
+        .slice()
+        .sort((a, b) => (a.sira_no ?? 0) - (b.sira_no ?? 0))
+    },
     [aktifMusteri, batchCamlari]
   )
 
@@ -604,21 +642,20 @@ export default function PozGirisPage() {
       { ad: cam.stok_ad, kalinlik_mm: cam.ic_kalinlik_mm, katman_yapisi: cam.katman_yapisi },
     )
 
-    if (etiketAyarlari.yazici.kopru_adresi && etiketAyarlari.yazdirma_kosulu === 'otomatik') {
-      const veri: EtiketVeri = {
-        cam_kodu: cam.cam_kodu,
-        cam_tipi: camTipiTam,
-        cari_adi: cam.musteri,
-        alt_musteri: cam.nihai_musteri ?? '',
-        siparis_no: cam.siparis_no,
-        poz: cam.poz ?? '',
-        liste_adedi: cam.liste_adedi,
-        batch_sira: cam.sira_no,
-        genislik_mm: cam.genislik_mm,
-        yukseklik_mm: cam.yukseklik_mm,
-      }
-      void etiketOtomatikYazdir(etiketAyarlari, veri)
+    const etiketVeri: EtiketVeri = {
+      cam_kodu: cam.cam_kodu,
+      cam_tipi: camTipiTam,
+      cari_adi: cam.musteri,
+      alt_musteri: cam.nihai_musteri ?? '',
+      siparis_no: cam.siparis_no,
+      poz: cam.poz ?? '',
+      liste_adedi: cam.liste_adedi,
+      batch_sira: cam.sira_no,
+      genislik_mm: cam.genislik_mm,
+      yukseklik_mm: cam.yukseklik_mm,
     }
+    // İstasyon akışını bekletmeden baskıyı başlat; sonucu ikinci bir broadcast ile bildir.
+    const etiketBasimSozu = etiketOtomatikYazdir(etiketAyarlari, etiketVeri)
     if (!tekrar) {
       await supabase.from('yikama_loglari').insert({
         cam_kodu: cam.cam_kodu,
@@ -672,6 +709,12 @@ export default function PozGirisPage() {
     }
 
     // Broadcast — kumanda + gösterge
+    const listeCamlari = batchCamlari.filter(c => c.siparis_id === cam.siparis_id)
+    const listeToplam = listeCamlari.reduce((sum, c) => sum + c.adet, 0)
+    const listeTaranan = listeCamlari.reduce((sum, c) => sum + camTarananSayisi(c), 0)
+    const sonrakiBatchTaranan = Math.min(toplamSayisi, tarananSayisi + (tekrar ? 0 : 1))
+    const sonrakiListeTaranan = Math.min(listeToplam, listeTaranan + (tekrar ? 0 : 1))
+    const taramaZamani = Date.now()
     await channelRef.current?.send({
       type: 'broadcast',
       event: 'yeni_cam',
@@ -692,10 +735,30 @@ export default function PozGirisPage() {
         adet: cam.adet,
         katman_yapisi: cam.katman_yapisi,
         cita_kalinlik_mm: cam.cita_kalinlik_mm,
-        zaman: Date.now(),
+        batch_no: seciliBatch.batch_no,
+        batch_taranan: sonrakiBatchTaranan,
+        batch_toplam: toplamSayisi,
+        liste_no: cam.siparis_no,
+        liste_taranan: sonrakiListeTaranan,
+        liste_toplam: listeToplam,
+        zaman: taramaZamani,
         tekrar: tekrar,
+        etiket_durumu: 'gonderiliyor',
+        etiket_mesaji: 'Yazıcı köprüsünden yanıt bekleniyor.',
       },
     })
+
+    // EXE yanıtı geldiğinde kumanda kartındaki baskı durumunu kesinleştir.
+    void etiketBasimSozu.then(sonuc => channelRef.current?.send({
+      type: 'broadcast',
+      event: 'etiket_durumu',
+      payload: {
+        cam_kodu: cam.cam_kodu,
+        zaman: taramaZamani,
+        etiket_durumu: sonuc.durum,
+        etiket_mesaji: sonuc.mesaj,
+      },
+    }))
 
     setSonTarananCam({ ...cam, taranan_adet: tekrar ? cam.taranan_adet : yeniTarananadet })
     setAktifMusteri(`${cam.musteri}||${cam.nihai_musteri}`)
@@ -737,23 +800,24 @@ export default function PozGirisPage() {
   // Batch seçimi ekranı
   if (!seciliBatch) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+      <div className="h-screen overflow-y-auto kumanda-scroll bg-black text-white flex flex-col">
         {/* Üst bar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
-          <button onClick={() => navigate('/istasyonlar')} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+        <div className="relative flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
+          <button onClick={() => navigate('/istasyonlar')} className="relative z-10 flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
             <ArrowLeft size={20} />
             <span className="text-sm font-medium">Geri</span>
           </button>
-          <span className="font-bold tracking-widest text-sm">POZ GİRİŞ</span>
-          <div className="flex items-center gap-4">
-            <span className="font-mono text-gray-500 text-sm tabular-nums">
-              {saat.toLocaleTimeString('tr-TR')}
-            </span>
-            <div className="flex items-center gap-1.5 text-sm">
-              {connected
-                ? <><Wifi size={14} className="text-green-400" /><span className="text-green-400 text-xs">Çevrimiçi</span></>
-                : <><WifiOff size={14} className="text-red-400" /><span className="text-red-400 text-xs">Bağlantı yok</span></>
-              }
+          <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-black tracking-widest text-xl text-blue-400">POZ GİRİŞ</span>
+          <div className="relative z-10 flex items-center gap-4">
+            <span className="font-mono font-bold text-white text-xl tabular-nums tracking-wide">{saat.toLocaleTimeString('tr-TR')}</span>
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
+              connected ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300' : 'bg-red-900/60 border border-red-700 text-red-300'
+            }`}>
+              {connected ? <Wifi size={16} /> : <WifiOff size={16} />}
+              <div className="flex flex-col leading-tight">
+                <span className="text-[10px] text-gray-400">SUNUCU</span>
+                <span>{connected ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -793,11 +857,20 @@ export default function PozGirisPage() {
                       {b.taranan_cam} / {b.toplam_cam} adet girildi
                     </div>
                     {b.musteriler.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-3">
+                      <div className="flex flex-col gap-1.5 mb-3">
                         {b.musteriler.map((m, i) => (
-                          <span key={i} className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300 font-medium border border-gray-700">
-                            {m}
-                          </span>
+                          <div key={i} className="rounded-lg bg-gray-800/80 border border-gray-700 px-2.5 py-1.5">
+                            <div className="flex items-baseline gap-2 min-w-0">
+                              <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0">Müşteri</span>
+                              <span className="text-xs font-bold text-white truncate">{m.musteri || '—'}</span>
+                            </div>
+                            {m.altMusteri ? (
+                              <div className="flex items-baseline gap-2 min-w-0 mt-0.5">
+                                <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0">Alt</span>
+                                <span className="text-xs font-semibold text-blue-300 truncate">{m.altMusteri}</span>
+                              </div>
+                            ) : null}
+                          </div>
                         ))}
                       </div>
                     )}
@@ -819,27 +892,28 @@ export default function PozGirisPage() {
 
   // Tarama ekranı — 3 kolonlu layout
   return (
-    <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
+    <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
       {/* Üst bar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
-        <button onClick={handleBatchDegistir} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+      <div className="relative flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
+        <button onClick={handleBatchDegistir} className="relative z-10 flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
           <ArrowLeft size={20} />
           <span className="text-sm font-medium">Batch Değiştir</span>
         </button>
-        <div className="flex items-center gap-3">
-          <span className="font-mono font-bold text-sm text-blue-400">{seciliBatch.batch_no}</span>
-          <span className="text-gray-700">|</span>
-          <span className="text-sm text-gray-400 tabular-nums">{tarananSayisi}/{toplamSayisi}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="font-mono text-gray-500 text-sm tabular-nums">
+        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono font-black text-xl tracking-widest text-blue-400">
+          {seciliBatch.batch_no}
+        </span>
+        <div className="relative z-10 flex items-center gap-4">
+          <span className="font-mono font-bold text-white text-xl tabular-nums tracking-wide">
             {saat.toLocaleTimeString('tr-TR')}
           </span>
-          <div className="flex items-center gap-1.5">
-            {connected
-              ? <><Wifi size={14} className="text-green-400" /><span className="text-green-400 text-xs">Çevrimiçi</span></>
-              : <><WifiOff size={14} className="text-red-400" /><span className="text-red-400 text-xs">Bağlantı yok</span></>
-            }
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
+            connected ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300' : 'bg-red-900/60 border border-red-700 text-red-300'
+          }`}>
+            {connected ? <Wifi size={16} /> : <WifiOff size={16} />}
+            <div className="flex flex-col leading-tight">
+              <span className="text-[10px] text-gray-400">SUNUCU</span>
+              <span>{connected ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -848,11 +922,11 @@ export default function PozGirisPage() {
       <div className="flex-1 flex overflow-hidden">
 
         {/* ===== SOL: Müşteri Listesi ===== */}
-        <div className="w-72 shrink-0 border-r-2 border-gray-700 bg-gray-900/40 flex flex-col overflow-hidden">
+        <div className="w-80 shrink-0 border-r-2 border-gray-700 bg-gray-900/40 flex flex-col overflow-hidden">
           <div className="px-5 py-3 border-b-2 border-gray-700 shrink-0">
             <p className="text-xs font-black uppercase tracking-widest text-gray-400">Müşteriler</p>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto kumanda-scroll">
             {musteriListesi.map(m => {
               const pct = m.toplam > 0 ? Math.round((m.tamamlandi / m.toplam) * 100) : 0
               const tamam = m.tamamlandi === m.toplam
@@ -867,13 +941,30 @@ export default function PozGirisPage() {
                       : 'hover:bg-gray-800/60'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`text-base font-bold truncate flex-1 min-w-0 ${
-                      tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
-                    }`}>
-                      {m.etiket || '—'}
-                    </span>
-                    <span className={`text-sm font-bold tabular-nums shrink-0 ml-2 ${
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[10px] uppercase tracking-wide mb-0.5 ${
+                        tamam ? 'text-emerald-500' : aktif ? 'text-blue-400' : 'text-gray-500'
+                      }`}>Müşteri</p>
+                      <p className={`text-base font-bold leading-tight whitespace-normal break-words ${
+                        tamam ? 'text-emerald-300' : aktif ? 'text-white' : 'text-gray-200'
+                      }`}>
+                        {m.musteri || '—'}
+                      </p>
+                      {m.altMusteri ? (
+                        <>
+                          <p className={`text-[10px] uppercase tracking-wide mt-1.5 mb-0.5 ${
+                            tamam ? 'text-emerald-500' : aktif ? 'text-blue-400' : 'text-gray-500'
+                          }`}>Alt Müşteri</p>
+                          <p className={`text-sm font-semibold leading-tight whitespace-normal break-words ${
+                            tamam ? 'text-emerald-300/80' : aktif ? 'text-blue-300' : 'text-gray-400'
+                          }`}>
+                            {m.altMusteri}
+                          </p>
+                        </>
+                      ) : null}
+                    </div>
+                    <span className={`text-sm font-bold tabular-nums shrink-0 ${
                       tamam ? 'text-emerald-300' : aktif ? 'text-blue-300' : 'text-gray-400'
                     }`}>
                       {m.tamamlandi}/{m.toplam} adet
@@ -897,7 +988,7 @@ export default function PozGirisPage() {
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
           {/* Üst: toplam ilerleme — büyük ve belirgin */}
-          <div className="shrink-0 px-6 pt-4 pb-3">
+          <div className="shrink-0 px-4 pt-4 pb-3">
             <div className="flex items-end justify-between mb-3">
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-1">Toplam İlerleme</p>
@@ -927,7 +1018,7 @@ export default function PozGirisPage() {
           </div>
 
           {/* Orta: durum kartı + input */}
-          <div className="flex-1 flex flex-col items-center justify-center px-6 gap-3 overflow-y-auto py-3">
+          <div className="flex-1 flex flex-col items-center justify-center px-4 gap-3 overflow-y-auto py-3 kumanda-scroll">
             {/* Durum kartı */}
             <div className={`w-full border-2 rounded-2xl p-6 text-center transition-colors ${durumRenk(durum)}`}>
               {durum === 'bos' && !tamirGonderildi && (
@@ -1029,7 +1120,7 @@ export default function PozGirisPage() {
 
           {/* Alt: Geçmiş */}
           <div className="border-t border-gray-700 shrink-0 flex flex-col" style={{ height: '35%' }}>
-            <div className="px-6 py-2.5 shrink-0 border-b border-gray-800">
+            <div className="px-4 py-2.5 shrink-0 border-b border-gray-800">
               <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Son İşlemler</p>
             </div>
             {gecmis.length === 0 ? (
@@ -1037,15 +1128,22 @@ export default function PozGirisPage() {
                 <p className="text-sm text-gray-600">Henüz giriş yapılmadı.</p>
               </div>
             ) : (
-              <div className="overflow-y-auto flex-1 divide-y divide-gray-800">
+              <div className="overflow-y-auto flex-1 divide-y divide-gray-800 kumanda-scroll">
                 {gecmis.map((g, i) => (
-                  <div key={i} className={`flex items-center gap-4 px-6 py-3 ${i === 0 ? 'bg-gray-900/60' : ''}`}>
+                  <div key={i} className={`flex items-center gap-4 px-4 py-3 ${
+                    g.durum === 'tamir' ? 'bg-red-950/50 border-l-4 border-l-red-500' : i === 0 ? 'bg-gray-900/60' : ''
+                  }`}>
                     <span className={`w-3 h-3 rounded-full shrink-0 ${
                       g.durum === 'ok' ? 'bg-green-400' :
                       g.durum === 'tekrar' ? 'bg-yellow-400' : 'bg-red-400'
                     }`} />
                     <span className="font-mono text-base font-bold text-white w-28 shrink-0">{g.cam_kodu}</span>
                     <span className="text-gray-300 text-base font-medium flex-1 truncate">{g.musteri}</span>
+                    {g.durum === 'tamir' && (
+                      <span className="text-xs font-black uppercase tracking-wide text-red-300 bg-red-900/60 border border-red-700 rounded-full px-3 py-1 shrink-0">
+                        Tamire Gönderildi
+                      </span>
+                    )}
                     <span className="text-gray-400 text-sm font-mono shrink-0">{g.boyut} mm</span>
                     <span className="text-gray-500 text-sm tabular-nums shrink-0">{g.zaman.toLocaleTimeString('tr-TR')}</span>
                   </div>
@@ -1060,14 +1158,24 @@ export default function PozGirisPage() {
           <div className="px-5 py-3 border-b-2 border-gray-700 shrink-0">
             {aktifMusteri ? (
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-0.5">Seçili Müşteri</p>
-                <p className="text-base font-bold text-white truncate">{aktifMusteri ? musteriKeyToLabel(aktifMusteri) : ''}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-0.5">Müşteri</p>
+                <p className="text-base font-bold text-white whitespace-normal break-words leading-tight">
+                  {aktifMusteriCamlari[0]?.musteri || '—'}
+                </p>
+                {aktifMusteriCamlari[0]?.nihai_musteri ? (
+                  <>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mt-1.5 mb-0.5">Alt Müşteri</p>
+                    <p className="text-sm font-semibold text-blue-300 whitespace-normal break-words leading-tight">
+                      {aktifMusteriCamlari[0].nihai_musteri}
+                    </p>
+                  </>
+                ) : null}
               </div>
             ) : (
               <p className="text-xs font-black uppercase tracking-widest text-gray-500">Müşteri seçilmedi</p>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto" ref={sagListeRef}>
+          <div className="flex-1 overflow-y-auto kumanda-scroll" ref={sagListeRef}>
             {aktifMusteriCamlari.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-5 py-8">
                 <p className="text-gray-500 text-sm leading-relaxed">
@@ -1087,7 +1195,7 @@ export default function PozGirisPage() {
                       key={c.cam_kodu}
                       data-cam-kodu={c.cam_kodu}
                       data-pending={!girildi ? '' : undefined}
-                      className={`px-5 py-3.5 flex items-center gap-3 transition-colors ${
+                      className={`px-5 py-4 flex items-center gap-4 transition-colors ${
                         aktifSatir
                           ? 'bg-green-950/60 border-l-4 border-l-green-400 animate-pulse'
                           : girildi
@@ -1095,25 +1203,27 @@ export default function PozGirisPage() {
                           : ''
                       }`}
                     >
-                      <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${
-                        girildi
-                          ? 'bg-emerald-900/60 text-emerald-300'
-                          : kismi
-                          ? 'bg-amber-900/60 text-amber-300'
-                          : 'bg-gray-700 text-gray-300'
-                      }`}>
-                        {girildi ? `${c.adet}/${c.adet}` : `${c.taranan_adet}/${c.adet}`}
-                      </span>
+                      <div className="flex flex-col items-center gap-1 shrink-0 w-14">
+                        <span className={`font-mono text-2xl font-black leading-none tabular-nums ${
+                          girildi ? 'text-gray-500' : 'text-amber-300'
+                        }`}>{c.cam_kodu}</span>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                          girildi
+                            ? 'bg-emerald-900/60 text-emerald-300'
+                            : kismi
+                            ? 'bg-amber-900/60 text-amber-300'
+                            : 'bg-gray-700 text-gray-300'
+                        }`}>
+                          {girildi ? `${c.adet}/${c.adet}` : `${c.taranan_adet}/${c.adet}`}
+                        </span>
+                      </div>
                       <div className="min-w-0 flex-1">
-                        <p className={`font-mono text-base font-bold leading-tight ${
+                        <p className={`text-2xl font-black leading-tight tabular-nums ${
                           girildi ? 'text-gray-500' : 'text-white'
-                        }`}>{c.cam_kodu}</p>
-                        <p className={`text-sm mt-0.5 ${
-                          girildi ? 'text-gray-600' : 'text-gray-400'
-                        }`}>{c.genislik_mm} × {c.yukseklik_mm} mm{c.adet > 1 ? ` · ${c.adet} adet` : ''}</p>
+                        }`}>{c.genislik_mm} × {c.yukseklik_mm}<span className="text-base font-bold ml-1 text-gray-400">mm</span></p>
                         {c.stok_ad && (
-                          <p className={`text-xs mt-0.5 truncate ${
-                            girildi ? 'text-gray-600' : 'text-gray-500'
+                          <p className={`text-sm font-semibold mt-0.5 truncate ${
+                            girildi ? 'text-gray-600' : 'text-white'
                           }`}>{c.stok_ad}</p>
                         )}
                       </div>
@@ -1147,6 +1257,26 @@ export default function PozGirisPage() {
           kaynak="poz_giris"
           onClose={() => { setTamirCam(null); setTimeout(() => inputRef.current?.focus(), 100) }}
           onSuccess={() => {
+            const gonderilenCam = tamirCam
+            setGecmis(prev => [{
+              cam_kodu: gonderilenCam.cam_kodu,
+              musteri: gonderilenCam.musteri,
+              boyut: `${gonderilenCam.genislik_mm}×${gonderilenCam.yukseklik_mm}`,
+              zaman: new Date(),
+              durum: 'tamir' as const,
+            }, ...prev].slice(0, 15))
+            void channelRef.current?.send({
+              type: 'broadcast',
+              event: 'cam_tamire_gonderildi',
+              payload: {
+                cam_kodu: gonderilenCam.cam_kodu,
+                batch_no: seciliBatch.batch_no,
+                musteri: gonderilenCam.musteri,
+                nihai_musteri: gonderilenCam.nihai_musteri,
+                genislik_mm: gonderilenCam.genislik_mm,
+                yukseklik_mm: gonderilenCam.yukseklik_mm,
+              },
+            })
             setTamirCam(null)
             setDurum('bos')
             setSonTarananCam(null)

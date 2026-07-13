@@ -20,6 +20,12 @@ import {
   VARSAYILAN_TELEGRAM_SABLON,
 } from '@/types/saatlikUretim'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import {
+  markdownV2DuzMetin,
+  raporOlustur,
+  type TelegramSablon,
+  type UretimRaporu,
+} from '../../../supabase/functions/_shared/telegramMessage'
 
 type Sekme = 'baglanti' | 'zamanlama' | 'mesaj'
 
@@ -130,61 +136,50 @@ const SEKMELER: { id: Sekme; label: string; icon: React.ElementType }[] = [
 ]
 
 function onizlemeMetni(sablon: TelegramSablonAyarlari): string {
-  const satirlar: string[] = [
-    '📋 Günlük Üretim Raporu',
-    '━━━━━━━━━━━━━━━━━━',
-    '📅 8 Temmuz 2026 · 12:00',
+  const mesajSablonu: TelegramSablon = {
+    baslik: sablon.sablon_baslik,
+    saatlik_detay: sablon.sablon_saatlik_detay,
+    saatlik_ozet: sablon.sablon_saatlik_ozet,
+    istasyonlar: sablon.sablon_istasyonlar,
+    araclar: sablon.sablon_araclar,
+    personel: sablon.sablon_personel,
+    operator: sablon.sablon_operator,
+    notlar: sablon.sablon_notlar,
+  }
+  const raporlar: UretimRaporu[] = [
+    {
+      id: 'ornek-1', toplam_personel: 22, notlar: 'Kesim vardiyası tamamlandı.', created_at: '',
+      operator: { ad_soyad: 'Ahmet Yılmaz' },
+      istasyon_kayitlari: [
+        { adet: 120, fire_adet: 3, istasyon: { ad: 'Kesim', sira_no: 1 } },
+        { adet: 0, fire_adet: 0, istasyon: { ad: 'Çıta Büküm', sira_no: 2 } },
+      ],
+      arac_yuklemeleri: [
+        { adet: 50, dis_arac_plakasi: null, dis_arac_adi: null, arac: { plaka: '34 ABC 123', ad: 'Kamyon' } },
+      ],
+    },
+    {
+      id: 'ornek-2', toplam_personel: 20, notlar: null, created_at: '',
+      operator: { ad_soyad: 'Ayşe Kaya' },
+      istasyon_kayitlari: [
+        { adet: 80, fire_adet: 0, istasyon: { ad: 'Kesim', sira_no: 1 } },
+        { adet: 85, fire_adet: 1, istasyon: { ad: 'Isıcam Hattı', sira_no: 4 } },
+      ],
+      arac_yuklemeleri: [],
+    },
   ]
-
-  if (sablon.sablon_saatlik_detay || sablon.sablon_saatlik_ozet) {
-    satirlar.push('', '📊 Saatlik Takip', '──────────────────')
-    if (sablon.sablon_saatlik_detay) {
-      satirlar.push(
-        '',
-        '🕐 08:00 – 09:00',
-        '🟢 Gerçekleşen: 95 / 100 (%95)',
-        '🔥 Fire: 2',
-        '',
-        '🕐 09:00 – 10:00',
-        '🟢 Gerçekleşen: 102 / 100 (%102)',
-        '🔥 Fire: 1',
-      )
-    }
-    if (sablon.sablon_saatlik_ozet) {
-      satirlar.push(
-        '',
-        '📌 Gün Özeti',
-        '✅ Gerçekleşen: 197 adet',
-        '🎯 Hedef: 200 adet',
-        '🔥 Fire: 3 adet',
-        '🟢 Performans: %98.5',
-      )
-    }
-  }
-
-  if (
-    sablon.sablon_operator || sablon.sablon_personel ||
-    sablon.sablon_istasyonlar || sablon.sablon_araclar || sablon.sablon_notlar
-  ) {
-    satirlar.push('', '🏭 Üretim Girişi', '──────────────────')
-    if (sablon.sablon_operator || sablon.sablon_personel) {
-      const bilgi: string[] = []
-      if (sablon.sablon_operator) bilgi.push('👤 Ahmet Yılmaz')
-      if (sablon.sablon_personel) bilgi.push('👥 42 personel')
-      satirlar.push('', bilgi.join(' · '))
-    }
-    if (sablon.sablon_istasyonlar) {
-      satirlar.push('', 'İstasyonlar', '• Kesim — 120 adet (fire: 3)', '• Isıcam Hattı — 85 adet (fire: 1)')
-    }
-    if (sablon.sablon_araclar) {
-      satirlar.push('', 'Araç Yüklemeleri', '• 34 ABC 123 (Kamyon) — 50 adet')
-    }
-    if (sablon.sablon_notlar) {
-      satirlar.push('', '📝 Not: Vardiya sorunsuz tamamlandı.')
-    }
-  }
-
-  return satirlar.join('\n')
+  const markdown = raporOlustur(
+    '2026-07-08',
+    '12:00',
+    'her_ikisi',
+    mesajSablonu,
+    [
+      { saat_araligi: '08:00 - 09:00', hedef_adet: 100, gerceklesen_adet: 95, fire_adet: 2 },
+      { saat_araligi: '09:00 - 10:00', hedef_adet: 100, gerceklesen_adet: 102, fire_adet: 1 },
+    ],
+    raporlar,
+  )
+  return markdownV2DuzMetin(markdown)
 }
 
 // ── Alt bileşenler ────────────────────────────────────────────────────────────

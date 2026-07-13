@@ -136,13 +136,20 @@ function istasyonGun(g: GunRaporu, ad: string) {
   return { adet, fire }
 }
 
-function operatorlerGun(g: GunRaporu): { ad: string; count: number }[] {
-  const map = new Map<string, number>()
-  g.kayitlar.forEach(k => {
+function operatorlerGun(g: GunRaporu): { ad: string; count: number; saatler: string[] }[] {
+  const map = new Map<string, { count: number; saatler: string[] }>()
+  const siraliKayitlar = [...g.kayitlar]
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+  siraliKayitlar.forEach(k => {
     const ad = k.operator?.ad_soyad ?? 'Bilinmiyor'
-    map.set(ad, (map.get(ad) ?? 0) + 1)
+    const mevcut = map.get(ad) ?? { count: 0, saatler: [] }
+    map.set(ad, {
+      count: mevcut.count + 1,
+      saatler: [...mevcut.saatler, formatSaat(k.created_at)],
+    })
   })
-  return Array.from(map.entries()).map(([ad, count]) => ({ ad, count }))
+  return Array.from(map.entries()).map(([ad, { count, saatler }]) => ({ ad, count, saatler }))
 }
 
 function toplamPersonelGun(g: GunRaporu) {
@@ -160,62 +167,139 @@ function araclarGun(g: GunRaporu): string {
   return Array.from(map.entries()).map(([p, a]) => `${p}: ${a}`).join(', ')
 }
 
-// ── Excel (SpreadsheetML → .xls) ──────────────────────────────────────────────
-function xlsIndir(
+// ── Excel (.xlsx) ─────────────────────────────────────────────────────────────
+// Testte üretilen dosyayı tekrar açıp gerçek XLSX yapısını doğrulamak için dışa aktarılır.
+// eslint-disable-next-line react-refresh/only-export-components
+export async function xlsxIndir(
   gunler: GunRaporu[],
   istasyonlar: { ad: string; sira: number }[],
   mod: 'birlesik' | 'ayri',
   baslangic: string,
   bitis: string,
 ) {
-  function cell(v: string | number, bold = false) {
-    const tip = typeof v === 'number' ? 'Number' : 'String'
-    const bold_s = bold ? ' ss:StyleID="bold"' : ''
-    return `<Cell${bold_s}><Data ss:Type="${tip}">${String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Data></Cell>`
+  const ExcelJS = await import('exceljs')
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = 'Ortaklar Cam Yönetim Sistemi'
+  workbook.created = new Date()
+
+  const worksheet = workbook.addWorksheet(mod === 'birlesik' ? 'Günlük Toplamlar' : 'Operatör Girişleri', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+    properties: { defaultRowHeight: 20 },
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  })
+
+  function tarihDegeri(tarih: string): Date {
+    const [yil, ay, gun] = tarih.split('-').map(Number)
+    return new Date(Date.UTC(yil, ay - 1, gun))
   }
-  function row(...cells: string[]) { return `<Row>${cells.join('')}</Row>` }
+
+  function saatDegeri(zaman: string): Date {
+    const [saat, dakika] = formatSaat(zaman).split(':').map(Number)
+    return new Date(Date.UTC(2000, 0, 1, saat, dakika))
+  }
 
   const istAdlar = istasyonlar.map(s => s.ad)
   const basliklar = mod === 'birlesik'
     ? ['Tarih', 'Operatörler', 'Personel', ...istAdlar.flatMap(a => [a, `${a} Fire`]), 'Araçlar', 'Notlar']
-    : ['Tarih', 'Operatör', 'Giriş No', 'Personel', ...istAdlar.flatMap(a => [a, `${a} Fire`]), 'Araçlar', 'Not']
-
-  let rows = row(...basliklar.map(h => cell(h, true)))
+    : ['Tarih', 'Saat', 'Operatör', 'Giriş No', 'Personel', ...istAdlar.flatMap(a => [a, `${a} Fire`]), 'Araçlar', 'Not']
+  const satirlar: Array<Array<string | number | Date | null>> = []
 
   if (mod === 'birlesik') {
     gunler.forEach(g => {
       const ops = operatorlerGun(g).map(o => o.count > 1 ? `${o.ad} (x${o.count})` : o.ad).join(', ')
-      const istCells = istAdlar.flatMap(ad => {
+      const istasyonDegerleri = istAdlar.flatMap(ad => {
         const { adet, fire } = istasyonGun(g, ad)
-        return [cell(adet || ''), cell(fire || '')]
+        return [adet || null, fire || null]
       })
-      rows += row(cell(formatTarih(g.tarih)), cell(ops), cell(toplamPersonelGun(g)), ...istCells,
-        cell(araclarGun(g)), cell(g.kayitlar.map(k => k.notlar ?? '').filter(Boolean).join(' | ')))
+      satirlar.push([
+        tarihDegeri(g.tarih),
+        ops,
+        toplamPersonelGun(g),
+        ...istasyonDegerleri,
+        araclarGun(g),
+        g.kayitlar.map(k => k.notlar ?? '').filter(Boolean).join(' | '),
+      ])
     })
   } else {
     gunler.forEach(g => {
-      g.kayitlar.forEach((k, i) => {
-        const istCells = istAdlar.flatMap(ad => {
+      ;[...g.kayitlar]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .forEach((k, i) => {
+        const istasyonDegerleri = istAdlar.flatMap(ad => {
           const s = k.istasyon_kayitlari.find(x => x.istasyon?.ad === ad)
-          return [cell(s?.adet ?? ''), cell(s?.fire_adet ?? '')]
+          return [s?.adet || null, s?.fire_adet || null]
         })
         const aracStr = k.arac_yuklemeleri.map(y => `${y.arac?.plaka ?? y.dis_arac_plakasi ?? '?'}: ${y.adet}`).join(', ')
-        rows += row(cell(i === 0 ? formatTarih(g.tarih) : ''), cell(k.operator?.ad_soyad ?? 'Bilinmiyor'),
-          cell(i + 1), cell(k.toplam_personel), ...istCells, cell(aracStr), cell(k.notlar ?? ''))
+        satirlar.push([
+          tarihDegeri(g.tarih),
+          saatDegeri(k.created_at),
+          k.operator?.ad_soyad ?? 'Bilinmiyor',
+          i + 1,
+          k.toplam_personel,
+          ...istasyonDegerleri,
+          aracStr,
+          k.notlar ?? '',
+        ])
       })
     })
   }
 
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>\
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\
-<Styles><Style ss:ID="bold"><Font ss:Bold="1"/></Style></Styles>\
-<Worksheet ss:Name="Üretim Girişleri ${baslangic} - ${bitis}"><Table>${rows}</Table></Worksheet></Workbook>`
+  worksheet.addRow(basliklar)
+  worksheet.addRows(satirlar)
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(1, satirlar.length + 1), column: basliklar.length },
+  }
 
-  const blob = new Blob(['\uFEFF' + xml], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const baslikSatiri = worksheet.getRow(1)
+  baslikSatiri.height = 26
+  baslikSatiri.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF59E0B' } }
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    cell.border = { bottom: { style: 'medium', color: { argb: 'FFD97706' } } }
+  })
+
+  worksheet.getColumn(1).width = 14
+  worksheet.getColumn(1).numFmt = 'dd.mm.yyyy'
+  const veriBaslangicKolonu = mod === 'ayri' ? 6 : 4
+  if (mod === 'ayri') {
+    worksheet.getColumn(2).width = 10
+    worksheet.getColumn(2).numFmt = 'hh:mm'
+    worksheet.getColumn(3).width = 24
+    worksheet.getColumn(4).width = 11
+    worksheet.getColumn(5).width = 12
+  } else {
+    worksheet.getColumn(2).width = 30
+    worksheet.getColumn(3).width = 12
+  }
+  istAdlar.forEach((_, index) => {
+    worksheet.getColumn(veriBaslangicKolonu + index * 2).width = 16
+    worksheet.getColumn(veriBaslangicKolonu + index * 2 + 1).width = 12
+  })
+  worksheet.getColumn(basliklar.length - 1).width = 26
+  worksheet.getColumn(basliklar.length).width = 42
+  worksheet.getColumn(basliklar.length).alignment = { vertical: 'top', wrapText: true }
+
+  for (let rowIndex = 2; rowIndex <= satirlar.length + 1; rowIndex += 1) {
+    const row = worksheet.getRow(rowIndex)
+    row.alignment = { vertical: 'top' }
+    row.eachCell({ includeEmpty: true }, cell => {
+      cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } }
+      if (rowIndex % 2 === 0) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } }
+      }
+    })
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([new Uint8Array(buffer)], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `uretim_giris_${baslangic}_${bitis}.xls`
+  a.download = `uretim_giris_${baslangic}_${bitis}_${mod}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -512,6 +596,20 @@ function ExcelModModal({
   onKapat: () => void
 }) {
   const [mod, setMod] = useState<'birlesik' | 'ayri'>('birlesik')
+  const [indiriliyor, setIndiriliyor] = useState(false)
+
+  const indir = async () => {
+    setIndiriliyor(true)
+    try {
+      await xlsxIndir(gunler, istasyonlar, mod, baslangic, bitis)
+      onKapat()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Excel dosyası oluşturulamadı.')
+    } finally {
+      setIndiriliyor(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={e => { if (e.target === e.currentTarget) onKapat() }}>
@@ -540,17 +638,19 @@ function ExcelModModal({
             <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 ${mod === 'ayri' ? 'border-indigo-500 bg-indigo-500' : 'border-gray-300'}`} />
             <div>
               <div className="font-semibold text-gray-900 text-sm">Operatör Bazlı (Ayrı Satırlar)</div>
-              <div className="text-xs text-gray-500 mt-0.5">Her giriş ayrı satır. Kimin ne girdiği görünür.</div>
+              <div className="text-xs text-gray-500 mt-0.5">Her giriş tarih ve saatiyle ayrı satırda gösterilir.</div>
             </div>
           </button>
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
-          <button type="button" onClick={onKapat}
+          <button type="button" onClick={onKapat} disabled={indiriliyor}
             className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">İptal</button>
           <button type="button"
-            onClick={() => { xlsIndir(gunler, istasyonlar, mod, baslangic, bitis); onKapat() }}
-            className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-lg transition-colors">
-            <FileDown size={14} /> İndir
+            onClick={indir}
+            disabled={indiriliyor}
+            className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-colors">
+            {indiriliyor ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
+            {indiriliyor ? 'Hazırlanıyor…' : '.xlsx İndir'}
           </button>
         </div>
       </div>
@@ -672,6 +772,8 @@ function GunDetayModal({
             const sirali = [...rapor.istasyon_kayitlari].sort(
               (a, b) => (a.istasyon?.sira_no ?? 0) - (b.istasyon?.sira_no ?? 0),
             )
+            const girilenIstasyonlar = sirali.filter(k => k.adet > 0 || k.fire_adet > 0)
+            const girilenAraclar = rapor.arac_yuklemeleri.filter(y => y.adet > 0)
             return (
               <div key={rapor.id} className="border border-gray-200 rounded-xl overflow-hidden">
                 {/* Kayıt başlığı */}
@@ -684,9 +786,14 @@ function GunDetayModal({
                       <span className="font-semibold text-gray-900 text-sm">
                         {rapor.operator?.ad_soyad ?? 'Bilinmiyor'}
                       </span>
-                      <span className="text-xs text-gray-400 ml-2">
-                        {formatSaat(rapor.created_at)} · {rapor.toplam_personel} personel
-                      </span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[11px] text-gray-400">{formatSaat(rapor.created_at)}</span>
+                        {rapor.toplam_personel > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">
+                            <Users size={10} /> {rapor.toplam_personel} Personel
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {!isEditing && (
@@ -797,19 +904,21 @@ function GunDetayModal({
                   ) : (
                     <div className="space-y-3">
                       {/* İstasyon görünümü */}
-                      {sirali.length > 0 && (
+                      {girilenIstasyonlar.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
                             <Factory size={10} /> İstasyon Verileri
                           </p>
                           <div className="grid grid-cols-2 gap-1.5">
-                            {sirali.map(k => (
+                            {girilenIstasyonlar.map(k => (
                               <div key={k.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
                                 <span className="text-xs font-medium text-gray-700 truncate mr-2">{k.istasyon?.ad ?? '—'}</span>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded-md px-2 py-0.5 text-xs">{k.adet}</span>
+                                  {k.adet > 0 && (
+                                    <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded-md px-2 py-0.5 text-xs">{k.adet}</span>
+                                  )}
                                   {k.fire_adet > 0 && (
-                                    <span className="font-bold text-red-600 bg-red-50 border border-red-200 rounded-md px-1.5 py-0.5 text-[10px]">🔥{k.fire_adet}</span>
+                                    <span className="font-bold text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-0.5 text-[10px]">Fire: {k.fire_adet}</span>
                                   )}
                                 </div>
                               </div>
@@ -818,13 +927,13 @@ function GunDetayModal({
                         </div>
                       )}
                       {/* Araç görünümü */}
-                      {rapor.arac_yuklemeleri.length > 0 && (
+                      {girilenAraclar.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
                             <Truck size={10} /> Araç Yükleme
                           </p>
                           <div className="flex flex-wrap gap-1.5">
-                            {rapor.arac_yuklemeleri.map(y => (
+                            {girilenAraclar.map(y => (
                               <span key={y.id} className="flex items-center gap-1 px-2.5 py-1 bg-gray-50 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg">
                                 <Truck size={9} /> {y.arac?.plaka ?? y.dis_arac_plakasi ?? '?'}: <strong className="ml-0.5">{y.adet}</strong>
                                 {!y.arac && <span className="text-amber-500 ml-1">(Harici)</span>}
@@ -839,12 +948,12 @@ function GunDetayModal({
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
                             <StickyNote size={10} /> Not
                           </p>
-                          <p className="text-xs text-gray-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                          <p className="text-xs text-gray-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">
                             {rapor.notlar}
                           </p>
                         </div>
                       )}
-                      {sirali.length === 0 && rapor.arac_yuklemeleri.length === 0 && !rapor.notlar && (
+                      {girilenIstasyonlar.length === 0 && girilenAraclar.length === 0 && !rapor.notlar && (
                         <p className="text-xs text-gray-400 text-center py-2">Detay bilgisi yok.</p>
                       )}
                     </div>
@@ -1045,12 +1154,12 @@ function UretimGirisiTab() {
                 <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Tarih</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Operatör(ler)</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Pers.</th>
+                  <th className="text-center px-3 py-3 text-xs font-bold text-violet-700 uppercase tracking-wide whitespace-nowrap min-w-[92px]">Personel</th>
                   {istasyonlar.map(s => (
                     <th key={s.ad} className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{s.ad}</th>
                   ))}
                   <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Araçlar</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notlar</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-64 min-w-64 max-w-64">Notlar</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">İşlem</th>
                 </tr>
               </thead>
@@ -1076,7 +1185,7 @@ function UretimGirisiTab() {
                           {ops.map(op => (
                             <span key={op.ad}
                               className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 text-teal-800 text-xs font-semibold rounded-full whitespace-nowrap">
-                              <User size={9} /> {op.ad}
+                              <User size={9} /> {op.ad} · {op.saatler.join(', ')}
                               {op.count > 1 && <span className="bg-teal-600 text-white text-[9px] font-bold rounded-full px-1 leading-tight">x{op.count}</span>}
                             </span>
                           ))}
@@ -1084,17 +1193,21 @@ function UretimGirisiTab() {
                       </td>
                       {/* Personel */}
                       <td className="px-3 py-3 text-center">
-                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-100 text-gray-700 font-bold text-xs">{pers}</span>
+                        <span className="inline-flex items-center justify-center gap-1.5 h-8 rounded-lg border border-violet-200 bg-violet-100 px-3 text-violet-800 font-extrabold text-sm shadow-sm">
+                          <Users size={13} /> {pers}
+                        </span>
                       </td>
                       {/* Dinamik istasyon sütunları */}
                       {istasyonlar.map(s => {
                         const { adet, fire } = istasyonGun(g, s.ad)
                         return (
                           <td key={s.ad} className="px-3 py-3 text-center">
-                            {adet > 0 ? (
+                            {adet > 0 || fire > 0 ? (
                               <div className="inline-flex flex-col items-center gap-1">
-                                <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded-lg px-3 py-1 text-sm min-w-[2.5rem] text-center leading-tight">{adet}</span>
-                                {fire > 0 && <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-0.5 leading-tight">🔥 {fire}</span>}
+                                {adet > 0 && (
+                                  <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded-lg px-3 py-1 text-sm min-w-[2.5rem] text-center leading-tight">{adet}</span>
+                                )}
+                                {fire > 0 && <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-md px-2 py-0.5 leading-tight">Fire: {fire}</span>}
                               </div>
                             ) : <span className="text-gray-300 text-sm">—</span>}
                           </td>
@@ -1114,12 +1227,14 @@ function UretimGirisiTab() {
                         </div>
                       </td>
                       {/* Notlar */}
-                      <td className="px-3 py-3 max-w-[160px]">
+                      <td className="px-3 py-3 w-64 min-w-64 max-w-64">
                         {tumNotlar.length === 0
                           ? <span className="text-gray-300 text-xs">—</span>
-                          : <span className="inline-flex items-start gap-1 text-xs text-gray-600">
+                          : <span className="flex items-start gap-1 text-xs text-gray-600 min-w-0">
                               <StickyNote size={11} className="text-amber-400 shrink-0 mt-0.5" />
-                              <span className="truncate" title={tumNotlar.join(' | ')}>{tumNotlar.join(' | ')}</span>
+                              <span className="min-w-0 max-h-[3.75rem] overflow-hidden whitespace-normal break-words leading-5" title={tumNotlar.join(' | ')}>
+                                {tumNotlar.join(' | ')}
+                              </span>
                             </span>
                         }
                       </td>

@@ -8,6 +8,7 @@ import type { CamFormSatiri } from '@/types/siparis'
 import type { EkleIlerleme } from '@/hooks/useSiparis'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import CamStokPicker from '@/components/siparis/CamStokPicker'
 import { getDocument } from 'pdfjs-dist'
 import { generateCariKod, generateStokKod } from '@/lib/idGenerator'
 import {
@@ -847,31 +848,25 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                               <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
                                 Cam Stoğu
                               </label>
-                              <select
+                              <CamStokPicker
+                                stoklar={camStoklar}
                                 value={secim?.stokId ?? ''}
-                                onChange={(e) => {
-                                  const stokId = e.target.value
+                                onChange={(stokId) => {
                                   setSatirStokSecimler((prev) => ({
                                     ...prev,
                                     [g.key]: { stokId, skor: stokId ? 1 : 0 },
                                   }))
                                 }}
+                                invalid={!secim?.stokId}
+                                placeholder="Stok kartı seçin..."
                                 className={cn(
-                                  'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2',
                                   eslesti
                                     ? 'border-green-400 bg-green-50 focus:ring-green-400'
                                     : secim?.stokId
                                       ? 'border-yellow-400 bg-yellow-50 focus:ring-yellow-400'
                                       : 'border-red-200 bg-red-50/30 focus:ring-blue-500'
                                 )}
-                              >
-                                <option value="">— Stok kartı seçin —</option>
-                                {camStoklar.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.kod} — {s.ad}
-                                  </option>
-                                ))}
-                              </select>
+                              />
                               {!secim?.stokId && (
                                 <div className="mt-1.5 flex items-center gap-2">
                                   <span className="text-xs text-red-600">Bu cam için stok bulunamadı.</span>

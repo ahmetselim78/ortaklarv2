@@ -1,47 +1,16 @@
 // Deno Edge Function — TypeScript project config bu dosyayı kapsamaz
 
+import {
+  raporOlustur,
+  type SaatlikSatir,
+  type TelegramRaporTipi,
+  type TelegramSablon,
+  type UretimRaporu,
+} from '../_shared/telegramMessage.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
-
-interface TelegramSablon {
-  baslik: boolean
-  saatlik_detay: boolean
-  saatlik_ozet: boolean
-  istasyonlar: boolean
-  araclar: boolean
-  personel: boolean
-  operator: boolean
-  notlar: boolean
-}
-
-interface SaatlikSatir {
-  saat_araligi: string
-  hedef_adet: number
-  gerceklesen_adet: number
-  fire_adet: number
-}
-
-interface UretimRaporu {
-  id: string
-  toplam_personel: number
-  notlar: string | null
-  created_at: string
-  operator: { ad_soyad: string } | null
-  istasyon_kayitlari: Array<{
-    adet: number
-    fire_adet: number
-    istasyon: { ad: string; sira_no: number } | null
-  }>
-  arac_yuklemeleri: Array<{
-    adet: number
-    dis_arac_plakasi: string | null
-    dis_arac_adi: string | null
-    arac: { plaka: string; ad: string } | null
-  }>
 }
 
 // ── Türkiye saatini al ────────────────────────────────────────────────────────
@@ -70,32 +39,6 @@ function normalizeSaatDegeri(deger: unknown): string | null {
   return `${String(saat).padStart(2, '0')}:${String(dakika).padStart(2, '0')}`
 }
 
-const TR_AYLAR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran',
-                  'Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık']
-
-function gunGoster(tarih: string): string {
-  const [yil, ay, gun] = tarih.split('-')
-  return `${parseInt(gun)} ${TR_AYLAR[parseInt(ay) - 1]} ${yil}`
-}
-
-function escMd(text: string): string {
-  return String(text).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, c => `\\${c}`)
-}
-
-function performansEmoji(oran: number): string {
-  if (oran >= 95) return '🟢'
-  if (oran >= 80) return '🟡'
-  return '🔴'
-}
-
-function saatAraligiGoster(aralik: string): string {
-  return aralik.replace(/\s*-\s*/g, ' – ')
-}
-
-function ayirici(char = '─', uzunluk = 18): string {
-  return escMd(char.repeat(uzunluk))
-}
-
 function sablonFromAyar(ayar: Record<string, unknown>): TelegramSablon {
   return {
     baslik: ayar.sablon_baslik !== false,
@@ -107,146 +50,6 @@ function sablonFromAyar(ayar: Record<string, unknown>): TelegramSablon {
     operator: ayar.sablon_operator !== false,
     notlar: ayar.sablon_notlar !== false,
   }
-}
-
-function saatlikRaporMetni(satirlar: SaatlikSatir[], sablon: TelegramSablon): string {
-  const parcalar: string[] = []
-
-  if (sablon.baslik) {
-    parcalar.push(`📊 *Saatlik Takip*`)
-    parcalar.push(ayirici())
-  }
-
-  if (sablon.saatlik_detay) {
-    if (satirlar.length === 0) {
-      parcalar.push('_Henüz veri girilmemiş\\._')
-    } else {
-      for (const s of satirlar) {
-        const oran = s.hedef_adet > 0
-          ? Math.round((s.gerceklesen_adet / s.hedef_adet) * 100)
-          : 0
-        const emoji = performansEmoji(oran)
-        parcalar.push([
-          `🕐 *${escMd(saatAraligiGoster(s.saat_araligi))}*`,
-          `${emoji} Gerçekleşen: *${escMd(String(s.gerceklesen_adet))}* / ${escMd(String(s.hedef_adet))} \\(%${escMd(String(oran))}\\)`,
-          `🔥 Fire: *${escMd(String(s.fire_adet))}*`,
-        ].join('\n'))
-      }
-    }
-  }
-
-  if (sablon.saatlik_ozet) {
-    const toplamHedef = satirlar.reduce((s, r) => s + (r.hedef_adet ?? 0), 0)
-    const toplamGercek = satirlar.reduce((s, r) => s + (r.gerceklesen_adet ?? 0), 0)
-    const toplamFire = satirlar.reduce((s, r) => s + (r.fire_adet ?? 0), 0)
-    const performans = toplamHedef > 0
-      ? ((toplamGercek / toplamHedef) * 100).toFixed(1)
-      : '0.0'
-    const performansEmojiStr = performansEmoji(parseFloat(performans))
-
-    parcalar.push([
-      `📌 *Gün Özeti*`,
-      `✅ Gerçekleşen: *${escMd(String(toplamGercek))}* adet`,
-      `🎯 Hedef: *${escMd(String(toplamHedef))}* adet`,
-      `🔥 Fire: *${escMd(String(toplamFire))}* adet`,
-      `${performansEmojiStr} Performans: *%${escMd(performans)}*`,
-    ].join('\n'))
-  }
-
-  return parcalar.join('\n\n')
-}
-
-function uretimGirisRaporMetni(raporlar: UretimRaporu[], sablon: TelegramSablon): string {
-  const parcalar: string[] = []
-
-  if (sablon.baslik) {
-    parcalar.push(`🏭 *Üretim Girişi*`)
-    parcalar.push(ayirici())
-  }
-
-  if (raporlar.length === 0) {
-    parcalar.push('_Henüz giriş yapılmamış\\._')
-    return parcalar.join('\n\n')
-  }
-
-  raporlar.forEach((rapor, idx) => {
-    const blok: string[] = []
-    const kayitNo = raporlar.length > 1 ? ` ${idx + 1}` : ''
-
-    if (sablon.operator || sablon.personel) {
-      const bilgiler: string[] = []
-      if (sablon.operator) {
-        bilgiler.push(`👤 ${escMd(rapor.operator?.ad_soyad ?? 'Bilinmiyor')}`)
-      }
-      if (sablon.personel) {
-        bilgiler.push(`👥 ${escMd(String(rapor.toplam_personel))} personel`)
-      }
-      blok.push(`*Kayıt${escMd(kayitNo)}*\n${bilgiler.join(' · ')}`)
-    }
-
-    if (sablon.istasyonlar) {
-      const sirali = [...rapor.istasyon_kayitlari].sort(
-        (a, b) => (a.istasyon?.sira_no ?? 0) - (b.istasyon?.sira_no ?? 0),
-      )
-      if (sirali.length > 0) {
-        const satirlar = sirali.map(k => {
-          const ad = escMd(k.istasyon?.ad ?? '—')
-          const fire = k.fire_adet > 0 ? ` \\(🔥 ${escMd(String(k.fire_adet))}\\)` : ''
-          return `• ${ad} — *${escMd(String(k.adet))}* adet${fire}`
-        })
-        blok.push(`*İstasyonlar*\n${satirlar.join('\n')}`)
-      }
-    }
-
-    if (sablon.araclar && rapor.arac_yuklemeleri.length > 0) {
-      const satirlar = rapor.arac_yuklemeleri.map(y => {
-        const plaka = escMd(y.arac?.plaka ?? y.dis_arac_plakasi ?? '—')
-        const ad = escMd(y.arac?.ad ?? y.dis_arac_adi ?? 'Harici')
-        return `• ${plaka} \\(${ad}\\) — *${escMd(String(y.adet))}* adet`
-      })
-      blok.push(`*Araç Yüklemeleri*\n${satirlar.join('\n')}`)
-    }
-
-    if (sablon.notlar && rapor.notlar?.trim()) {
-      blok.push(`📝 *Not:* ${escMd(rapor.notlar.trim())}`)
-    }
-
-    if (blok.length > 0) {
-      parcalar.push(blok.join('\n\n'))
-      if (idx < raporlar.length - 1) parcalar.push(ayirici('·', 12))
-    }
-  })
-
-  return parcalar.join('\n\n')
-}
-
-function raporOlustur(
-  tarih: string,
-  saat: string,
-  raporTipi: TelegramRaporTipi,
-  sablon: TelegramSablon,
-  saatlikSatirlar: SaatlikSatir[],
-  uretimRaporlari: UretimRaporu[],
-): string {
-  const baslik = [
-    `📋 *Günlük Üretim Raporu*`,
-    ayirici('━'),
-    `📅 *${escMd(gunGoster(tarih))}* · *${escMd(saat)}*`,
-  ].join('\n')
-
-  const bolumler: string[] = [baslik]
-
-  if (raporTipi === 'saatlik' || raporTipi === 'her_ikisi') {
-    const metin = saatlikRaporMetni(saatlikSatirlar, sablon)
-    if (metin) bolumler.push(metin)
-  }
-
-  if (raporTipi === 'uretim_giris' || raporTipi === 'her_ikisi') {
-    const metin = uretimGirisRaporMetni(uretimRaporlari, sablon)
-    if (metin) bolumler.push(metin)
-  }
-
-  return bolumler.join('\n\n')
 }
 
 // ── Ana işleyici ─────────────────────────────────────────────────────────────

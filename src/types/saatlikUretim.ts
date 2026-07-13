@@ -16,6 +16,9 @@ export interface HrPersonel {
   is_aktif: boolean
   kullanici_adi?: string | null
   giris_sifresi?: string | null
+  /** false ise tüm aktif istasyonlar, true ise ilişki tablosunda seçilen istasyonlar */
+  uretim_yetkileri_sinirli?: boolean
+  hr_personel_istasyon_yetkileri?: Array<{ istasyon_id: string }>
 }
 
 export type YeniPersonel = Omit<HrPersonel, 'id'>
