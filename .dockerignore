@@ -4,5 +4,4 @@ dist/
 .env*
 *.md
 yazici-kopru/
-supabase/
 ornek_liste*.pdf
