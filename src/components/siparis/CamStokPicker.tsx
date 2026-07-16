@@ -38,6 +38,8 @@ interface CamStokPickerProps {
   stoklar: Stok[]
   value: string
   onChange: (stokId: string) => void
+  /** Seçili stok varken Enter'a basıldığında picker dışındaki sonraki alana geçiş yapar. */
+  onSelectedEnter?: () => void
   invalid?: boolean
   placeholder?: string
   className?: string
@@ -66,6 +68,7 @@ export default function CamStokPicker({
   stoklar,
   value,
   onChange,
+  onSelectedEnter,
   invalid,
   placeholder = 'Cam stoğu seçin...',
   className,
@@ -220,6 +223,11 @@ export default function CamStokPicker({
   }
 
   const onTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !acik && value && onSelectedEnter) {
+      e.preventDefault()
+      onSelectedEnter()
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       if (!acik) ac()

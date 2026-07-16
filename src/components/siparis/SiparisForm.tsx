@@ -148,6 +148,22 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     }, 60)
   }
 
+  const genislikAlaninaGec = (rowIdx: number) => {
+    document.querySelector<HTMLElement>(`[data-row="${rowIdx}"][data-field="genislik_mm"]`)?.focus()
+  }
+
+  const sonrakiSatirGenisligineGec = (rowIdx: number) => {
+    const nextIdx = rowIdx + 1
+    const existing = document.querySelector<HTMLElement>(`[data-row="${nextIdx}"][data-field="genislik_mm"]`)
+    if (existing) {
+      existing.focus()
+      return
+    }
+
+    appendCam(rowIdx)
+    setTimeout(() => genislikAlaninaGec(nextIdx), 60)
+  }
+
   const handleEnterNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     rowIdx: number,
@@ -168,16 +184,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     if (nextField) {
       document.querySelector<HTMLElement>(`[data-row="${rowIdx}"][data-field="${nextField}"]`)?.focus()
     } else {
-      const nextIdx = rowIdx + 1
-      const existing = document.querySelector<HTMLElement>(`[data-row="${nextIdx}"][data-field="genislik_mm"]`)
-      if (existing) {
-        existing.focus()
-      } else {
-        appendCam(rowIdx)
-        setTimeout(() => {
-          document.querySelector<HTMLElement>(`[data-row="${nextIdx}"][data-field="genislik_mm"]`)?.focus()
-        }, 60)
-      }
+      sonrakiSatirGenisligineGec(rowIdx)
     }
   }
 
@@ -455,6 +462,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                     stoklar={camStoklar}
                                     value={field.value ?? ''}
                                     onChange={(id) => camSecildi(index, id)}
+                                    onSelectedEnter={() => genislikAlaninaGec(index)}
                                     invalid={!!errors.camlar?.[index]?.stok_id}
                                   />
                                 )}
@@ -513,6 +521,11 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                     key={tag}
                                     type="button"
                                     onClick={() => toggleTag(index, 'notlar', tag)}
+                                    onKeyDown={e => {
+                                      if (e.key !== 'Enter') return
+                                      e.preventDefault()
+                                      sonrakiSatirGenisligineGec(index)
+                                    }}
                                     className={cn(
                                       'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
                                       hasTag(index, 'notlar', tag)
