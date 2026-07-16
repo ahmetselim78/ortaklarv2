@@ -74,7 +74,9 @@ export default {
 
     // Benzersiz key oluştur
     const ext = file.name.split('.').pop() ?? 'jpg'
-    const key = `personel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const kategoriRaw = formData.get('kategori')
+    const kategori = kategoriRaw === 'etiket-zemin' ? 'etiket-zemin' : 'personel'
+    const key = `${kategori}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
 
     // R2'ye yükle
     try {

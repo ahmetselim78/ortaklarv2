@@ -34,6 +34,7 @@ export class R2UploadHata extends Error {
 export async function r2Upload(
   dosya: File,
   onProgress?: (yuzde: number) => void,
+  kategori: 'personel' | 'etiket-zemin' = 'personel',
 ): Promise<R2UploadSonucu> {
   const uploadUrl = import.meta.env.VITE_R2_UPLOAD_URL as string | undefined
   const secret    = import.meta.env.VITE_R2_UPLOAD_SECRET as string | undefined
@@ -57,10 +58,11 @@ export async function r2Upload(
 
   // Benzersiz dosya adı: timestamp + orijinal uzantı
   const uzanti = dosya.name.split('.').pop() ?? 'jpg'
-  const dosyaAdi = `personel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${uzanti}`
+  const dosyaAdi = `${kategori}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${uzanti}`
 
   const form = new FormData()
   form.append('file', dosya, dosyaAdi)
+  form.append('kategori', kategori)
 
   onProgress?.(10)
 

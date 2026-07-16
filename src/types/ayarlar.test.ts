@@ -42,12 +42,28 @@ describe('etiketAyarlariBirlestir', () => {
     expect(ayarlar.yerlesim.alanlar.poz.x_mm).toBe(12.5)
     expect(ayarlar.yerlesim.alanlar.poz.font).toBe(2)
     expect(ayarlar.yerlesim.alanlar.barkod.barkod_yukseklik_mm).toBe(12)
+    expect(ayarlar.yerlesim.zemin_fotografi_url).toBe('')
+    expect(ayarlar.yerlesim.zemin_opakligi).toBe(0.55)
   })
 
   it('eski dolu DPL şablonunu sessizce ezmez ve uzman moduna taşır', () => {
     const ayarlar = etiketAyarlariBirlestir({ dpl_sablonu: '\\x02L\\rE\\r' })
     expect(ayarlar.dpl_modu).toBe('ozel')
     expect(ayarlar.dpl_sablonu).toBe('\\x02L\\rE\\r')
+  })
+
+  it('kalıcı etiket zemin fotoğrafı URL, anahtar ve opaklığını korur', () => {
+    const ayarlar = etiketAyarlariBirlestir({
+      yerlesim: {
+        zemin_fotografi_url: 'https://cdn.example.com/etiket-zemin-1.webp',
+        zemin_fotografi_key: 'etiket-zemin-1.webp',
+        zemin_opakligi: 0.7,
+      },
+    })
+
+    expect(ayarlar.yerlesim.zemin_fotografi_url).toBe('https://cdn.example.com/etiket-zemin-1.webp')
+    expect(ayarlar.yerlesim.zemin_fotografi_key).toBe('etiket-zemin-1.webp')
+    expect(ayarlar.yerlesim.zemin_opakligi).toBe(0.7)
   })
 })
 
@@ -56,16 +72,16 @@ describe('etiketAlanDegeri', () => {
     expect(etiketAlanDegeri('boyut', VERI)).toBe('400x600')
   })
 
-  it('poz ve toplam adet alanlarına P ve AD ekler', () => {
-    expect(etiketAlanDegeri('poz', VERI)).toBe('P 12')
-    expect(etiketAlanDegeri('liste_adedi', VERI)).toBe('48 AD')
+  it('poz ve toplam adet alanlarına boşluksuz P ve AD ekler', () => {
+    expect(etiketAlanDegeri('poz', VERI)).toBe('P12')
+    expect(etiketAlanDegeri('liste_adedi', VERI)).toBe('48AD')
   })
 
   it('poz ve adet karakter sınırını önek/sonek yerine gövdeye uygular', () => {
-    expect(etiketAlanDegeri('poz', VERI, undefined, 1)).toBe('P 1')
-    expect(etiketAlanDegeri('poz', VERI, undefined, 2)).toBe('P 12')
-    expect(etiketAlanDegeri('liste_adedi', VERI, undefined, 1)).toBe('4 AD')
-    expect(etiketAlanDegeri('liste_adedi', VERI, undefined, 2)).toBe('48 AD')
+    expect(etiketAlanDegeri('poz', VERI, undefined, 1)).toBe('P1')
+    expect(etiketAlanDegeri('poz', VERI, undefined, 2)).toBe('P12')
+    expect(etiketAlanDegeri('liste_adedi', VERI, undefined, 1)).toBe('4AD')
+    expect(etiketAlanDegeri('liste_adedi', VERI, undefined, 2)).toBe('48AD')
   })
 
   it('batch sıra numarasını basar', () => {
@@ -97,17 +113,17 @@ describe('dplUret V2 yerleşimi', () => {
     ayarlar.yerlesim.y_ofset_mm = -0.3
 
     const dpl = dplUret(ayarlar, VERI)
-    expect(dpl).toContain('121100000750125P 12\r')
+    expect(dpl).toContain('121100000750125P12\r')
   })
 
-  it('font, ölçek, dönüş ve karakter sınırını uygular', () => {
+  it('font, ölçek ve dönüşü uygular; poz metnini kesmez', () => {
     const ayarlar = varsayilan()
     ayarlar.icerik.barkod = false
     ayarlar.icerik.poz = true
     ayarlar.yerlesim.alanlar.poz = {
       ...ayarlar.yerlesim.alanlar.poz,
       x_mm: 10,
-      y_mm: 12,
+      y_mm: 45,
       rotasyon: 2,
       font: 4,
       genislik_carpani: 3,
@@ -116,7 +132,7 @@ describe('dplUret V2 yerleşimi', () => {
     }
 
     const dpl = dplUret(ayarlar, VERI)
-    expect(dpl).toContain('243200001200100P 1\r')
+    expect(dpl).toMatch(/\r24\d200004500100P12\r/)
   })
 
   it('uzun sipariş pozunu sağ sınırda kesmek yerine font ve genişliği otomatik sığdırır', () => {
@@ -133,18 +149,42 @@ describe('dplUret V2 yerleşimi', () => {
     }
 
     const dpl = dplUret(ayarlar, { ...VERI, poz: '4 - K-1' })
-    expect(dpl).toContain('131100002690579P 4 - K-1\r')
+    expect(dpl).toMatch(/\r1\d1100002690579P4 - K-1\r/)
   })
 
-  it('poz maksimum karakteri artınca DPL içeriğinde daha fazla poz karakteri üretir', () => {
+  it('eski poz karakter sınırı düşük olsa da baskıda tam poz metnini korur', () => {
     const ayarlar = varsayilan()
     ayarlar.icerik.barkod = false
     ayarlar.icerik.poz = true
     ayarlar.yerlesim.alanlar.poz.maks_karakter = 3
-    expect(dplUret(ayarlar, { ...VERI, poz: '12 - K-1' })).toContain('P 12 \r')
+    expect(dplUret(ayarlar, { ...VERI, poz: '12 - K-1' })).toContain('P12 - K-1\r')
+  })
 
-    ayarlar.yerlesim.alanlar.poz.maks_karakter = 8
-    expect(dplUret(ayarlar, { ...VERI, poz: '12 - K-1' })).toContain('P 12 - K-1\r')
+  it('22 karakterden uzun poz numarasını kesmeden daha dar fontla üretir', () => {
+    const ayarlar = varsayilan()
+    ayarlar.icerik.barkod = false
+    ayarlar.icerik.poz = true
+    ayarlar.yerlesim.alanlar.poz.maks_karakter = 22
+    const uzunPoz = '1234567890123456789012345678901234567890'
+
+    const dpl = dplUret(ayarlar, { ...VERI, poz: uzunPoz })
+    expect(dpl).toContain(`P${uzunPoz}\r`)
+  })
+
+  it('döndürülmüş poz alanında da uzun değeri kesmez', () => {
+    const ayarlar = varsayilan()
+    ayarlar.icerik.barkod = false
+    ayarlar.icerik.poz = true
+    ayarlar.yerlesim.alanlar.poz = {
+      ...ayarlar.yerlesim.alanlar.poz,
+      x_mm: 10,
+      y_mm: 45,
+      rotasyon: 2,
+      maks_karakter: 22,
+    }
+    const uzunPoz = '987654321098765432109876543210'
+
+    expect(dplUret(ayarlar, { ...VERI, poz: uzunPoz })).toContain(`P${uzunPoz}\r`)
   })
 
   it('barkod dönüş, modül, yükseklik ve okunabilir metin seçimini uygular', () => {

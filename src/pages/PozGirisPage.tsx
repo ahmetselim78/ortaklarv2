@@ -8,9 +8,6 @@ import {
 } from 'lucide-react'
 import type { UretimEmriDurum } from '@/types/uretim'
 import TamireGonderModal from '@/components/tamir/TamireGonderModal'
-import { useAyarlar } from '@/hooks/useAyarlar'
-import { etiketOtomatikYazdir } from '@/lib/etiketBasim'
-import type { EtiketVeri } from '@/types/ayarlar'
 import { getCamKompozisyon, getEtiketCamTipi } from '@/lib/cam'
 import { glsSayacArttir } from '@/lib/saatlikSayac'
 import { fizikselGlsKodu, normalizeBatchSiraInput } from '@/lib/siparisDetay'
@@ -209,7 +206,6 @@ export default function PozGirisPage() {
   const navigate = useNavigate()
   const [saat, setSaat] = useState(new Date())
   const [connected, setConnected] = useState(false)
-  const { etiketAyarlari } = useAyarlar()
 
   // Batch seçimi
   const [batchler, setBatchler] = useState<BatchSatir[]>([])
@@ -636,26 +632,12 @@ export default function PozGirisPage() {
 
     const tekrar = cam.uretim_durumu === 'yikandi'
 
-    // Etiket bas (tekrar taramalarda da bas — her cam geçişinde etiket gerekir)
+    // Etiket içeriğini hazırla. Fiziksel baskıyı köprünün bulunduğu Kumanda Paneli yapar.
     const camTipiTam = getEtiketCamTipi(
       {},
       { ad: cam.stok_ad, kalinlik_mm: cam.ic_kalinlik_mm, katman_yapisi: cam.katman_yapisi },
     )
 
-    const etiketVeri: EtiketVeri = {
-      cam_kodu: cam.cam_kodu,
-      cam_tipi: camTipiTam,
-      cari_adi: cam.musteri,
-      alt_musteri: cam.nihai_musteri ?? '',
-      siparis_no: cam.siparis_no,
-      poz: cam.poz ?? '',
-      liste_adedi: cam.liste_adedi,
-      batch_sira: cam.sira_no,
-      genislik_mm: cam.genislik_mm,
-      yukseklik_mm: cam.yukseklik_mm,
-    }
-    // İstasyon akışını bekletmeden baskıyı başlat; sonucu ikinci bir broadcast ile bildir.
-    const etiketBasimSozu = etiketOtomatikYazdir(etiketAyarlari, etiketVeri)
     if (!tekrar) {
       await supabase.from('yikama_loglari').insert({
         cam_kodu: cam.cam_kodu,
@@ -744,21 +726,9 @@ export default function PozGirisPage() {
         zaman: taramaZamani,
         tekrar: tekrar,
         etiket_durumu: 'gonderiliyor',
-        etiket_mesaji: 'Yazıcı köprüsünden yanıt bekleniyor.',
+        etiket_mesaji: 'Kumanda Paneli yazıcı köprüsüne gönderecek.',
       },
     })
-
-    // EXE yanıtı geldiğinde kumanda kartındaki baskı durumunu kesinleştir.
-    void etiketBasimSozu.then(sonuc => channelRef.current?.send({
-      type: 'broadcast',
-      event: 'etiket_durumu',
-      payload: {
-        cam_kodu: cam.cam_kodu,
-        zaman: taramaZamani,
-        etiket_durumu: sonuc.durum,
-        etiket_mesaji: sonuc.mesaj,
-      },
-    }))
 
     setSonTarananCam({ ...cam, taranan_adet: tekrar ? cam.taranan_adet : yeniTarananadet })
     setAktifMusteri(`${cam.musteri}||${cam.nihai_musteri}`)

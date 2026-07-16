@@ -15,6 +15,7 @@ import {
 import EtiketYerlesimEditor from '@/components/ayarlar/EtiketYerlesimEditor'
 import { ETIKET_ALAN_META } from '@/lib/etiketAlanlari'
 import { ORNEK_ETIKET_VERI } from '@/lib/etiketOrnek'
+import { etiketDplKopruyeGonder } from '@/lib/etiketBasim'
 
 const VARSAYILAN_KOPRU_PORT = 9876
 
@@ -162,51 +163,15 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
   }
 
   async function kopruDplGonder(dpl: string, basariMesaji: string) {
-    if (!form.yazici.kopru_adresi.trim()) {
-      setTestSonucu({ basarili: false, mesaj: 'Köprü sunucu adresini girin.' })
-      return
-    }
-    const usb = form.yazici.yazici_adi.trim()
-    if (!usb && !form.yazici.ip_adresi.trim()) {
-      setTestSonucu({ basarili: false, mesaj: 'Windows Yazıcı Adı veya Yazıcı IP giriniz.' })
-      return
-    }
-    const kopruUrl = `http://${form.yazici.kopru_adresi.trim()}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT}/yazdir`
     setTestGonderiyor(true)
     setTestSonucu(null)
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000)
     try {
-      const body: Record<string, unknown> = { dpl }
-      if (usb) {
-        body.yazici_adi = usb
-      } else {
-        body.ip = form.yazici.ip_adresi.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
-        body.port = form.yazici.port
-      }
-      const res = await fetch(kopruUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
-      const data = await res.json()
-      if (data?.hata) throw new Error(data.hata)
-      setTestSonucu({ basarili: true, mesaj: data?.mesaj ?? basariMesaji })
-    } catch (e) {
-      const mesaj = e instanceof Error ? e.message : 'Bağlantı hatası.'
-      const zaman_asimi = mesaj.includes('abort') || mesaj.includes('AbortError')
-      const kopruHatasi = zaman_asimi || mesaj.includes('fetch') || mesaj.includes('Failed')
+      const sonuc = await etiketDplKopruyeGonder(form, dpl, 10000)
       setTestSonucu({
-        basarili: false,
-        mesaj: zaman_asimi
-          ? `Bağlantı zaman aşımı (10s) — ${form.yazici.kopru_adresi}:${form.yazici.kopru_port ?? VARSAYILAN_KOPRU_PORT} adresine ulaşılamıyor. Köprü servisi çalışıyor mu?`
-          : kopruHatasi
-          ? 'Köprü servisi bulunamadı. Yazıcı bilgisayarında node yazici-kopru.js çalışıyor mu?'
-          : mesaj,
+        basarili: sonuc.durum === 'yaziciya_gonderildi',
+        mesaj: sonuc.durum === 'yaziciya_gonderildi' ? (sonuc.mesaj || basariMesaji) : sonuc.mesaj,
       })
     } finally {
-      clearTimeout(timeoutId)
       setTestGonderiyor(false)
     }
   }
@@ -434,6 +399,10 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
           ayarlar={form}
           veri={ORNEK_ETIKET_VERI}
           onChange={setForm}
+          onKaliciDegistir={async yeniAyarlar => {
+            setForm(yeniAyarlar)
+            return onKaydet(yeniAyarlar)
+          }}
           seciliAlan={seciliAlan}
           onSeciliAlanChange={setSeciliAlan}
         />

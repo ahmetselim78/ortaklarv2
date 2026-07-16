@@ -20,9 +20,11 @@ export function useAyarlar(): UseAyarlarReturn {
   const [kaydediyor, setKaydediyor] = useState(false)
   const [hata, setHata] = useState<string | null>(null)
 
-  const getir = useCallback(async () => {
-    setYukleniyor(true)
-    setHata(null)
+  const getir = useCallback(async (sessiz = false) => {
+    if (!sessiz) {
+      setYukleniyor(true)
+      setHata(null)
+    }
     try {
       const { data, error } = await supabase
         .from('ayarlar')
@@ -36,14 +38,42 @@ export function useAyarlar(): UseAyarlarReturn {
         setEtiketAyarlari(etiketAyarlariBirlestir(data.deger))
       }
     } catch (e) {
-      setHata(e instanceof Error ? e.message : 'Ayarlar yüklenemedi')
+      if (!sessiz) setHata(e instanceof Error ? e.message : 'Ayarlar yüklenemedi')
     } finally {
-      setYukleniyor(false)
+      if (!sessiz) setYukleniyor(false)
     }
   }, [])
 
   useEffect(() => {
     getir()
+  }, [getir])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('etiket-ayarlari-canli')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ayarlar', filter: `anahtar=eq.${ANAHTAR}` },
+        payload => {
+          const yeni = payload.new as { deger?: unknown }
+          if (yeni?.deger) setEtiketAyarlari(etiketAyarlariBirlestir(yeni.deger))
+        },
+      )
+      .subscribe()
+
+    const sessizYenile = () => {
+      if (document.visibilityState === 'visible') void getir(true)
+    }
+    window.addEventListener('focus', sessizYenile)
+    document.addEventListener('visibilitychange', sessizYenile)
+    const intervalId = window.setInterval(sessizYenile, 30000)
+
+    return () => {
+      window.removeEventListener('focus', sessizYenile)
+      document.removeEventListener('visibilitychange', sessizYenile)
+      window.clearInterval(intervalId)
+      void supabase.removeChannel(channel)
+    }
   }, [getir])
 
   const etiketAyarlariGuncelle = useCallback(async (yeni: EtiketAyarlari): Promise<boolean> => {
@@ -76,6 +106,6 @@ export function useAyarlar(): UseAyarlarReturn {
     kaydediyor,
     hata,
     etiketAyarlariGuncelle,
-    yenile: getir,
+    yenile: () => getir(false),
   }
 }

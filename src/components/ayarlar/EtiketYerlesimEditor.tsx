@@ -8,7 +8,9 @@ import {
   Barcode,
   CheckCircle2,
   Crosshair,
+  CloudUpload,
   ImagePlus,
+  Loader2,
   Move,
   RotateCcw,
   Ruler,
@@ -25,11 +27,12 @@ import {
   DPL_FONT_METRIKLERI,
   ETIKET_ALAN_ANAHTARLARI,
   VARSAYILAN_ETIKET_AYARLARI,
-  etiketAlanDegeri,
+  etiketBaskiAlanDegeri,
   etiketAlanOlculeriMm,
   etiketYerlesimUyarilari,
 } from '@/types/ayarlar'
 import { ETIKET_ALAN_META } from '@/lib/etiketAlanlari'
+import { r2Upload, R2UploadHata } from '@/lib/r2Upload'
 
 const INPUT_CLASS = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
 
@@ -285,7 +288,7 @@ export function EtiketKanvas({
           const olcu = etiketAlanOlculeriMm(ayarlar, anahtar, veri)
           const x = alan.x_mm + ayarlar.yerlesim.x_ofset_mm
           const y = alan.y_mm + ayarlar.yerlesim.y_ofset_mm
-          const deger = etiketAlanDegeri(anahtar, veri, undefined, alan.maks_karakter)
+          const deger = etiketBaskiAlanDegeri(anahtar, veri, undefined, alan.maks_karakter)
           const selected = seciliAlan === anahtar
           const fontPx = Math.max(7, Math.min(48, olcu.yukseklik * scale * 0.72))
 
@@ -362,6 +365,7 @@ interface EtiketYerlesimEditorProps {
   ayarlar: EtiketAyarlari
   veri: EtiketVeri
   onChange: (ayarlar: EtiketAyarlari) => void
+  onKaliciDegistir?: (ayarlar: EtiketAyarlari) => Promise<boolean>
   seciliAlan: EtiketAlanAnahtari | null
   onSeciliAlanChange: (alan: EtiketAlanAnahtari | null) => void
 }
@@ -370,13 +374,18 @@ export default function EtiketYerlesimEditor({
   ayarlar,
   veri,
   onChange,
+  onKaliciDegistir,
   seciliAlan,
   onSeciliAlanChange,
 }: EtiketYerlesimEditorProps) {
   const [hareketAdimi, setHareketAdimi] = useState(0.1)
   const [izgara, setIzgara] = useState(true)
-  const [zeminUrl, setZeminUrl] = useState<string | null>(null)
-  const [zeminOpakligi, setZeminOpakligi] = useState(0.55)
+  const [zeminYukleniyor, setZeminYukleniyor] = useState(false)
+  const [zeminYuklemeYuzdesi, setZeminYuklemeYuzdesi] = useState(0)
+  const [zeminHatasi, setZeminHatasi] = useState<string | null>(null)
+  const [topluFont, setTopluFont] = useState(ayarlar.yerlesim.alanlar.poz.font)
+  const [topluGenislik, setTopluGenislik] = useState(ayarlar.yerlesim.alanlar.poz.genislik_carpani)
+  const [topluYukseklik, setTopluYukseklik] = useState(ayarlar.yerlesim.alanlar.poz.yukseklik_carpani)
   const dosyaRef = useRef<HTMLInputElement>(null)
   const uyarilar = useMemo(() => etiketYerlesimUyarilari(ayarlar, veri), [ayarlar, veri])
   const alanUyarisi = seciliAlan ? uyarilar.find(uyari => uyari.alan === seciliAlan) : undefined
@@ -412,11 +421,84 @@ export default function EtiketYerlesimEditor({
     alanGuncelle(anahtar, { x_mm: xMm, y_mm: yMm })
   }
 
-  function zeminSec(file: File | undefined) {
+  function tumMetinlereUygula(font: number, genislik: number, yukseklik: number) {
+    const alanlar = { ...ayarlar.yerlesim.alanlar }
+    for (const anahtar of ETIKET_ALAN_ANAHTARLARI) {
+      if (anahtar === 'barkod') continue
+      alanlar[anahtar] = {
+        ...alanlar[anahtar],
+        font,
+        genislik_carpani: genislik,
+        yukseklik_carpani: yukseklik,
+      }
+    }
+    onChange({
+      ...ayarlar,
+      yerlesim: { ...ayarlar.yerlesim, alanlar },
+    })
+  }
+
+  function topluMetinAyarlariniUygula() {
+    tumMetinlereUygula(topluFont, topluGenislik, topluYukseklik)
+  }
+
+  function alcakGenisPresetUygula() {
+    setTopluFont(0)
+    setTopluGenislik(2)
+    setTopluYukseklik(1)
+    tumMetinlereUygula(0, 2, 1)
+  }
+
+  async function kaliciAyarUygula(yeniAyarlar: EtiketAyarlari): Promise<boolean> {
+    onChange(yeniAyarlar)
+    return onKaliciDegistir ? onKaliciDegistir(yeniAyarlar) : true
+  }
+
+  async function zeminSec(file: File | undefined) {
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setZeminUrl(typeof reader.result === 'string' ? reader.result : null)
-    reader.readAsDataURL(file)
+    setZeminYukleniyor(true)
+    setZeminYuklemeYuzdesi(0)
+    setZeminHatasi(null)
+    try {
+      const sonuc = await r2Upload(file, setZeminYuklemeYuzdesi, 'etiket-zemin')
+      const yeniAyarlar: EtiketAyarlari = {
+        ...ayarlar,
+        yerlesim: {
+          ...ayarlar.yerlesim,
+          zemin_fotografi_url: sonuc.url,
+          zemin_fotografi_key: sonuc.key,
+        },
+      }
+      const kaydedildi = await kaliciAyarUygula(yeniAyarlar)
+      if (!kaydedildi) {
+        onChange(ayarlar)
+        setZeminHatasi('Fotoğraf depoya yüklendi ancak etiket ayarına kaydedilemedi.')
+      }
+    } catch (error) {
+      setZeminHatasi(error instanceof R2UploadHata
+        ? error.message
+        : 'Etiket fotoğrafı yüklenemedi.')
+    } finally {
+      setZeminYukleniyor(false)
+      if (dosyaRef.current) dosyaRef.current.value = ''
+    }
+  }
+
+  async function zeminReferansiniKaldir() {
+    setZeminHatasi(null)
+    const yeniAyarlar: EtiketAyarlari = {
+      ...ayarlar,
+      yerlesim: {
+        ...ayarlar.yerlesim,
+        zemin_fotografi_url: '',
+        zemin_fotografi_key: '',
+      },
+    }
+    const kaydedildi = await kaliciAyarUygula(yeniAyarlar)
+    if (!kaydedildi) {
+      onChange(ayarlar)
+      setZeminHatasi('Fotoğraf referansı ayarlardan kaldırılamadı.')
+    }
   }
 
   function varsayilanM4206() {
@@ -438,6 +520,8 @@ export default function EtiketYerlesimEditor({
   const row = Math.round(efektifY * 10)
   const fizikselDotX = ayarlar.yerlesim.nokta_genislik * 25.4 / ayarlar.yerlesim.dpi
   const fizikselDotY = ayarlar.yerlesim.nokta_yukseklik * 25.4 / ayarlar.yerlesim.dpi
+  const zeminUrl = ayarlar.yerlesim.zemin_fotografi_url || null
+  const zeminOpakligi = ayarlar.yerlesim.zemin_opakligi
 
   return (
     <div className="space-y-5">
@@ -536,6 +620,45 @@ export default function EtiketYerlesimEditor({
               <div className="mt-1 text-blue-700">Fiziksel nokta: {fizikselDotX.toFixed(3)} × {fizikselDotY.toFixed(3)} mm. Metrik X/Y hassasiyeti 0,1 mm.</div>
             </div>
           </div>
+
+          <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-violet-950">
+                  <Type size={15} /> Tüm etiket metinlerinin fontu
+                </div>
+                <p className="mt-1 text-[11px] text-violet-700">
+                  Barkod hariç bütün bilgi alanlarına uygulanır. Yükseklik kısıtlıysa dikey çarpanı 1 tutup yatay çarpanı artırabilirsiniz.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={alcakGenisPresetUygula}
+                className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100"
+              >
+                Alçak + geniş hazır ayar
+              </button>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(160px,1fr)_110px_110px_auto] sm:items-end">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-600">DPL fontu</span>
+                <select value={topluFont} onChange={event => setTopluFont(Number(event.target.value))} className={INPUT_CLASS}>
+                  {Object.entries(DPL_FONT_METRIKLERI).map(([font, olcu]) => (
+                    <option key={font} value={font}>Font {font} — {olcu.genislik}×{olcu.yukseklik}</option>
+                  ))}
+                </select>
+              </label>
+              <SayiAlani label="Yatay genişlik" value={topluGenislik} onChange={value => setTopluGenislik(Math.round(value))} min={1} max={9} step={1} birim="×" />
+              <SayiAlani label="Dikey yükseklik" value={topluYukseklik} onChange={value => setTopluYukseklik(Math.round(value))} min={1} max={9} step={1} birim="×" />
+              <button
+                type="button"
+                onClick={topluMetinAyarlariniUygula}
+                className="h-[42px] rounded-lg bg-violet-700 px-4 text-xs font-semibold text-white hover:bg-violet-800"
+              >
+                Tüm metinlere uygula
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -591,16 +714,30 @@ export default function EtiketYerlesimEditor({
               ref={dosyaRef}
               type="file"
               accept="image/*"
+              disabled={zeminYukleniyor}
               className="hidden"
               onChange={event => zeminSec(event.target.files?.[0])}
             />
-            <button type="button" onClick={() => dosyaRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-              <ImagePlus size={13} /> Hazır etiket fotoğrafı
+            <button
+              type="button"
+              disabled={zeminYukleniyor}
+              onClick={() => dosyaRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              {zeminYukleniyor
+                ? <Loader2 size={13} className="animate-spin" />
+                : zeminUrl ? <CloudUpload size={13} /> : <ImagePlus size={13} />}
+              {zeminYukleniyor ? `Yükleniyor %${zeminYuklemeYuzdesi}` : zeminUrl ? 'Fotoğrafı değiştir' : 'Hazır etiket fotoğrafı'}
             </button>
             {zeminUrl && (
-              <button type="button" onClick={() => setZeminUrl(null)} title="Referansı kaldır" className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50">
-                <Trash2 size={13} />
-              </button>
+              <>
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                  <CheckCircle2 size={13} /> Kalıcı olarak kaydedildi
+                </span>
+                <button type="button" disabled={zeminYukleniyor} onClick={zeminReferansiniKaldir} title="Referansı kaldır" className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50">
+                  <Trash2 size={13} />
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -608,9 +745,23 @@ export default function EtiketYerlesimEditor({
         {zeminUrl && (
           <div className="mb-3 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
             <span className="text-xs font-medium text-gray-600">Fotoğraf opaklığı</span>
-            <input type="range" min={0.1} max={1} step={0.05} value={zeminOpakligi} onChange={event => setZeminOpakligi(Number(event.target.value))} className="max-w-52 flex-1 accent-blue-600" />
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={zeminOpakligi}
+              onChange={event => yerlesimGuncelle('zemin_opakligi', Number(event.target.value))}
+              className="max-w-52 flex-1 accent-blue-600"
+            />
             <span className="w-9 text-right text-xs text-gray-500">%{Math.round(zeminOpakligi * 100)}</span>
-            <span className="text-[10px] text-gray-400">Yalnız önizlemede kullanılır; baskıya gönderilmez.</span>
+            <span className="text-[10px] text-emerald-600">R2'de saklanır; yalnız önizlemede kullanılır.</span>
+          </div>
+        )}
+
+        {zeminHatasi && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {zeminHatasi}
           </div>
         )}
 
@@ -638,7 +789,7 @@ export default function EtiketYerlesimEditor({
               <h4 className="text-sm font-semibold text-gray-900">{meta.baslik}</h4>
               <p className="text-xs text-gray-500">
                 {meta.aciklama} · örnek:{' '}
-                <span className="font-mono">{etiketAlanDegeri(seciliAlan, veri, undefined, secili.maks_karakter)}</span>
+                <span className="font-mono">{etiketBaskiAlanDegeri(seciliAlan, veri, undefined, secili.maks_karakter)}</span>
               </p>
             </div>
           </div>
@@ -698,7 +849,13 @@ export default function EtiketYerlesimEditor({
               <>
                 <SayiAlani label="Yazı genişliği" value={secili.genislik_carpani} onChange={value => alanGuncelle(seciliAlan, { genislik_carpani: Math.round(value) })} min={1} max={9} step={1} birim="×" />
                 <SayiAlani label="Yazı yüksekliği" value={secili.yukseklik_carpani} onChange={value => alanGuncelle(seciliAlan, { yukseklik_carpani: Math.round(value) })} min={1} max={9} step={1} birim="×" />
-                <SayiAlani label="En fazla karakter" value={secili.maks_karakter} onChange={value => alanGuncelle(seciliAlan, { maks_karakter: Math.round(value) })} min={1} max={255} step={1} />
+                {seciliAlan === 'poz' ? (
+                  <div className="rounded-lg border border-lime-200 bg-lime-50 px-3 py-2 text-[11px] leading-snug text-lime-800">
+                    Poz metni kesilmez; uzun değerlerde uygun DPL fontu ve genişliği otomatik seçilir.
+                  </div>
+                ) : (
+                  <SayiAlani label="En fazla karakter" value={secili.maks_karakter} onChange={value => alanGuncelle(seciliAlan, { maks_karakter: Math.round(value) })} min={1} max={255} step={1} />
+                )}
               </>
             )}
           </div>

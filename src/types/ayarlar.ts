@@ -77,6 +77,9 @@ export interface EtiketYerlesimi {
   isi: number
   x_ofset_mm: number
   y_ofset_mm: number
+  zemin_fotografi_url: string
+  zemin_fotografi_key: string
+  zemin_opakligi: number
   alanlar: EtiketAlanYerlesimleri
 }
 
@@ -155,6 +158,9 @@ export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
     isi: 10,
     x_ofset_mm: 0,
     y_ofset_mm: 0,
+    zemin_fotografi_url: '',
+    zemin_fotografi_key: '',
+    zemin_opakligi: 0.55,
     alanlar: {
       barkod: {
         ...ORTAK_METIN_AYARI,
@@ -168,7 +174,7 @@ export const VARSAYILAN_ETIKET_AYARLARI: EtiketAyarlari = {
       musteri_adi: { ...ORTAK_METIN_AYARI, x_mm: 38, y_mm: 21, maks_karakter: 34 },
       alt_musteri: { ...ORTAK_METIN_AYARI, x_mm: 38, y_mm: 13, maks_karakter: 34 },
       siparis_no: { ...ORTAK_METIN_AYARI, x_mm: 72, y_mm: 21, maks_karakter: 4 },
-      poz: { ...ORTAK_METIN_AYARI, x_mm: 5, y_mm: 38, maks_karakter: 22 },
+      poz: { ...ORTAK_METIN_AYARI, x_mm: 5, y_mm: 38, maks_karakter: 255 },
       liste_adedi: { ...ORTAK_METIN_AYARI, x_mm: 5, y_mm: 21, maks_karakter: 10 },
       batch_sira: { ...ORTAK_METIN_AYARI, x_mm: 5, y_mm: 29, maks_karakter: 8 },
       tarih: { ...ORTAK_METIN_AYARI, x_mm: 72, y_mm: 5, font: 1, maks_karakter: 14 },
@@ -267,6 +273,9 @@ export function etiketAyarlariBirlestir(value: unknown): EtiketAyarlari {
       isi: tamsayi(rawYerlesim.isi, 10, 0, 30),
       x_ofset_mm: sayi(rawYerlesim.x_ofset_mm, 0, -100, 100),
       y_ofset_mm: sayi(rawYerlesim.y_ofset_mm, 0, -100, 100),
+      zemin_fotografi_url: metin(rawYerlesim.zemin_fotografi_url, ''),
+      zemin_fotografi_key: metin(rawYerlesim.zemin_fotografi_key, ''),
+      zemin_opakligi: sayi(rawYerlesim.zemin_opakligi, 0.55, 0.1, 1),
       alanlar,
     },
     yazdirma_kosulu: raw.yazdirma_kosulu === 'manuel' ? 'manuel' : 'otomatik',
@@ -317,18 +326,36 @@ export function etiketAlanDegeri(
     case 'siparis_no': return kes(etiketSiparisNoMetni(veri.siparis_no))
     case 'poz': {
       if (!veri.poz) return ''
-      // "P " öneki korunur; karakter sınırı yalnızca siparişten gelen poz metnine uygulanır.
+      // "P" öneki boşluksuz korunur; karakter sınırı yalnızca siparişten gelen poz metnine uygulanır.
       const govde = kes(veri.poz)
-      return govde ? `P ${govde}` : ''
+      return govde ? `P${govde}` : ''
     }
     case 'liste_adedi': {
       if (veri.liste_adedi <= 0) return ''
       const sayi = kes(String(veri.liste_adedi))
-      return sayi ? `${sayi} AD` : ''
+      return sayi ? `${sayi}AD` : ''
     }
     case 'batch_sira': return veri.batch_sira != null ? kes(String(veri.batch_sira)) : ''
     case 'tarih': return kes(tarih.toLocaleDateString('tr-TR'))
   }
+}
+
+/**
+ * Baskıda poz numarası veri kaybına uğramaz; eski kayıtlardaki 22 karakter sınırı
+ * korunmuş olsa bile tam poz metni font küçültülerek etikete sığdırılmaya çalışılır.
+ */
+export function etiketBaskiAlanDegeri(
+  anahtar: EtiketAlanAnahtari,
+  veri: EtiketVeri,
+  tarih = new Date(),
+  maksKarakter?: number,
+): string {
+  return etiketAlanDegeri(
+    anahtar,
+    veri,
+    tarih,
+    anahtar === 'poz' ? 255 : maksKarakter,
+  )
 }
 
 export const DPL_FONT_METRIKLERI: Record<number, { yukseklik: number; genislik: number; bosluk: number }> = {
@@ -362,7 +389,7 @@ export function etiketAlanOlculeriMm(
   }
 
   const metrik = DPL_FONT_METRIKLERI[alan.font] ?? DPL_FONT_METRIKLERI[2]
-  const deger = etiketAlanDegeri(anahtar, veri, undefined, alan.maks_karakter)
+  const deger = etiketBaskiAlanDegeri(anahtar, veri, undefined, alan.maks_karakter)
   const dpiOlcegi = ayarlar.yerlesim.dpi / 203
   return {
     genislik: Math.max(1, deger.length) * (metrik.genislik + metrik.bosluk) * dpiOlcegi *
@@ -418,6 +445,7 @@ function pozMetinAyariniSigdir(
   if (sinirlarEtiketIcinde(ayarlar, alan, mevcutOlcu)) return alan
 
   const adaylar: Array<{ alan: EtiketAlanYerlesimi; olcu: { genislik: number; yukseklik: number } }> = []
+  let enDarAday: { alan: EtiketAlanYerlesimi; olcu: { genislik: number; yukseklik: number } } | null = null
   for (let font = 0; font <= 8; font++) {
     for (let genislik = 1; genislik <= alan.genislik_carpani; genislik++) {
       const adayAlan = { ...alan, font, genislik_carpani: genislik }
@@ -429,6 +457,13 @@ function pozMetinAyariniSigdir(
         },
       }
       const olcu = etiketAlanOlculeriMm(adayAyarlar, 'poz', veri)
+      if (
+        !enDarAday
+        || olcu.genislik < enDarAday.olcu.genislik
+        || (olcu.genislik === enDarAday.olcu.genislik && olcu.yukseklik < enDarAday.olcu.yukseklik)
+      ) {
+        enDarAday = { alan: adayAlan, olcu }
+      }
       if (olcu.yukseklik <= mevcutOlcu.yukseklik && sinirlarEtiketIcinde(ayarlar, adayAlan, olcu)) {
         adaylar.push({ alan: adayAlan, olcu })
       }
@@ -440,7 +475,7 @@ function pozMetinAyariniSigdir(
     || b.alan.genislik_carpani - a.alan.genislik_carpani
     || b.olcu.genislik - a.olcu.genislik,
   )
-  return adaylar[0]?.alan ?? alan
+  return adaylar[0]?.alan ?? enDarAday?.alan ?? alan
 }
 
 /** Açık alanların fiziksel etiketten taşma ve temel yapı kontrolleri. */
@@ -505,12 +540,12 @@ export function dplUret(
 
   for (const anahtar of alanAnahtarlari) {
     const kayitliAlan = ayarlar.yerlesim.alanlar[anahtar]
-    const alan = anahtar === 'poz' && kayitliAlan.rotasyon === 1
+    const alan = anahtar === 'poz'
       ? pozMetinAyariniSigdir(ayarlar, veri, kayitliAlan)
       : kayitliAlan
     const row = mmToDplMetric(alan.y_mm + ayarlar.yerlesim.y_ofset_mm)
     const col = mmToDplMetric(alan.x_mm + ayarlar.yerlesim.x_ofset_mm)
-    const deger = etiketAlanDegeri(anahtar, veri, undefined, alan.maks_karakter)
+    const deger = etiketBaskiAlanDegeri(anahtar, veri, undefined, alan.maks_karakter)
     if (!deger) continue
 
     if (anahtar === 'barkod') {
@@ -596,8 +631,8 @@ export function dplSablonuUygula(sablon: string, veri: EtiketVeri): string {
     .replace(/\{musteri\}/g, dplAscii(veri.cari_adi))
     .replace(/\{alt_musteri\}/g, dplAscii(veri.alt_musteri))
     .replace(/\{siparis_no\}/g, dplAscii(etiketSiparisNoMetni(veri.siparis_no)))
-    .replace(/\{poz\}/g, dplAscii(veri.poz ? `P ${veri.poz}` : ''))
-    .replace(/\{liste_adedi\}/g, veri.liste_adedi > 0 ? `${veri.liste_adedi} AD` : '')
+    .replace(/\{poz\}/g, dplAscii(veri.poz ? `P${veri.poz}` : ''))
+    .replace(/\{liste_adedi\}/g, veri.liste_adedi > 0 ? `${veri.liste_adedi}AD` : '')
     .replace(/\{batch_sira\}/g, veri.batch_sira != null ? String(veri.batch_sira) : '')
     .replace(/\{sira_no\}/g, veri.batch_sira != null ? String(veri.batch_sira) : '')
     .replace(/\{genislik_mm\}/g, String(veri.genislik_mm))

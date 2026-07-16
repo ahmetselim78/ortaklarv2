@@ -42,24 +42,39 @@ function yazicinaGonder(ip, port, dpl) {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket()
     const TIMEOUT_MS = 5000
+    let tamamlandi = false
+
+    const basarili = () => {
+      if (tamamlandi) return
+      tamamlandi = true
+      resolve()
+    }
+
+    const basarisiz = (error) => {
+      if (tamamlandi) return
+      tamamlandi = true
+      socket.destroy()
+      reject(error)
+    }
 
     socket.setTimeout(TIMEOUT_MS)
 
     socket.connect(port, ip, () => {
-      socket.write(dpl, 'binary', () => {
-        socket.end()
-        resolve()
-      })
+      socket.end(Buffer.from(dpl, 'binary'))
     })
 
     socket.on('timeout', () => {
-      socket.destroy()
-      reject(new Error(`Bağlantı zaman aşımı — ${ip}:${port} (${TIMEOUT_MS / 1000}s)`))
+      basarisiz(new Error(`Bağlantı zaman aşımı — ${ip}:${port} (${TIMEOUT_MS / 1000}s)`))
     })
 
     socket.on('error', (err) => {
-      socket.destroy()
-      reject(new Error(`TCP hatası: ${err.message}`))
+      basarisiz(new Error(`TCP hatası: ${err.message}`))
+    })
+
+    // Başarıyı socket.write çağrısından değil, tüm veri gönderilip bağlantı
+    // normal biçimde kapandıktan sonra bildir.
+    socket.on('close', (hadError) => {
+      if (!hadError) basarili()
     })
   })
 }
@@ -178,12 +193,26 @@ public class WinSpool {
   $di.pDocName = 'Etiket'
   $di.pOutputFile = $null
   $di.pDataType = 'RAW'
-  [WinSpool]::StartDocPrinter($h, 1, [ref]$di) | Out-Null
-  $w = 0
-  [WinSpool]::WritePrinter($h, $bytes, $bytes.Length, [ref]$w) | Out-Null
-  [WinSpool]::EndDocPrinter($h) | Out-Null
-  [WinSpool]::ClosePrinter($h) | Out-Null
-  Write-Host "WinSpool RAW: $w byte yazildi (port: $portName)"
+  $docStarted = $false
+  try {
+    $docId = [WinSpool]::StartDocPrinter($h, 1, [ref]$di)
+    if ($docId -le 0) {
+      throw "StartDocPrinter basarisiz. Win32 hata: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+    }
+    $docStarted = $true
+    $w = 0
+    $ok = [WinSpool]::WritePrinter($h, $bytes, $bytes.Length, [ref]$w)
+    if (-not $ok) {
+      throw "WritePrinter basarisiz. Win32 hata: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+    }
+    if ($w -ne $bytes.Length) {
+      throw "Eksik veri yazildi: $w / $($bytes.Length) byte"
+    }
+    Write-Host "WinSpool RAW: $w byte yazildi (port: $portName)"
+  } finally {
+    if ($docStarted) { [WinSpool]::EndDocPrinter($h) | Out-Null }
+    [WinSpool]::ClosePrinter($h) | Out-Null
+  }
 }`.trim()
     }
 
