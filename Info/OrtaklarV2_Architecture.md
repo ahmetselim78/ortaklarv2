@@ -1,11 +1,99 @@
-# OrtaklarV2 - Glass Manufacturing Management System
+# OrtaklarV2 — AI Proje Bağlamı ve Mimari Rehberi
+
+> **Son doğrulama:** 17 Temmuz 2026
+>
+> **Doğrulanan sürüm:** `main` / `5fcdb80`
+>
+> **Veritabanı migration aralığı:** `001`–`045`
+>
+> **Amaç:** Bu dosya, yeni özellik geliştirirken AI ile paylaşılacak ana proje bağlamıdır. Kod ve migration dosyaları her zaman nihai doğruluk kaynağıdır.
+
+## Bu Dosya AI ile Nasıl Kullanılmalı?
+
+Yeni bir özellik isterken bu dosyayı konuşmaya ekleyin ve isteğinizi aşağıdaki şablonla yazın. AI'den önce ilgili dosyaları incelemesini, ardından mevcut mimariye uyumlu değişiklik yapmasını isteyin. Bu dosyadaki bilgi ile kod çelişirse AI kodu ve en yeni migration'ı esas almalı, çelişkiyi belirtmeli ve bu dokümanı da güncellemelidir.
+
+```text
+OrtaklarV2 projesinde aşağıdaki özelliği geliştir:
+
+Özellik:
+[İstenen davranışı açıkça yaz]
+
+Kullanıcı akışı:
+1. [Kullanıcı nereden başlar?]
+2. [Hangi işlemleri yapar?]
+3. [Başarılı sonuç ne olmalı?]
+
+Kurallar ve istisnalar:
+- [Yetki, durum, doğrulama veya hata koşulları]
+- [Mevcut veriye geriye dönük uyumluluk gereksinimi]
+
+Kabul kriterleri:
+- [Ekranda/veritabanında gözlenebilir sonuç]
+- [Hata durumunda beklenen davranış]
+- İlgili testler eklensin veya güncellensin.
+- `npm test`, `npm run build` ve ilgili kontroller çalıştırılsın.
+
+Bu mimari dosyasını bağlam olarak kullan. Uygulamadan önce ilgili mevcut sayfa,
+hook, lib/service, type ve migration dosyalarını incele. Mevcut durum geçişlerini,
+Türkçe arayüzü, Europe/Istanbul tarih kurallarını ve eski kayıt uyumluluğunu koru.
+Gerekli değilse yeni bir mimari katman veya bağımlılık ekleme. Veritabanı değişikliği
+varsa mevcut migration'ı değiştirme; sıradaki numarayla yeni migration oluştur.
+```
+
+### AI İçin Değişmez Çalışma Kuralları
+
+1. `src/types/` yalnızca tip dosyası değildir; özellikle `types/ayarlar.ts` etiket varsayılanları, eski JSONB kayıt birleştirme, doğrulama ve DPL üretim mantığı da içerir.
+2. Sipariş, batch ve tamir durumları serbestçe yazılmamalıdır. Mevcut `GECERLI_GECISLER` kuralları ve `services/durumService.ts` yeniden hesaplamaları korunmalıdır.
+3. Mevcut migration dosyaları üretim geçmişidir. Şema değişiklikleri yeni ve artan numaralı migration ile yapılmalıdır; şu an sıradaki numara `046`dır.
+4. `siparis_detaylari` satırı bir sipariş kalemidir; `adet` o kalemdeki fiziksel cam sayısıdır. Satır `adet` kadar çoğaltılmaz. Kısmi yıkama/tarama ilerlemesi `uretim_emri_detay_id` bağlı `yikama_loglari` sayısından hesaplanır.
+5. `cam_kodu` sipariş kalemi kimliğidir (`GLS-XXXX`). Üretimde operatörün gördüğü/okuttuğu kısa kod çoğunlukla `uretim_emri_detaylari.sira_no` değeridir. Bu iki kimlik birbirine karıştırılmamalıdır.
+6. Etiketin otomatik fiziksel baskısı Poz Giriş bilgisayarında yapılmaz. Poz Giriş `yeni_cam` broadcast'i gönderir; Kumanda Paneli kendi bilgisayarındaki `yazici-kopru` üzerinden basar ve `etiket_durumu` yayınlar.
+7. Tarih ve saat işlemleri `Europe/Istanbul` kabulüyle, mümkün olduğunca `src/lib/tarih.ts` yardımcıları kullanılarak yapılmalıdır.
+8. Arayüz metinleri Türkçedir. Mevcut tam ekran fabrika istasyonları sidebar layout'una taşınmamalıdır.
+9. Supabase sorgularında varsayılan satır sınırı dikkate alınmalıdır. Büyük/eksiksiz veri gereken yerlerde `tumSatirlariGetir` veya server-side pagination kullanılmalıdır.
+10. Eski `ayarlar.deger` JSONB kayıtları eksik alan içerebilir. Yeni ayar alanları derin varsayılan birleştirme ile geriye uyumlu olmalıdır.
+11. `.env.local`, token, parola ve secret değerleri AI'ye veya repoya kopyalanmamalıdır. `dist/`, `node_modules/`, `yazici-kopru.exe` ve arşiv/export klasörleri kaynak kod olarak düzenlenmemelidir.
+12. Yeni davranış mümkünse `src/**/*.test.ts` altında Vitest ile test edilmeli; teslimden önce en az `npm test` ve `npm run build` çalıştırılmalıdır.
 
 ## Project Overview
-Turkish glass manufacturing management system with production line synchronization. Built with React, TypeScript, Vite, Supabase, and Tailwind CSS.
+
+OrtaklarV2; sipariş, cam/çıta stoğu, üretim batch'leri, yıkama hattı istasyonları, etiket baskısı, tamir/fire, sevkiyat, vardiya hedefleri, operatör üretim girişi ve Telegram raporlamasını yöneten Türkçe bir cam üretim uygulamasıdır. Ana web uygulaması React + TypeScript + Vite + Tailwind CSS ile, veri/realtime/cron katmanı Supabase ile çalışır.
+
+## Repository Structure
+
+```text
+src/
+  pages/                 Route seviyesindeki ekranlar
+  components/            Alan bazlı UI ve iş akışı bileşenleri
+    admin/               Admin veri yönetimi
+    ayarlar/             ERP ayar panelleri ve etiket yerleşim editörü
+    cari|siparis|stok/    Ana kayıt modülleri
+    uretim|tamir|sevkiyat Üretim operasyonları
+    layout|ui/            Uygulama kabuğu ve ortak UI
+  hooks/                 Supabase CRUD ve ekran state orkestrasyonu
+  services/              Durum yeniden hesaplama ve dışa aktarma servisleri
+  lib/                   Saf/ortak iş kuralları, parser'lar ve entegrasyon yardımcıları
+  types/                 Domain tipleri; etiket tarafında ayrıca çalışan iş mantığı
+
+supabase/
+  migrations/            Uygulama sırasına göre PostgreSQL şeması (`001`–`045`)
+  functions/             Deno Edge Functions (OCR, Telegram, yazıcı testi)
+
+cloudflare-worker/       Personel ve etiket-zemin görsellerini R2'ye yükleyen Worker
+yazici-kopru/            Kumanda PC'sinde çalışan yerel HTTP → USB/TCP DPL köprüsü
+scripts/                 Bakım, fixture, karşılaştırma ve veri aktarım yardımcıları
+public/                  Statik dosyalar, pdf.js worker, fontlar ve CMap'ler
+Info/                    Bu mimari rehberi ve teknik analiz çıktıları
+Dockerfile               Vite build + nginx production image
+cloudbuild.yaml          Google Cloud Build → Artifact Registry → Cloud Run akışı
+nginx.conf               SPA fallback ve statik asset cache kuralları
+```
+
+`dist/` derleme çıktısıdır. `opti programı için export/` çalışma zamanı kaynağı değil, harici programla ilgili örnek/arşiv verisidir.
 
 ## Database Schema
 
-RLS is enabled on all tables (mostly open `authenticated` policies). Schema reconstructed from `supabase/migrations/001`–`043`.
+RLS is enabled on application tables, but current policies are generally broad/open. Do not treat RLS or the client-side login screens as a complete authorization boundary. Schema reconstructed from `supabase/migrations/001`–`045`.
 
 ### Tables and Key Columns
 
@@ -27,11 +115,12 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
    - kaynak ('pdf'|'manuel'), harici_siparis_no (supplier/PDF order number), created_at
    - Indexes: durum, harici_siparis_no
 
-4. **siparis_detaylari** - Order Line Items (individual glass pieces)
+4. **siparis_detaylari** - Order Line Items
    - id (UUID), siparis_id (FK CASCADE), stok_id (FK stok, RESTRICT), cam_kodu (TEXT unique, format: GLS-XXXX)
    - genislik_mm, yukseklik_mm, adet, kenar_islemi (edge processing), poz (building position), menfez_cap_mm, kucuk_cam (BOOLEAN)
    - cita_stok_id (FK stok, SET NULL), uretim_durumu ('bekliyor'|'kesildi'|'yikandi'|'etiketlendi'|'tamamlandi')
    - notlar, created_at; CHECKs: adet > 0, genislik/yukseklik > 0
+   - **Cardinality rule:** one row per order/form line; `adet` is the number of physical glasses on that line. `cam_kodu` identifies the line, not each physical copy.
    - Dropped columns: `ara_bosluk_mm`, `dis_kalinlik_mm`, `katman_sayisi`, `orta_kalinlik_mm`, `ara_bosluk_2_mm`, `katman_yapisi` (composition now lives on `stok.katman_yapisi`, migrations 021, 036–039)
 
 5. **uretim_emirleri** - Production Batches
@@ -47,6 +136,7 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
 7. **yikama_loglari** - Wash Station Logs
    - id (UUID), cam_kodu (TEXT), siparis_detay_id (FK, SET NULL), uretim_emri_detay_id (FK, SET NULL)
    - giris_zamani, operatör
+   - One log is written per accepted physical scan. Partial progress must be counted primarily by `uretim_emri_detay_id`, so the same order line can be tracked independently in different batches.
 
 8. **sayaclar** - Atomic ID Generation
    - anahtar (TEXT primary key), deger (INTEGER)
@@ -75,7 +165,7 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
 
 14. **hr_personel** - Human Resources / Operator Management
     - id (UUID), ad_soyad, foto_url, rol ('Direkt'|'Endirekt')
-    - is_aktif (BOOLEAN), kullanici_adi, giris_sifresi (plain-text operator login), olusturma
+    - is_aktif (BOOLEAN), kullanici_adi, giris_sifresi (plain-text operator login), `uretim_yetkileri_sinirli` (BOOLEAN), olusturma
 
 15. **uretim_saat_sablonlari** - Hourly Shift Templates
     - id (UUID), sablon_adi, saat_araligi (e.g. "08:00 - 18:00"), sira_no, olusturma
@@ -117,6 +207,12 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
     - gonderildi_at (TIMESTAMPTZ)
     - Unique constraint: (tarih, saat)
 
+25. **hr_personel_istasyon_yetkileri** - Per-operator Production Entry Permissions
+    - personel_id (FK `hr_personel`, CASCADE), istasyon_id (FK `uretim_istasyonlari`, CASCADE), created_at
+    - Composite primary key: (personel_id, istasyon_id)
+    - When `hr_personel.uretim_yetkileri_sinirli=false`, the operator sees all active stations. When true, only rows in this relation are allowed.
+    - A database trigger also rejects unauthorized inserts/updates in `gunluk_uretim_istasyon_kayitlari`; this is not only a UI filter.
+
 > Note: `siparis_taslaklari` (order drafts) and `cam_aile_katalogu` (glass family catalog) are **not** database tables — drafts live in `localStorage`, and the glass-family catalog is derived logic over `stok` (see `lib/cam.ts`).
 
 ### Postgres Functions
@@ -129,8 +225,11 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
 | `telegram_saat_normalize(p_saat)` | Normalizes time strings to `HH:MM` |
 | `telegram_saatlik_rapor_metni` / `telegram_uretim_giris_rapor_metni` / `telegram_rapor_mesaji` | SQL-side Telegram message builders |
 | `telegram_otomatik_rapor_gonder()` | Current auto-send path (043): checks schedule/settings, POSTs to `check-and-send-report` edge function via `pg_net` |
+| `uretim_istasyon_yetkisi_kontrol()` | Trigger function that enforces per-personnel station permissions on production report rows |
 
 **Extensions:** `pg_net`, `pg_cron`. **pg_cron job:** `telegram-rapor-gonder` runs every minute (`* * * * *`), calling `telegram_otomatik_rapor_gonder()`.
+
+Migration `044` adds performance indexes for repair lookups, wash-log progress, order/batch sorting and shipment queries. New list or relation-heavy features should first check whether their filter/join columns need an index.
 
 ## Pages (src/pages/)
 
@@ -172,16 +271,18 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
    - Password-gated admin console
    - Tab 1: all setting panels (includes Opti Export, not shown on `/ayarlar`); controls `/ayarlar` category visibility
    - Tab 2: Üretim Girişi (operator report) history — date-range table, day detail edit/delete, Excel export
+   - Tab 3: Veri Yönetimi — searchable/paginated permanent deletion of batches and orders with dependent status recalculation
 
 10. **PozGirisPage.tsx** (`/istasyonlar/poz-giris`, full-screen, no sidebar)
     - Planning/office station — batch selection (export_edildi/yikamada/eksik_var) and GLS/poz barcode scanning
-    - 3-column layout: customers, scan status, per-customer glass list; auto label print (Datamax DPL), `yikama_loglari`, hourly counter increment
-    - Realtime broadcast channel `uretim-istasyonlar`; status: bos, yukleniyor, basarili, hata, tekrar, yanlis_batch, tamamlandi
+    - 3-column layout: customers, scan status, per-customer glass list; writes `yikama_loglari`, increments the hourly counter and publishes label data
+    - Realtime broadcast channel `uretim-istasyonlar`; important events include `batch_secildi`, `yeni_cam`, `etiket_durumu`, `cam_tamire_gonderildi` and station-specific approval events
     - Keyboard shortcut: `X` sends last scanned glass to repair
 
 11. **KumandaPaneliPage.tsx** (`/istasyonlar/kumanda`, full-screen)
     - Spacer (çıta) station control panel; listens for scan broadcasts from Poz Giriş
     - 3-column layout: customers, active cards, customer glass list with çıta mm; çıta onay status banner from Gösterge
+    - Owns production label printing: receives `yeni_cam`, sends DPL through the local bridge, displays bridge health, supports retry and broadcasts `etiket_durumu`
 
 12. **GostergeEkraniPage.tsx** (`/istasyonlar/gosterge`, full-screen)
     - Macun robot display — large çıta (spacer) thickness readout with change-approval flow
@@ -195,6 +296,7 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
 14. **OperatorGirisPage.tsx** (`/istasyonlar/uretim-giris`, full-screen, opens in new tab from sidebar)
     - Operator daily production report form ("Üretim Takip Çizelgesi")
     - Login via `hr_personel` password; per-station adet/fire, vehicle loading, personnel count, notes
+    - Filters available stations by `hr_personel.uretim_yetkileri_sinirli` + `hr_personel_istasyon_yetkileri`; the database trigger enforces the same rule
     - Saves to `gunluk_uretim_raporlari` + child tables; "Son 10 Günlük Rapor" history; resumes today's report on login
 
 15. **NotFoundPage.tsx** (`*`, standalone)
@@ -243,15 +345,20 @@ RLS is enabled on all tables (mostly open `authenticated` policies). Schema reco
 - **Pagination.tsx** - Table pagination footer
 - **Skeleton.tsx** - `Skeleton`, `TableSkeleton`, `CardSkeleton` loading placeholders
 - **StatusBadge.tsx** - Status pill badge (siparis | uretim), centralized Turkish labels/colors
+- **YikamaAdetBadge.tsx** - Shared partial/complete wash-count display for order and batch details
+
+### Admin (src/components/admin/)
+- **VeriYonetimiPanel.tsx** - Permanent batch/order deletion UI with search, status filtering, server-side order pagination and confirmation warnings
 
 ### Ayarlar (src/components/ayarlar/)
 - **AksiyonNotuPresetsPanel.tsx** - Preset action notes for hourly board (text + 1–9 shortcut), localStorage
 - **AraclarPanel.tsx** - Vehicle CRUD (plate, name, m² capacity, notes, active)
-- **EtiketAyarlariPanel.tsx** - Label printer settings: bridge server, printer, size/content toggles, live preview, DPL test print
+- **EtiketAyarlariPanel.tsx** - Label printer settings: bridge server, USB/TCP target, panel/custom DPL mode, print condition, calibration and test-print flow
+- **EtiketYerlesimEditor.tsx** - Physical label canvas/editor: per-field coordinates, rotation/font/scale, DPI and heat, global offsets, boundary warnings, and optional R2-backed reference background image
 - **HedefVardiyaPanel.tsx** - Shift template manager: hourly target slots, weekday assignment, apply-to-today
 - **IstasyonYonetimiPanel.tsx** - Production station CRUD (name, order, active, scrap-tracking flag)
 - **OptiExportAyarlariPanel.tsx** - Opti/PerfectCut export settings: IMP counter, spacer deduction mm, per-stock FAM mapping
-- **PersonelYonetimiPanel.tsx** - HR personnel CRUD (name, photo via R2 upload, role, login credentials, active)
+- **PersonelYonetimiPanel.tsx** - HR personnel CRUD (name, photo via R2 upload, role, login credentials, active) plus per-personnel production station permissions
 - **TelegramAyarlariPanel.tsx** - Telegram integration: connection, scheduled times/types, message template toggles, test send
 
 ### Tamir (src/components/tamir/)
@@ -289,7 +396,8 @@ type TamirKaynak = 'poz_giris'|'kumanda'|'manuel'
 interface TamirKayit { id, cam_kodu, siparis_detay_id, uretim_emri_id, batch_no, sira_no, kaynak_istasyon, sorun_tipi, aciklama, durum, adet, musteri, nihai_musteri, siparis_no, genislik_mm, yukseklik_mm, stok_ad, created_at, tamamlanma_tarihi, tamamlanma_notu }
 
 // ayarlar.ts
-interface EtiketAyarlari { yazici, boyut, icerik, yazdirma_kosulu, dpl_sablonu }
+interface EtiketAyarlari { yazici, boyut, icerik, yerlesim, yazdirma_kosulu, dpl_modu, dpl_sablonu }
+interface EtiketYerlesimi { surum: 2, dpi, nokta_genislik, nokta_yukseklik, isi, x_ofset_mm, y_ofset_mm, zemin_fotografi_url, zemin_fotografi_key, zemin_opakligi, alanlar }
 interface OptiExportAyarlari { sayac, cita_dusme, fam_haritasi: OptiFamEsleme[] }
 function dplUret(ayarlar, veri): string  // Datamax M-4206 DPL label generator
 
@@ -298,7 +406,7 @@ interface SiparisTaslak { id, created_at, updated_at, veri: SiparisTaslakVerisi 
 
 // saatlikUretim.ts
 type PersonelRol = 'Direkt' | 'Endirekt'
-interface HrPersonel { id, ad_soyad, foto_url, rol, is_aktif, kullanici_adi?, giris_sifresi? }
+interface HrPersonel { id, ad_soyad, foto_url, rol, is_aktif, kullanici_adi?, giris_sifresi?, uretim_yetkileri_sinirli?, hr_personel_istasyon_yetkileri? }
 interface GunlukUretimSatiri { id, tarih, saat_araligi, hedef_adet, gerceklesen_adet, fire_adet, aksiyon_notu, npt_orani, sira_no }
 interface HesaplanmisSatir extends GunlukUretimSatiri { kumulatifHedef, kumulatifGerceklesen, kumulatifFire, durumRengi, zamanDurumu }
 type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
@@ -320,10 +428,12 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 **check-and-send-report/index.ts**
 - Scheduled/manual Telegram production report sender
 - Checks Turkish time against `telegram_ayarlari` + `telegram_rapor_saatleri` (or `force: true`), dedupes via `telegram_rapor_log`
-- Pulls `gunluk_uretim_takip` (hourly) and/or `gunluk_uretim_raporlari` (operator entry) data and sends a MarkdownV2 Telegram message with configurable template sections
+- Pulls `gunluk_uretim_takip` (hourly) and/or `gunluk_uretim_raporlari` (operator entry) data and sends a Telegram message with configurable template sections
+- Uses shared message-building logic in `supabase/functions/_shared/telegramMessage.ts`; client preview/test and scheduled output should stay semantically aligned
 
 **yazici-test/index.ts**
 - Sends a raw DPL command string to a Datamax label printer over TCP (`ip`, `port`, `dpl` in request body); returns success/error JSON; CORS enabled
+- This edge function is a test/alternative path. Normal factory printing uses the local `yazici-kopru` on the Kumanda PC so it can reach a Windows USB printer or LAN printer.
 
 ## Hooks (src/hooks/)
 
@@ -333,7 +443,7 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 
 **useSiparis()**
 - State: siparisler[] (cari/detay-count/sevkiyat joins), yukleniyor, hata
-- Methods: ekle(form) (expands form rows into physical glass pieces via `tekilSiparisDetayRows`), guncelle(id, form), durumGuncelle(id, durum), sil(id), yenile()
+- Methods: ekle(form) (creates one detail row per form line via `tekilSiparisDetayRows`, preserving physical quantity in `adet`), guncelle(id, form), durumGuncelle(id, durum), sil(id), yenile()
 - Valid status transitions defined in `GECERLI_GECISLER`
 - Standalone export: `getSiparisDetaylari(siparisId)`
 
@@ -398,7 +508,7 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 
 **siparisDetay.ts**
 - fizikselCamAdedi(adet), fizikselGlsKodu(siraNo, fallback?), siparisDetayGosterimKodu(siraNo, stokKod?)
-- tekilSiparisDetayRows(siparisId, camlar, uretimDurumu?) - Expands form quantities into one-row-per-physical-glass with GLS codes
+- tekilSiparisDetayRows(siparisId, camlar, uretimDurumu?) - Creates one database row per form/order line; generates one GLS row code and keeps the line quantity in `adet`
 
 **optiExport.ts** - PerfectCut-6 IMP export
 - optiFamKodu / optiFamKoduOtomatik / optiPaneFamKodu - FAM code resolution
@@ -422,7 +532,23 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 - cariEslestir(pdfCariKodu, pdfCariUnvan, cariler, minSkor?), stokEslestir(aciklama, stoklar)
 
 **r2Upload.ts**
-- r2Upload(dosya, onProgress?) - Uploads personnel photos to Cloudflare R2 via Worker (max 5MB)
+- r2Upload(dosya, onProgress?, kategori?) - Uploads personnel or label-background images to Cloudflare R2 via Worker (max 5MB; categories: `personel`, `etiket-zemin`)
+
+**etiketBasim.ts**
+- etiketKopruSaglikKontrolu(ayarlar) - Checks the configured local bridge, used by the Kumanda status indicator
+- etiketDplKopruyeGonder(ayarlar, dpl) - Sends ready DPL to the bridge with USB-printer-name or TCP-IP target selection and timeout/error normalization
+- etiketOtomatikYazdir(ayarlar, veri) - Honors `yazdirma_kosulu`, produces DPL through `dplUret` and returns `gonderiliyor|yaziciya_gonderildi|basarisiz|devre_disi` workflow results
+
+**etiketAlanlari.ts / etiketOrnek.ts / dplEtiket.ts**
+- Field metadata, stable sample label data, DPL primitives and coordinate/unit conversion shared by the visual editor, tests and production output
+- `types/ayarlar.ts` deep-merges legacy JSONB settings, validates field bounds, auto-fits long `poz` text and generates final DPL; preview and print calculations must use the same helpers
+
+**yikamaLoglari.ts**
+- yikamaLogSayilariGetir(uretimEmriIds) - Fetches complete paginated wash logs keyed by `uretim_emri_detay_id`
+- tarananAdetHesapla / camTarananSayisi / batchYikamaOzetiHesapla - Shared partial quantity and batch progress calculations
+
+**supabasePagination.ts**
+- tumSatirlariGetir(queryFactory, options?) - Reads all rows in safe pages instead of silently accepting Supabase's default result limit
 
 **stokMigrasyon.ts**
 - eskiStokReferanslariniMigrate() / pasifCitaReferanslariniMigrate() - Migrates stale/passive stock references to active combination cards
@@ -440,6 +566,56 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 **aksiyonPresets.ts**
 - presetsOku() / presetleriYaz(presets) / yeniPresetId() - localStorage-backed action note presets (1–9 shortcuts)
 
+## Integrations and Runtime Boundaries
+
+### Production Label Flow
+
+```text
+Poz Giriş scan
+  → Supabase database updates + yikama_loglari
+  → `uretim-istasyonlar` / `yeni_cam` broadcast
+  → Kumanda Paneli receives label data
+  → `dplUret` creates DPL from current `etiket_ayarlari`
+  → local `http://<kopru_adresi>:<kopru_port>/yazdir`
+  → `yazici-kopru` sends binary DPL to Windows USB printer or TCP `<ip>:<port>`
+  → Kumanda broadcasts `etiket_durumu`
+```
+
+The bridge success response means the data was handed to the printer/Windows spool path; it is not physical paper-sensor confirmation. Duplicate print requests are guarded in Kumanda with a scan-specific request key. Retrying is an explicit user action.
+
+### Environment Variables
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `VITE_SUPABASE_URL` | Web app | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Web app | Browser Supabase key |
+| `VITE_MISTRAL_API_KEY` | Development fallback | Direct OCR fallback; production should prefer the Edge Function secret path |
+| `VITE_R2_UPLOAD_URL` | Web app | Cloudflare upload Worker endpoint |
+| `VITE_R2_PUBLIC_BASE_URL` | Web app | Public R2 asset base URL |
+| `VITE_R2_UPLOAD_SECRET` | Web app/Worker | Current upload header; because `VITE_*` is browser-visible, do not treat this as a strong server secret |
+
+Never include actual values in prompts, commits, logs or this document. Vite variables are embedded at build time. Docker/Cloud Build passes them as build arguments, then nginx serves the static SPA from Cloud Run.
+
+### External/Local Services
+
+- **Supabase:** PostgreSQL, Realtime broadcast/postgres changes, Edge Functions, `pg_net`, `pg_cron`.
+- **Mistral OCR:** primary PDF/image OCR is proxied by `mistral-ocr`; browser direct API is only a fallback path.
+- **Telegram Bot API:** invoked by the scheduled Edge Function and manual test/report paths.
+- **Cloudflare R2 + Worker:** public personnel and physical-label reference images.
+- **yazici-kopru:** Node/EXE process on the Kumanda Windows PC, normally port `9876`; exposes health and `/yazdir` HTTP endpoints with CORS.
+- **PerfectCut / Opti:** browser generates `.IMP`; spacer machine export is semicolon-delimited BOM CSV.
+
+## Verification Commands
+
+```bash
+npm test          # Vitest: src/**/*.test.ts
+npm run build     # TypeScript project build + Vite production build
+npm run lint      # ESLint; report pre-existing failures separately
+npm run dev       # Local Vite server (0.0.0.0)
+```
+
+High-risk areas with existing regression tests include label DPL/printing, order-detail cardinality, wash-log quantity calculations, IMP/FAM export, Supabase pagination, Telegram messages and Excel report export. Update the nearest test instead of validating only through the UI.
+
 ## Routing Structure
 
 ```
@@ -451,7 +627,7 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 /istasyonlar                Production Stations Hub
 /saatlik-takip              Hourly Production Tracking (embedded)
 /ayarlar                    Settings (Etiket, Araçlar, Personel, Hedef, Presets, Telegram, İstasyon)
-/admin                      Admin Panel (password-gated: settings + operator report history)
+/admin                      Admin Panel (settings + report history + permanent data management)
 /istasyonlar/poz-giris      Barcode Entry Station (full screen)
 /istasyonlar/kumanda        Çıta Control Panel (full screen)
 /istasyonlar/gosterge       Display Screen / Macun Robot (full screen)
@@ -477,8 +653,11 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 12. **Shipping Planning**: Drag-and-drop vehicle assignment with calendar view
 13. **System Settings**: JSONB-based key-value store for ERP-level configurations (labels, Opti export, admin visibility, Telegram edge config)
 14. **Order Drafts**: In-progress "new order" forms auto-saved to localStorage and resumable (`useSiparisTaslaklari`)
-15. **Label Printing**: DPL command generation/templating for Datamax printers, with a TCP test-print edge function
+15. **Label Printing**: Visual/precision DPL layout, calibration and custom-template modes; production print ownership is on Kumanda through the local Windows/Node bridge
 16. **Hourly Production Board**: Shift templates → daily hourly targets vs actuals vs scrap, with NPT tracking and a dedicated TV display mode
+17. **Line Quantity Model**: One `siparis_detaylari` row can represent multiple physical glasses through `adet`; per-copy wash progress is derived from logs keyed to the batch-detail row
+18. **Operator Station Permissions**: Optional person-specific station whitelist is applied in both Operator UI and a PostgreSQL trigger
+19. **Admin Data Management**: Destructive batch/order cleanup is isolated in the password-gated admin tab and must preserve dependent status recalculation
 
 ## Status Mappings
 
@@ -517,4 +696,5 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 - Tailwind CSS 4.2.2, Lucide React 1.8.0
 - React Hook Form 7.72.1, Zod 4.3.6, @hookform/resolvers 5.2.2
 - @tanstack/react-table 8.21.3
-- PapaParse 5.5.3, PDF.js (pdfjs-dist) 5.6.205
+- PapaParse 5.5.3, PDF.js (pdfjs-dist) 5.6.205, ExcelJS 4.4.0
+- Vitest 4.1.10, ESLint 9.39.4
