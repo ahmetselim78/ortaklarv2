@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Terraform çalışma/state dosyaları ve gerçek değişken değerleri
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -15,7 +15,6 @@ export interface HrPersonel {
   rol: PersonelRol | string
   is_aktif: boolean
   kullanici_adi?: string | null
-  giris_sifresi?: string | null
   /** false ise tüm aktif istasyonlar, true ise ilişki tablosunda seçilen istasyonlar */
   uretim_yetkileri_sinirli?: boolean
   hr_personel_istasyon_yetkileri?: Array<{ istasyon_id: string }>
@@ -109,8 +108,6 @@ export interface TelegramSablonAyarlari {
 
 export interface TelegramAyarlari extends TelegramSablonAyarlari {
   id: string
-  bot_token: string
-  chat_id: string
   aktif: boolean
 }
 

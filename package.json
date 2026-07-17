@@ -8,7 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:security": "node scripts/security-static-check.mjs",
+    "auth:bootstrap": "node scripts/bootstrap-auth-user.mjs",
+    "auth:canary": "node scripts/bootstrap-auth-canary.mjs",
+    "auth:migrate": "node scripts/migrate-auth-users.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

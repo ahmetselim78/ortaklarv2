@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
+import { reportError } from '@/lib/errorReporter'
 
 interface Props {
   children: ReactNode
@@ -19,6 +20,13 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(hata: Error, info: { componentStack?: string | null }) {
     console.error('Uygulama hatası:', hata, info.componentStack)
+    void reportError({
+      source: 'react_boundary',
+      error: hata,
+      severity: 'critical',
+      title: 'React Error Boundary',
+      context: { componentStack: info.componentStack },
+    })
   }
 
   render() {
@@ -34,9 +42,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <p className="text-sm text-gray-500 mb-4">
             Sayfayı yenileyerek devam edebilirsiniz. Sorun devam ederse yöneticinize bildirin.
           </p>
-          <pre className="text-left text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3 mb-5 overflow-auto max-h-32 whitespace-pre-wrap">
-            {this.state.hata.message}
-          </pre>
+          <p className="mb-5 rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-600">Hata güvenli biçimde merkezi sisteme bildirildi.</p>
           <button
             onClick={() => window.location.reload()}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"

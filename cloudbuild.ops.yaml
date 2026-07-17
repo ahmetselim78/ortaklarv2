@@ -1,0 +1,64 @@
+substitutions:
+  _REGION: europe-west1
+  _REPOSITORY: ortaklar-ops
+  _IMAGE: backup-restore
+  _SUPABASE_PROJECT_REF: replace-me
+  _SUPABASE_ACCESS_TOKEN_SECRET: ortaklar-supabase-access-token
+
+steps:
+  - id: auth-storage-diff
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    secretEnv: [SUPABASE_ACCESS_TOKEN]
+    args:
+      - -ceu
+      - |
+        docker run --rm --entrypoint sh \
+          -e SUPABASE_ACCESS_TOKEN="$$SUPABASE_ACCESS_TOKEN" \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$$PWD:/workspace" -w /workspace \
+          supabase/cli:2.109.1 \
+          -c 'supabase link --project-ref "${_SUPABASE_PROJECT_REF}" >/dev/null && supabase db diff --linked --schema auth,storage > /workspace/supabase/auth_storage_diff.sql'
+        test -f supabase/auth_storage_diff.sql
+  - id: ops-build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=ops/backup/Dockerfile
+      - --build-arg=GIT_COMMIT=$COMMIT_SHA
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - .
+  - id: ops-push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+  - id: update-backup-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: [run, jobs, update, ortaklar-db-backup, --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA, --region=${_REGION}, --quiet]
+  - id: update-verify-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: [run, jobs, update, ortaklar-backup-verify, --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA, --region=${_REGION}, --quiet]
+  - id: update-restore-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: [run, jobs, update, ortaklar-restore-test, --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA, --region=${_REGION}, --quiet]
+  - id: update-audit-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: [run, jobs, update, ortaklar-audit-archive, --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA, --region=${_REGION}, --quiet]
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/${_SUPABASE_ACCESS_TOKEN_SECRET}/versions/latest
+      env: SUPABASE_ACCESS_TOKEN
+
+serviceAccount: projects/$PROJECT_ID/serviceAccounts/ortaklar-ops-builder@$PROJECT_ID.iam.gserviceaccount.com

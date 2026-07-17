@@ -6,6 +6,7 @@ import {
   User, Truck, Factory, FileDown, Trash2, StickyNote, X,
   Printer, Users, Target, MessageSquare, Send,
   Pencil, Check,
+  ScrollText, Bug, UserCog, KeyRound,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bugunTarih, formatSaatTr, formatTarihTr, tarihEkleTr } from '@/lib/tarih'
@@ -19,13 +20,17 @@ import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
 import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
 import OptiExportAyarlariPanel from '@/components/ayarlar/OptiExportAyarlariPanel'
 import VeriYonetimiPanel from '@/components/admin/VeriYonetimiPanel'
+import AuditKayitlariPanel from '@/components/admin/AuditKayitlariPanel'
+import HataKayitlariPanel from '@/components/admin/HataKayitlariPanel'
+import RolYonetimiPanel from '@/components/admin/RolYonetimiPanel'
+import KullaniciYonetimiPanel from '@/components/admin/KullaniciYonetimiPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 // ── Ayar görünürlük anahtarı ──────────────────────────────────────────────────
 const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 
 type AyarKategori = 'etiket' | 'araclar' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti'
-type AdminTab = 'ayarlar' | 'uretim-giris' | 'veri-yonetimi'
+type AdminTab = 'ayarlar' | 'uretim-giris' | 'veri-yonetimi' | 'kullanicilar' | 'roller' | 'audit' | 'hatalar'
 
 interface GorunumAyarlari {
   etiket: boolean
@@ -1273,132 +1278,14 @@ const TABS: { id: AdminTab; label: string; icon: React.ElementType; aciklama: st
   { id: 'ayarlar',       label: 'Ayarlar Yönetimi',        icon: Settings,       aciklama: 'Tüm ayar panelleri ve /ayarlar sayfası görünürlük kontrolü' },
   { id: 'uretim-giris',  label: 'Üretim Girişi Kayıtları', icon: ClipboardCheck, aciklama: 'Operatörler tarafından girilen günlük üretim raporları' },
   { id: 'veri-yonetimi', label: 'Veri Yönetimi',           icon: Database,       aciklama: 'Batch ve sipariş kayıtlarını kalıcı silme' },
+  { id: 'kullanicilar',   label: 'Kullanıcılar',             icon: UserCog,        aciklama: 'Supabase Auth kullanıcıları ve hesap iptali' },
+  { id: 'roller',         label: 'Roller',                   icon: KeyRound,       aciklama: 'Sabit katalogdan rol ve izin yönetimi' },
+  { id: 'audit',          label: 'İşlem Kayıtları',         icon: ScrollText,     aciklama: 'Kim, ne zaman, neyi değiştirdi?' },
+  { id: 'hatalar',        label: 'Merkezi Hatalar',         icon: Bug,            aciklama: 'Kritik hata takibi ve durum yönetimi' },
 ]
-
-interface AdminGirisModalProps {
-  onGirisBasarili: () => void
-  onCikis: () => void
-}
-
-function AdminGirisModal({ onGirisBasarili, onCikis }: AdminGirisModalProps) {
-  const [sifre, setSifre] = useState('')
-  const [hata, setHata] = useState('')
-  const [yukleniyor, setYukleniyor] = useState(false)
-
-  const dogru_sifre = 'xxx'
-
-  const handleSifreKontrol = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setHata('')
-    setYukleniyor(true)
-
-    setTimeout(() => {
-      if (sifre === dogru_sifre) {
-        onGirisBasarili()
-        setSifre('')
-      } else {
-        setHata('Hatalı şifre. Lütfen tekrar deneyin.')
-        setSifre('')
-      }
-      setYukleniyor(false)
-    }, 300)
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        {/* Başlık */}
-        <div className="px-6 py-6 border-b border-gray-200 bg-gradient-to-r from-indigo-500 to-purple-600">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-              <ShieldCheck size={20} className="text-white" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">Admin Paneli</h2>
-              <p className="text-xs text-white/80">Giriş yapabilmek için şifre gereklidir</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSifreKontrol} className="px-6 py-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Şifre
-            </label>
-            <input
-              type="password"
-              value={sifre}
-              onChange={e => {
-                setSifre(e.target.value)
-                if (hata) setHata('')
-              }}
-              placeholder="Şifrenizi girin"
-              disabled={yukleniyor}
-              autoFocus
-              className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
-                hata
-                  ? 'border-red-300 bg-red-50 focus:ring-red-400'
-                  : 'border-gray-300 focus:ring-indigo-400'
-              }`}
-            />
-          </div>
-
-          {hata && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertCircle size={16} className="text-red-600 shrink-0" />
-              <p className="text-sm text-red-700">{hata}</p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={!sifre || yukleniyor}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-all"
-          >
-            {yukleniyor ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Kontrol ediliyor…
-              </>
-            ) : (
-              <>
-                <ShieldCheck size={16} />
-                Giriş Yap
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Kapat butonu */}
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end">
-          <button
-            type="button"
-            onClick={onCikis}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            Kapat
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function AdminPage() {
   const [aktifTab, setAktifTab] = useState<AdminTab>('ayarlar')
-  const [girisYapildi, setGirisYapildi] = useState(false)
-
-  if (!girisYapildi) {
-    return (
-      <AdminGirisModal
-        onGirisBasarili={() => setGirisYapildi(true)}
-        onCikis={() => {
-          window.history.back()
-        }}
-      />
-    )
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -1439,6 +1326,10 @@ export default function AdminPage() {
         {aktifTab === 'ayarlar'        && <AyarlarYonetimiTab />}
         {aktifTab === 'uretim-giris'   && <UretimGirisiTab />}
         {aktifTab === 'veri-yonetimi'  && <VeriYonetimiPanel />}
+        {aktifTab === 'kullanicilar'    && <KullaniciYonetimiPanel />}
+        {aktifTab === 'roller'          && <RolYonetimiPanel />}
+        {aktifTab === 'audit'           && <AuditKayitlariPanel />}
+        {aktifTab === 'hatalar'         && <HataKayitlariPanel />}
       </div>
     </div>
   )

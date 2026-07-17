@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, Eye, EyeOff, KeyRound, Factory } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, ShieldCheck, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { r2Upload, R2UploadHata } from '@/lib/r2Upload'
 import type { HrPersonel, YeniPersonel } from '@/types/saatlikUretim'
@@ -20,7 +20,7 @@ const personelSchema = z.object({
   rol: z.enum(['Direkt', 'Endirekt'], { message: 'Rol seciniz' }),
   is_aktif: z.boolean(),
   kullanici_adi: z.string(),
-  giris_sifresi: z.string(),
+  uretim_yetkileri_sinirli: z.boolean(),
 })
 
 type PersonelFormDegerleri = z.infer<typeof personelSchema>
@@ -75,29 +75,9 @@ function FotoAlani({ deger, onDegisim, hata }: FotoAlanıProps) {
   const [yukleHata, setYukleHata] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // ── Detaylı R2 Yapılandırma Kontrolü ──────────────────────────────────
-  const uploadUrl = import.meta.env.VITE_R2_UPLOAD_URL as string | undefined
-  const uploadSecret = import.meta.env.VITE_R2_UPLOAD_SECRET as string | undefined
-  const publicBaseUrl = import.meta.env.VITE_R2_PUBLIC_BASE_URL as string | undefined
-
-  const r2UploadUrlGeçerli = !!uploadUrl && uploadUrl.trim().length > 0
-  const r2SecretGeçerli = !!uploadSecret && uploadSecret.trim().length > 0
-  const r2PublicUrlGeçerli = !!publicBaseUrl && 
-                              publicBaseUrl.trim().length > 0 && 
-                              !publicBaseUrl.includes('placeholder') &&
-                              publicBaseUrl.startsWith('https://')
-
-  const r2Aktif = r2UploadUrlGeçerli && r2SecretGeçerli && r2PublicUrlGeçerli
-
-  // Debug: Kontrol sonuçlarını konsola yaz
-  if (!r2Aktif) {
-    console.warn('🔴 R2 Yapılandırması Eksik:', {
-      uploadUrl: r2UploadUrlGeçerli ? '✅ Var' : '❌ Yok/Boş',
-      uploadSecret: r2SecretGeçerli ? '✅ Var' : '❌ Yok/Boş',
-      publicBaseUrl: r2PublicUrlGeçerli ? '✅ Var' : '❌ Yok/Hatalı',
-      açıklama: !r2PublicUrlGeçerli ? `Public URL: "${publicBaseUrl}" (geçerli olmalı: https://pub-xxx.r2.dev)` : '',
-    })
-  }
+  // R2 kimlik bilgileri tarayıcıda tutulmaz; kullanılabilirlik Edge Function
+  // tarafından JWT ve izin kontrolünden sonra belirlenir.
+  const r2Aktif = true
 
   const dosyaSec = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const dosya = e.target.files?.[0]
@@ -224,7 +204,6 @@ export default function PersonelYonetimiPanel() {
   const [hata, setHata] = useState<string | null>(null)
   const [silmeOnayId, setSilmeOnayId] = useState<string | null>(null)
   const [duzenlePersonel, setDuzenlePersonel] = useState<HrPersonel | null>(null)
-  const [sifreGoster, setSifreGoster] = useState(false)
   const [istasyonlar, setIstasyonlar] = useState<YetkiIstasyonu[]>([])
   const [yetkiliIstasyonIds, setYetkiliIstasyonIds] = useState<string[]>([])
 
@@ -237,11 +216,11 @@ export default function PersonelYonetimiPanel() {
     formState: { errors },
   } = useForm<PersonelFormDegerleri>({
     resolver: zodResolver(personelSchema),
-    defaultValues: { ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' },
+    defaultValues: { ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', uretim_yetkileri_sinirli: false },
   })
 
   const fotoUrl = watch('foto_url')
-  const girisSifresi = watch('giris_sifresi')
+  const yetkiSinirli = watch('uretim_yetkileri_sinirli')
 
   // ── Veri getir ────────────────────────────────────────────────────────────
   const getir = useCallback(async () => {
@@ -250,7 +229,7 @@ export default function PersonelYonetimiPanel() {
       const [personelRes, istasyonRes] = await Promise.all([
         supabase
           .from('hr_personel')
-          .select('*, hr_personel_istasyon_yetkileri(istasyon_id)')
+          .select('id, ad_soyad, foto_url, rol, is_aktif, kullanici_adi, uretim_yetkileri_sinirli, hr_personel_istasyon_yetkileri(istasyon_id)')
           .order('ad_soyad'),
         supabase.from('uretim_istasyonlari').select('id, ad, sira_no, aktif').eq('aktif', true).order('sira_no'),
       ])
@@ -279,7 +258,7 @@ export default function PersonelYonetimiPanel() {
       rol: p.rol as 'Direkt' | 'Endirekt',
       is_aktif: p.is_aktif,
       kullanici_adi: p.kullanici_adi ?? '',
-      giris_sifresi: p.giris_sifresi ?? '',
+      uretim_yetkileri_sinirli: p.uretim_yetkileri_sinirli ?? false,
     })
     setYetkiliIstasyonIds(
       p.uretim_yetkileri_sinirli
@@ -290,17 +269,17 @@ export default function PersonelYonetimiPanel() {
 
   const duzenleIptal = () => {
     setDuzenlePersonel(null)
-    reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' })
+    reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', uretim_yetkileri_sinirli: false })
     setYetkiliIstasyonIds(istasyonlar.map(i => i.id))
   }
 
-  const istasyonYetkileriniKaydet = async (personelId: string, sifreVar: boolean) => {
+  const istasyonYetkileriniKaydet = async (personelId: string, sinirli: boolean) => {
     const { error: silmeHatasi } = await supabase
       .from('hr_personel_istasyon_yetkileri')
       .delete()
       .eq('personel_id', personelId)
     if (silmeHatasi) throw silmeHatasi
-    if (!sifreVar || yetkiliIstasyonIds.length === 0) return
+    if (!sinirli || yetkiliIstasyonIds.length === 0) return
     const { error: eklemeHatasi } = await supabase
       .from('hr_personel_istasyon_yetkileri')
       .insert(yetkiliIstasyonIds.map(istasyon_id => ({ personel_id: personelId, istasyon_id })))
@@ -312,7 +291,7 @@ export default function PersonelYonetimiPanel() {
     setKaydediyor(true)
     setHata(null)
     try {
-      const sifreVar = form.giris_sifresi.trim().length > 0
+      const sinirli = form.uretim_yetkileri_sinirli
       if (duzenlePersonel) {
         const { error } = await supabase
           .from('hr_personel')
@@ -321,28 +300,26 @@ export default function PersonelYonetimiPanel() {
             foto_url: form.foto_url.trim(),
             rol: form.rol,
             kullanici_adi: form.kullanici_adi?.trim() || null,
-            giris_sifresi: form.giris_sifresi?.trim() || null,
-            uretim_yetkileri_sinirli: sifreVar,
+            uretim_yetkileri_sinirli: sinirli,
           })
           .eq('id', duzenlePersonel.id)
         if (error) throw error
-        await istasyonYetkileriniKaydet(duzenlePersonel.id, sifreVar)
+        await istasyonYetkileriniKaydet(duzenlePersonel.id, sinirli)
         setDuzenlePersonel(null)
       } else {
-        const yeni: YeniPersonel & { kullanici_adi?: string | null; giris_sifresi?: string | null } = {
+        const yeni: YeniPersonel & { kullanici_adi?: string | null } = {
           ad_soyad: form.ad_soyad.trim(),
           foto_url: form.foto_url.trim(),
           rol: form.rol,
           is_aktif: true,
           kullanici_adi: form.kullanici_adi?.trim() || null,
-          giris_sifresi: form.giris_sifresi?.trim() || null,
-          uretim_yetkileri_sinirli: sifreVar,
+          uretim_yetkileri_sinirli: sinirli,
         }
         const { data, error } = await supabase.from('hr_personel').insert([yeni]).select('id').single()
         if (error) throw error
-        await istasyonYetkileriniKaydet(data.id, sifreVar)
+        await istasyonYetkileriniKaydet(data.id, sinirli)
       }
-      reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', giris_sifresi: '' })
+      reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', uretim_yetkileri_sinirli: false })
       setYetkiliIstasyonIds(istasyonlar.map(i => i.id))
       await getir()
     } catch (e) {
@@ -427,14 +404,13 @@ export default function PersonelYonetimiPanel() {
             </div>
           </div>
 
-          {/* ── Giriş Bilgileri ── */}
+          {/* ── Kimlik ve istasyon yetkisi ── */}
           <div className="border-t border-gray-100 pt-4">
             <div className="flex items-center gap-2 mb-3">
-              <KeyRound size={13} className="text-violet-500" />
-              <p className="text-xs font-semibold text-gray-700">Operatör Giriş Bilgileri</p>
-              <span className="text-xs text-gray-400">(opsiyonel)</span>
+              <ShieldCheck size={13} className="text-violet-500" />
+              <p className="text-xs font-semibold text-gray-700">Operatör Kimliği</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
               {/* Kullanıcı Adı */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Kullanıcı Adı</label>
@@ -445,33 +421,15 @@ export default function PersonelYonetimiPanel() {
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                 />
               </div>
-
-              {/* Giriş Şifresi */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Giriş Şifresi</label>
-                <div className="relative">
-                  <input
-                    {...register('giris_sifresi')}
-                    type={sifreGoster ? 'text' : 'password'}
-                    placeholder="••••••"
-                    autoComplete="new-password"
-                    className="w-full px-3 py-2 pr-9 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setSifreGoster(v => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                    tabIndex={-1}
-                  >
-                    {sifreGoster ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-                <p className="mt-1 text-[11px] text-gray-400">Operatör girişinde kullanılacak şifre.</p>
-              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                <input type="checkbox" {...register('uretim_yetkileri_sinirli')} />
+                Üretim istasyonlarını sınırla
+              </label>
             </div>
+            <p className="mt-2 text-[11px] text-gray-400">Parola yalnızca Supabase Auth tarafından tutulur. Mevcut parola görüntülenemez.</p>
           </div>
 
-          {girisSifresi.trim() && (
+          {yetkiSinirli && (
             <div className="border-t border-gray-100 pt-4">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
@@ -626,11 +584,6 @@ export default function PersonelYonetimiPanel() {
                     {p.rol}
                     {p.kullanici_adi && (
                       <span className="min-w-0 text-violet-500 truncate">@{p.kullanici_adi}</span>
-                    )}
-                    {p.giris_sifresi && (
-                      <span className="ml-1 text-gray-300" title="Şifre tanımlı">
-                        <KeyRound size={10} className="inline" />
-                      </span>
                     )}
                   </p>
                 </div>

@@ -1,49 +1,55 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import ProtectedRoute from '@/auth/ProtectedRoute'
 import AppLayout from '@/components/layout/AppLayout'
-import Dashboard from '@/pages/Dashboard'
-import CariPage from '@/pages/CariPage'
-import StokPage from '@/pages/StokPage'
-import SiparisPage from '@/pages/SiparisPage'
-import UretimPage from '@/pages/UretimPage'
-import UretimIstasyonlariPage from '@/pages/UretimIstasyonlariPage'
-import PozGirisPage from '@/pages/PozGirisPage'
-import KumandaPaneliPage from '@/pages/KumandaPaneliPage'
-import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
-import TamirIstasyonuPage from '@/pages/TamirIstasyonuPage'
-import AyarlarPage from '@/pages/AyarlarPage'
-import SaatlikTakipPage from '@/pages/SaatlikTakipPage'
-import AdminPage from '@/pages/AdminPage'
-import NotFoundPage from '@/pages/NotFoundPage'
 import SaatlikTakipPanosu from '@/components/uretim/SaatlikTakipPanosu'
+import AdminPage from '@/pages/AdminPage'
+import AyarlarPage from '@/pages/AyarlarPage'
+import CariPage from '@/pages/CariPage'
+import Dashboard from '@/pages/Dashboard'
+import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
+import KumandaPaneliPage from '@/pages/KumandaPaneliPage'
+import LoginPage from '@/pages/LoginPage'
+import MfaPage from '@/pages/MfaPage'
+import NotFoundPage from '@/pages/NotFoundPage'
 import OperatorGirisPage from '@/pages/OperatorGirisPage'
+import PasswordChangePage from '@/pages/PasswordChangePage'
+import PozGirisPage from '@/pages/PozGirisPage'
+import SaatlikTakipPage from '@/pages/SaatlikTakipPage'
+import SiparisPage from '@/pages/SiparisPage'
+import StokPage from '@/pages/StokPage'
+import TamirIstasyonuPage from '@/pages/TamirIstasyonuPage'
+import UnauthorizedPage from '@/pages/UnauthorizedPage'
+import UretimIstasyonlariPage from '@/pages/UretimIstasyonlariPage'
+import UretimPage from '@/pages/UretimPage'
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Tam ekran operatör istasyonları — sidebar yok */}
-        <Route path="/istasyonlar/poz-giris" element={<PozGirisPage />} />
-        <Route path="/istasyonlar/kumanda" element={<KumandaPaneliPage />} />
-        <Route path="/istasyonlar/gosterge" element={<GostergeEkraniPage />} />
-        <Route path="/istasyonlar/tamir" element={<TamirIstasyonuPage />} />
-        <Route path="/istasyonlar/uretim-giris" element={<OperatorGirisPage />} />
-        {/* TV Panosu — tam ekran, sidebar yok */}
-        <Route path="/istasyonlar/uretim-panosu" element={<SaatlikTakipPanosu tamEkran />} />
+        <Route path="/giris" element={<LoginPage />} />
+        <Route path="/yetkisiz" element={<UnauthorizedPage />} />
+        <Route path="/parola-degistir" element={<ProtectedRoute><PasswordChangePage /></ProtectedRoute>} />
+        <Route path="/mfa" element={<ProtectedRoute><MfaPage /></ProtectedRoute>} />
 
-        {/* Ana uygulama -- sidebar'li layout */}
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/cari" element={<CariPage />} />
-          <Route path="/stok" element={<StokPage />} />
-          <Route path="/siparisler" element={<SiparisPage />} />
-          <Route path="/uretim" element={<UretimPage />} />
-          <Route path="/istasyonlar" element={<UretimIstasyonlariPage />} />
-          <Route path="/saatlik-takip" element={<SaatlikTakipPage />} />
-          <Route path="/ayarlar" element={<AyarlarPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+        <Route path="/istasyonlar/poz-giris" element={<ProtectedRoute module="production" action="update"><PozGirisPage /></ProtectedRoute>} />
+        <Route path="/istasyonlar/kumanda" element={<ProtectedRoute module="production" action="update"><KumandaPaneliPage /></ProtectedRoute>} />
+        <Route path="/istasyonlar/gosterge" element={<ProtectedRoute module="dashboard"><GostergeEkraniPage /></ProtectedRoute>} />
+        <Route path="/istasyonlar/tamir" element={<ProtectedRoute module="repair" action="create"><TamirIstasyonuPage /></ProtectedRoute>} />
+        <Route path="/istasyonlar/uretim-giris" element={<ProtectedRoute module="production_entry" action="create"><OperatorGirisPage /></ProtectedRoute>} />
+        <Route path="/istasyonlar/uretim-panosu" element={<ProtectedRoute module="hourly_tracking"><SaatlikTakipPanosu tamEkran /></ProtectedRoute>} />
+
+        <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+          <Route path="/" element={<ProtectedRoute module="dashboard"><Dashboard /></ProtectedRoute>} />
+          <Route path="/cari" element={<ProtectedRoute module="cari"><CariPage /></ProtectedRoute>} />
+          <Route path="/stok" element={<ProtectedRoute module="inventory"><StokPage /></ProtectedRoute>} />
+          <Route path="/siparisler" element={<ProtectedRoute module="orders"><SiparisPage /></ProtectedRoute>} />
+          <Route path="/uretim" element={<ProtectedRoute module="production"><UretimPage /></ProtectedRoute>} />
+          <Route path="/istasyonlar" element={<ProtectedRoute module="production"><UretimIstasyonlariPage /></ProtectedRoute>} />
+          <Route path="/saatlik-takip" element={<ProtectedRoute module="hourly_tracking"><SaatlikTakipPage /></ProtectedRoute>} />
+          <Route path="/ayarlar" element={<ProtectedRoute module="settings"><AyarlarPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute module="admin" action="manage" requireAal2><AdminPage /></ProtectedRoute>} />
         </Route>
 
-        {/* 404 */}
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>

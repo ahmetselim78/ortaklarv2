@@ -82,7 +82,6 @@ interface RaporData {
 
 // ─── LocalStorage Keys ────────────────────────────────────────────────────────
 const LS_TEMA = 'ogu_tema'
-const LS_KULLANICI = 'ogu_son_kullanici'
 
 // ─── Tema Yardımcıları ────────────────────────────────────────────────────────
 function pageBg(dk: boolean) { return dk ? 'bg-gray-950' : 'bg-gray-50' }
@@ -226,29 +225,9 @@ function GirisEkrani({
   }, [adim])
 
   async function hatirlatmaDevam() {
-    if (!sonKullanici) return
-    setYukleniyor(true)
+    // Hatırlanan kişi hiçbir zaman kimlik doğrulama yerine kullanılmaz.
     setHata(null)
-    try {
-      const { data, error } = await supabase
-        .from('hr_personel')
-        .select('*')
-        .eq('id', sonKullanici.id)
-        .eq('is_aktif', true)
-        .maybeSingle()
-      if (error) throw error
-      if (!data) {
-        localStorage.removeItem(LS_KULLANICI)
-        setHata('Hesap bulunamadı veya pasif yapılmış. Lütfen şifrenizi girin.')
-        setAdim('sifre')
-        return
-      }
-      onGiris(data as HrPersonel)
-    } catch (err) {
-      setHata(err instanceof Error ? err.message : 'Bağlantı hatası oluştu.')
-    } finally {
-      setYukleniyor(false)
-    }
+    setAdim('sifre')
   }
 
   async function sifreIleGiris(e?: React.FormEvent) {
@@ -257,10 +236,22 @@ function GirisEkrani({
     setYukleniyor(true)
     setHata(null)
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      if (userError || !userData.user?.email) throw new Error('Geçerli Auth oturumu bulunamadı.')
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: userData.user.email,
+        password: sifre,
+      })
+      if (reauthError) throw new Error('Parola hatalı.')
+
+      const { data: access, error: accessError } = await supabase.rpc('my_access_context')
+      const personelId = (access as { user?: { personel_id?: string | null } } | null)?.user?.personel_id
+      if (accessError || !personelId) throw new Error('Hesabınız bir personel kaydına bağlı değil.')
+
       const { data, error } = await supabase
         .from('hr_personel')
-        .select('*')
-        .eq('giris_sifresi', sifre.trim())
+        .select('id, ad_soyad, foto_url, rol, is_aktif, olusturma, kullanici_adi, uretim_yetkileri_sinirli')
+        .eq('id', personelId)
         .eq('is_aktif', true)
         .maybeSingle()
       if (error) throw error
@@ -313,7 +304,7 @@ function GirisEkrani({
               </button>
               <button
                 type="button"
-                onClick={() => { localStorage.removeItem(LS_KULLANICI); setHata(null); setAdim('sifre') }}
+                onClick={() => { setHata(null); setAdim('sifre') }}
                 className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors ${dk ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
               >
                 Hayır, farklı hesap
@@ -1390,12 +1381,7 @@ export default function OperatorGirisPage() {
     const kayitli = localStorage.getItem(LS_TEMA) as Tema | null
     return kayitli === 'light' ? 'light' : 'dark'
   })
-  const [sonKullanici, setSonKullanici] = useState<SonKullanici | null>(() => {
-    try {
-      const raw = localStorage.getItem(LS_KULLANICI)
-      return raw ? (JSON.parse(raw) as SonKullanici) : null
-    } catch { return null }
-  })
+  const [sonKullanici, setSonKullanici] = useState<SonKullanici | null>(null)
   const [aktifPersonel, setAktifPersonel] = useState<HrPersonel | null>(null)
   const [ekran, setEkran] = useState<Ekran>('form')
   const [raporData, setRaporData] = useState<RaporData | null>(null)
@@ -1411,7 +1397,6 @@ export default function OperatorGirisPage() {
 
   async function girisYap(p: HrPersonel) {
     const sk: SonKullanici = { id: p.id, ad_soyad: p.ad_soyad, foto_url: p.foto_url ?? null, rol: p.rol }
-    localStorage.setItem(LS_KULLANICI, JSON.stringify(sk))
     setSonKullanici(sk)
     setAktifPersonel(p)
     setIlkYukleniyor(true)
@@ -1476,8 +1461,10 @@ export default function OperatorGirisPage() {
     }
   }
 
-  function cikisYap() {
+  async function cikisYap() {
+    await supabase.auth.signOut()
     setAktifPersonel(null)
+    setSonKullanici(null)
     setEkran('form')
     setRaporData(null)
   }

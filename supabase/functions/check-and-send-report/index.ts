@@ -7,11 +7,7 @@ import {
   type TelegramSablon,
   type UretimRaporu,
 } from '../_shared/telegramMessage.ts'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders as secureCorsHeaders, errorResponse, handleOptions, requirePermission, requireServiceSecret, ResponseError } from '../_shared/security.ts'
 
 // ── Türkiye saatini al ────────────────────────────────────────────────────────
 function turkiyeSaati(): { tarih: string; saat: string } {
@@ -54,18 +50,21 @@ function sablonFromAyar(ayar: Record<string, unknown>): TelegramSablon {
 
 // ── Ana işleyici ─────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const options = handleOptions(req)
+  if (options) return options
+  const corsHeaders = secureCorsHeaders(req)
+  try {
+    if (req.headers.get('x-cron-secret')) requireServiceSecret(req, 'x-cron-secret', 'TELEGRAM_CRON_SECRET')
+    else await requirePermission(req, 'telegram', 'manage', true)
+  } catch (error) { return errorResponse(req, error) }
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
+  const TELEGRAM_CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID')
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return new Response(
-      JSON.stringify({ error: 'Eksik ortam değişkeni: SUPABASE_URL veya SUPABASE_SERVICE_ROLE_KEY' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+    return errorResponse(req, new ResponseError(500, 'Supabase servis yapılandırması eksik'))
   }
 
   const supabaseHeaders = {
@@ -119,11 +118,8 @@ Deno.serve(async (req) => {
       )
     }
 
-    if (!ayar.bot_token || !ayar.chat_id) {
-      return new Response(
-        JSON.stringify({ ok: false, mesaj: 'bot_token veya chat_id tanımlı değil' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+      throw new ResponseError(500, 'Telegram sırrı sunucuda tanımlı değil')
     }
 
     const sablon = sablonFromAyar(ayar)
@@ -202,12 +198,12 @@ Deno.serve(async (req) => {
     const mesaj = raporOlustur(tarih, saat, gonderilecekTip, sablon, saatlikSatirlar, uretimRaporlari)
 
     const tgRes = await fetch(
-      `https://api.telegram.org/bot${ayar.bot_token}/sendMessage`,
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: ayar.chat_id,
+          chat_id: TELEGRAM_CHAT_ID,
           text: mesaj,
           parse_mode: 'MarkdownV2',
         }),
@@ -218,10 +214,7 @@ Deno.serve(async (req) => {
 
     if (!tgData.ok) {
       await logKaydiniSil()
-      return new Response(
-        JSON.stringify({ ok: false, mesaj: 'Telegram API hatası', detay: tgData }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      throw new ResponseError(502, 'Telegram API isteği başarısız')
     }
 
     return new Response(
@@ -230,9 +223,6 @@ Deno.serve(async (req) => {
     )
   } catch (err) {
     await logKaydiniSil()
-    return new Response(
-      JSON.stringify({ error: (err as Error).message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+    return errorResponse(req, err)
   }
 })

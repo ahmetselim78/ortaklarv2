@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Plus, Trash2, Send, AlertCircle, Loader2, CheckCircle2,
-  Eye, EyeOff, Clock, LayoutTemplate, Bot, CalendarClock,
+  Clock, LayoutTemplate, Bot, CalendarClock,
   BarChart3, Factory, Layers, MessageSquare, Users, Truck,
   StickyNote, User, FileText, ChevronRight, Info, Zap,
   Pencil, X, Pause, Play,
@@ -439,10 +439,7 @@ export default function TelegramAyarlariPanel() {
   const [hata, setHata] = useState<string | null>(null)
   const [basari, setBasari] = useState<string | null>(null)
 
-  const [botToken, setBotToken] = useState('')
-  const [chatId, setChatId] = useState('')
   const [aktif, setAktif] = useState(false)
-  const [tokenGoster, setTokenGoster] = useState(false)
   const [sablon, setSablon] = useState<TelegramSablonAyarlari>({ ...VARSAYILAN_TELEGRAM_SABLON })
   const [kayitliSablon, setKayitliSablon] = useState<TelegramSablonAyarlari>({ ...VARSAYILAN_TELEGRAM_SABLON })
 
@@ -465,7 +462,7 @@ export default function TelegramAyarlariPanel() {
     setHata(null)
     try {
       const [ayarRes, saatRes] = await Promise.all([
-        supabase.from('telegram_ayarlari').select('*').limit(1).maybeSingle(),
+        supabase.from('telegram_ayarlari').select('id, aktif, sablon_baslik, sablon_saatlik_detay, sablon_saatlik_ozet, sablon_istasyonlar, sablon_araclar, sablon_personel, sablon_operator, sablon_notlar').limit(1).maybeSingle(),
         supabase.from('telegram_rapor_saatleri').select('*').order('saat'),
       ])
 
@@ -475,8 +472,6 @@ export default function TelegramAyarlariPanel() {
       if (ayarRes.data) {
         const ayarData = ayarRes.data as TelegramAyarlari
         setAyar(ayarData)
-        setBotToken(ayarData.bot_token ?? '')
-        setChatId(ayarData.chat_id ?? '')
         setAktif(ayarData.aktif ?? false)
         const s = sablonFromAyar(ayarData)
         setSablon(s)
@@ -516,7 +511,7 @@ export default function TelegramAyarlariPanel() {
     [sablon, kayitliSablon],
   )
 
-  const baglantiHazir = Boolean(botToken.trim() && chatId.trim())
+  const baglantiHazir = true
   const aktifSaatSayisi = saatler.filter(s => s.aktif).length
 
   const siraliSaatler = useMemo(
@@ -531,8 +526,6 @@ export default function TelegramAyarlariPanel() {
     try {
       const payload: Record<string, unknown> = {}
       if (kapsam === 'baglanti' || kapsam === 'hepsi') {
-        payload.bot_token = botToken.trim()
-        payload.chat_id = chatId.trim()
         payload.aktif = aktif
       }
       if (kapsam === 'mesaj' || kapsam === 'hepsi') {
@@ -541,8 +534,6 @@ export default function TelegramAyarlariPanel() {
 
       if (!ayar) {
         const { error } = await supabase.from('telegram_ayarlari').insert([{
-          bot_token: botToken.trim(),
-          chat_id: chatId.trim(),
           aktif,
           ...sablon,
         }])
@@ -825,41 +816,8 @@ export default function TelegramAyarlariPanel() {
                 </a>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Bot Token</label>
-                  <div className="relative">
-                    <input
-                      type={tokenGoster ? 'text' : 'password'}
-                      value={botToken}
-                      onChange={e => setBotToken(e.target.value)}
-                      placeholder="123456789:AAFxxxxxxxx..."
-                      autoComplete="off"
-                      className="w-full px-4 py-2.5 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400 font-mono bg-gray-50/50"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setTokenGoster(v => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-                      tabIndex={-1}
-                    >
-                      {tokenGoster ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Chat ID</label>
-                  <input
-                    type="text"
-                    value={chatId}
-                    onChange={e => setChatId(e.target.value)}
-                    placeholder="-1001234567890"
-                    autoComplete="off"
-                    className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400 font-mono bg-gray-50/50"
-                  />
-                  <p className="mt-1.5 text-[11px] text-gray-400">Grup sohbetleri için genellikle negatif sayıdır.</p>
-                </div>
+              <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                Bot tokenı ve chat ID yalnızca Supabase Edge Secrets içinde yönetilir. Mevcut değerler güvenlik nedeniyle bu panelde gösterilemez.
               </div>
             </div>
 

@@ -1,59 +1,30 @@
 // @ts-nocheck
-// Deno Edge Function — Datamax yazıcısına TCP üzerinden DPL komutu gönderir
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+import { errorResponse, handleOptions, json, requirePermission, ResponseError } from '../_shared/security.ts'
+
+function privateIpv4(value: string): boolean {
+  const parts = value.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(v => !Number.isInteger(v) || v < 0 || v > 255)) return false
+  return parts[0] === 10 || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168)
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
+  const options = handleOptions(req)
+  if (options) return options
+  if (req.method !== 'POST') return json(req, { hata: 'Yalnızca POST desteklenir' }, 405)
   try {
+    await requirePermission(req, 'settings', 'manage', true)
     const { ip, port, dpl } = await req.json()
-
-    if (!ip || typeof ip !== 'string' || ip.trim() === '') {
-      return new Response(
-        JSON.stringify({ hata: 'Yazıcı IP adresi girilmemiş.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
+    if (typeof ip !== 'string' || !privateIpv4(ip.trim())) throw new ResponseError(400, 'Yalnızca özel ağ yazıcı IPv4 adresleri kabul edilir')
     const portNum = Number(port)
-    if (!portNum || portNum < 1 || portNum > 65535) {
-      return new Response(
-        JSON.stringify({ hata: 'Geçersiz port numarası.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
-    if (!dpl || typeof dpl !== 'string') {
-      return new Response(
-        JSON.stringify({ hata: 'DPL komutu eksik.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
-    // TCP bağlantısı kur ve DPL komutunu gönder
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) throw new ResponseError(400, 'Geçersiz port')
+    if (typeof dpl !== 'string' || !dpl || dpl.length > 65_536) throw new ResponseError(400, 'DPL komutu eksik veya çok uzun')
     let conn: Deno.TcpConn | undefined
     try {
       conn = await Deno.connect({ hostname: ip.trim(), port: portNum, transport: 'tcp' })
-      const encoder = new TextEncoder()
-      await conn.write(encoder.encode(dpl))
-    } finally {
-      conn?.close()
-    }
-
-    return new Response(
-      JSON.stringify({ basarili: true, mesaj: `${ip}:${portNum} adresine test etiketi gönderildi.` }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
-  } catch (err) {
-    const mesaj = err instanceof Error ? err.message : 'Bilinmeyen hata'
-    return new Response(
-      JSON.stringify({ hata: mesaj }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+      await conn.write(new TextEncoder().encode(dpl))
+    } finally { conn?.close() }
+    return json(req, { basarili: true, mesaj: `${ip}:${portNum} adresine test etiketi gönderildi.` })
+  } catch (error) {
+    return errorResponse(req, error)
   }
 })
