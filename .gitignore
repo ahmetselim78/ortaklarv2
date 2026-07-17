@@ -30,3 +30,5 @@ crash.log
 *.njsproj
 *.sln
 *.sw?
+
+before-security-schema.sql
