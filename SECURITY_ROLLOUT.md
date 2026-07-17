@@ -13,9 +13,9 @@ Bu değişiklikler tek final güvenlik kapısına bağlıdır; production'a tek 
 | 5 | `052_admin_user_and_secret_security.sql`, güvenli Edge Function'lar, R2 Worker | Bundle sır taraması, JWT/izin/CORS/cron testleri, anahtar rotasyonu | Önceki güvenli Edge revision; sırlar frontend'e dönmez |
 | 6 | `049_append_only_audit.sql`, audit paneli/arşiv Job'u | Audit failure rollback, filtre, şifreleme geri okuma/hash testi | Etkilenen modül bakım modu; auditsiz işlem yok |
 | 7 | `050_central_error_tracking.sql`, istemci/Edge/Job hata aktarımı | Altı kaynak, dedup, rate-limit, hassas veri temizleme | İstemci aktarımı kapatılabilir; Monitoring korunur |
-| 8 | `053_legacy_security_cleanup.sql` | Tam Auth eşleme/rol kapısı, parola kolonu ve geniş grant taraması | İleri düzeltme veya izole restore; plaintext kolon geri açılmaz |
+| 8 | `053_legacy_security_cleanup.sql`, `054_account_lockout_guards.sql` | Tam Auth eşleme/rol kapısı, parola kolonu ve geniş grant taraması; kendi/son yönetici kilitlenme testleri | İleri düzeltme veya izole restore; plaintext kolon geri açılmaz |
 
-`049`–`052` dosya numaraları migration bağımlılığına göre sıralıdır; operasyonel aşama sırası yukarıdaki yayın paketleriyle korunur. `053`, aktif her personelde doğrulanmış Auth eşlemesi ve rol yoksa bilinçli olarak hata verir.
+`049`–`052` dosya numaraları migration bağımlılığına göre sıralıdır; operasyonel aşama sırası yukarıdaki yayın paketleriyle korunur. `053`, aktif her personelde doğrulanmış Auth eşlemesi ve rol yoksa bilinçli olarak hata verir. `054`, final pakette hemen ardından uygulanır; kendi hesabını/son aktif yöneticiyi pasifleştirme veya düşürme ile yönetici temel iznini kaldırmayı veritabanında engeller.
 
 ## Geçici uyumluluk kuralları
 
@@ -34,7 +34,16 @@ npm run test:security
 supabase test db
 ```
 
-Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işaretlenir ve erişilebilir CI/izole Supabase ortamında çalıştırılmadan aşama kapanmaz. pgTAP dosyaları `supabase/tests/rls_negative.test.sql` ve `supabase/tests/audit_rollback.test.sql` altındadır.
+Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işaretlenir ve erişilebilir CI/izole Supabase ortamında çalıştırılmadan aşama kapanmaz. pgTAP dosyaları `supabase/tests/rls_negative.test.sql`, `supabase/tests/audit_rollback.test.sql` ve `supabase/tests/account_lockout_guards.test.sql` altındadır.
+
+## Yerel kabul kaydı — 17 Temmuz 2026
+
+- `supabase db reset --local` ile `001`–`054` migration serisi boş veritabanına sıfırdan başarıyla uygulandı.
+- Üç pgTAP dosyasında 25/25 test başarılı: dar RLS/RPC, audit rollback ve yönetici kilitlenme korumaları.
+- Vitest 160/160, production build, statik güvenlik taraması ve değiştirilen `admin-users` Edge Function Deno kontrolü başarılı.
+- Build yalnız mevcut büyük bundle uyarısını üretir; kabulü engelleyen TypeScript/Vite hatası yoktur.
+- Reset sonrasında yerel test yöneticisi bootstrap edildi; ilk girişte parola değişimi ve yeni TOTP kaydı kullanıcı tarafından tamamlanmalıdır.
+- Bu kayıt yalnız yerel kabulü kapatır. GCP dağıtımı, gerçek backup/verify/restore, Auth canary, RPO/RTO, alarm, yedi günlük gözlem ve Bucket Lock onayı hâlâ dış production kapılarıdır.
 
 ## Auth geçişi
 

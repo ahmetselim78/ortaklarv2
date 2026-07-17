@@ -4,6 +4,20 @@ import { Loader2, LogIn, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/AuthContext'
 
+type LocalTestUser = { name: string; email: string }
+
+const localTestUserConfig = import.meta.env.VITE_LOCAL_TEST_USERS as string | undefined
+const localTestUsersLabel = import.meta.env.VITE_LOCAL_TEST_USERS_LABEL as string | undefined
+const localTestUsers: LocalTestUser[] = import.meta.env.DEV
+  ? (localTestUserConfig ?? '')
+    .split(',')
+    .map(value => {
+      const [name, email] = value.split('|').map(part => part.trim())
+      return { name, email }
+    })
+    .filter(user => user.name && user.email)
+  : []
+
 export default function LoginPage() {
   const { session } = useAuth()
   const navigate = useNavigate()
@@ -56,6 +70,19 @@ export default function LoginPage() {
           {loading ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />} Giriş yap
         </button>
         <button type="button" onClick={resetPassword} className="mt-3 w-full text-xs text-blue-300 hover:text-blue-200">Parolamı unuttum</button>
+        {localTestUsers.length > 0 && (
+          <div className="mt-5 border-t border-gray-800 pt-4">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-amber-300">{localTestUsersLabel}</p>
+            <div className="space-y-2">
+              {localTestUsers.map(user => (
+                <button key={user.email} type="button" onClick={() => { setEmail(user.email); setPassword(''); setError(null) }} className="w-full rounded-lg border border-gray-700 bg-gray-800/70 px-3 py-2 text-left transition-colors hover:border-blue-500 hover:bg-gray-800">
+                  <span className="block text-xs font-semibold text-gray-100">{user.name}</span>
+                  <span className="block truncate text-[11px] text-gray-400">{user.email}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </main>
   )

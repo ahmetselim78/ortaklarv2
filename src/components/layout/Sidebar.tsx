@@ -1,8 +1,10 @@
-import { NavLink } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings, Layers, GaugeCircle, ClipboardCheck, ShieldCheck,
+  LayoutDashboard, Users, Package, ClipboardList, Factory, Radio, Settings, Layers, GaugeCircle, ClipboardCheck, ShieldCheck, LogOut, UserRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/auth/AuthContext'
 
 type NavItem = {
   to: string
@@ -97,6 +99,18 @@ function NavItemLink({ to, label, icon: Icon, end, newTab }: NavItem) {
 }
 
 export default function Sidebar() {
+  const { access, session, signOut } = useAuth()
+  const navigate = useNavigate()
+  const [signingOut, setSigningOut] = useState(false)
+  const displayName = access?.user.display_name || session?.user.email || 'Oturum sahibi'
+  const accountType = access?.user.account_type === 'device' ? 'Cihaz hesabı' : access?.user.account_type === 'canary' ? 'Canary hesabı' : 'Kişisel hesap'
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    await signOut()
+    navigate('/giris', { replace: true })
+  }
+
   return (
     <aside className="w-56 min-h-screen bg-gray-900 text-white flex flex-col">
       {/* Logo / Üst kısım */}
@@ -133,6 +147,22 @@ export default function Sidebar() {
         {altNavItems.map((item) => (
           <NavItemLink key={item.to} {...item} />
         ))}
+        <div className="mt-3 rounded-xl border border-gray-800 bg-gray-950/50 p-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600/20 text-blue-300"><UserRound size={16} /></div>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-white">{displayName}</p>
+              <p className="truncate text-[10px] text-gray-500">{access?.role?.name_tr ?? accountType}</p>
+            </div>
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
+            <span>{access?.aal === 'aal2' ? 'AAL2 doğrulandı' : 'AAL1 oturumu'}</span>
+            <span className="truncate pl-2">{session?.user.email}</span>
+          </div>
+          <button type="button" onClick={() => void handleSignOut()} disabled={signingOut} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:border-red-900 hover:bg-red-950/40 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60">
+            <LogOut size={14} />{signingOut ? 'Çıkış yapılıyor…' : 'Çıkış yap'}
+          </button>
+        </div>
       </div>
     </aside>
   )

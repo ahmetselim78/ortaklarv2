@@ -32,7 +32,8 @@ export default function ProtectedRoute({
       </div>
     )
   }
-  if (access.user.must_change_password && location.pathname !== '/parola-degistir') {
+  const isPasswordChangeFlow = location.pathname === '/parola-degistir' || location.pathname === '/mfa'
+  if (access.user.must_change_password && !isPasswordChangeFlow) {
     return <Navigate to="/parola-degistir" replace />
   }
   if (requireAal2 && access.aal !== 'aal2') return <Navigate to="/mfa" replace state={{ from: location.pathname }} />

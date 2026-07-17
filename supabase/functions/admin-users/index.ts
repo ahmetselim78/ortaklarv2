@@ -2,6 +2,14 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.103.3'
 import { errorResponse, handleOptions, json, requirePermission, ResponseError } from '../_shared/security.ts'
 
+const isValidPassword = (password: string) => password.length >= 6
+  && /[a-z]/.test(password)
+  && /[A-Z]/.test(password)
+  && /\d/.test(password)
+  && /[!@#$%^&*()_+\-=[\]{};'":|<>?,./`~\\]/.test(password)
+
+const passwordPolicyMessage = 'Parola en az 6 karakter olmalı; küçük harf, büyük harf, rakam ve özel karakter içermelidir'
+
 Deno.serve(async (req) => {
   const options = handleOptions(req)
   if (options) return options
@@ -19,7 +27,7 @@ Deno.serve(async (req) => {
     if (operation === 'list') {
       const [{ data: authData, error: authError }, { data: profiles, error: profileError }] = await Promise.all([
         admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-        admin.from('app_users').select('auth_user_id, personel_id, username, display_name, account_type, is_active, must_change_password, user_roles(role_id, roles(slug, name_tr))'),
+        admin.from('app_users').select('auth_user_id, personel_id, username, display_name, account_type, is_active, must_change_password, user_roles!user_roles_auth_user_id_fkey(role_id, roles(slug, name_tr))'),
       ])
       if (authError || profileError) throw new ResponseError(500, authError?.message ?? profileError?.message ?? 'Kullanıcılar alınamadı')
       const emails = new Map(authData.users.map(item => [item.id, item.email ?? null]))
@@ -38,7 +46,7 @@ Deno.serve(async (req) => {
     if (operation === 'create') {
       const email = String(body.email ?? '').trim().toLowerCase()
       const password = String(body.temporary_password ?? '')
-      if (!email.includes('@') || password.length < 12) throw new ResponseError(400, 'Geçerli e-posta ve en az 12 karakter geçici parola gerekli')
+      if (!email.includes('@') || !isValidPassword(password)) throw new ResponseError(400, `Geçerli e-posta ve ${passwordPolicyMessage.toLowerCase()} gerekli`)
       const { data, error } = await admin.auth.admin.createUser({
         email, password, email_confirm: true,
         user_metadata: { display_name: String(body.display_name ?? ''), account_type: body.account_type ?? 'personal', must_change_password: true },
@@ -61,7 +69,7 @@ Deno.serve(async (req) => {
       }
     } else if (operation === 'temporary_password') {
       const password = String(body.temporary_password ?? '')
-      if (password.length < 12) throw new ResponseError(400, 'Geçici parola en az 12 karakter olmalıdır')
+      if (!isValidPassword(password)) throw new ResponseError(400, passwordPolicyMessage)
       const { error } = await admin.auth.admin.updateUserById(body.auth_user_id, { password })
       if (error) throw new ResponseError(400, error.message)
       const { error: flagError } = await admin.from('app_users').update({ must_change_password: true }).eq('auth_user_id', body.auth_user_id)
@@ -72,10 +80,19 @@ Deno.serve(async (req) => {
       if (error) throw new ResponseError(400, error.message)
     } else if (operation === 'deactivate' || operation === 'activate') {
       const active = operation === 'activate'
-      const { error } = await admin.auth.admin.updateUserById(body.auth_user_id, { ban_duration: active ? 'none' : '876000h' })
-      if (error) throw new ResponseError(400, error.message)
       const { error: dbError } = await client.rpc('admin_set_user_active', { p_auth_user_id: body.auth_user_id, p_active: active })
-      if (dbError) throw new ResponseError(500, dbError.message)
+      if (dbError) throw new ResponseError(400, dbError.message)
+      const { error: authError } = await admin.auth.admin.updateUserById(body.auth_user_id, { ban_duration: active ? 'none' : '876000h' })
+      if (authError) {
+        const { error: compensationError } = await client.rpc('admin_set_user_active', {
+          p_auth_user_id: body.auth_user_id,
+          p_active: !active,
+        })
+        if (compensationError) {
+          throw new ResponseError(500, `Auth durumu güncellenemedi ve profil telafisi başarısız oldu: ${authError.message}`)
+        }
+        throw new ResponseError(400, authError.message)
+      }
     } else if (operation === 'assign_role') {
       const { error } = await client.rpc('admin_assign_user_role', {
         p_auth_user_id: body.auth_user_id,
