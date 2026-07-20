@@ -4,7 +4,7 @@
 >
 > **Doğrulanan sürüm:** `main` / `5fcdb80`
 >
-> **Veritabanı migration aralığı:** `001`–`045`
+> **Veritabanı migration aralığı:** `001`–`057`
 >
 > **Amaç:** Bu dosya, yeni özellik geliştirirken AI ile paylaşılacak ana proje bağlamıdır. Kod ve migration dosyaları her zaman nihai doğruluk kaynağıdır.
 
@@ -44,7 +44,7 @@ varsa mevcut migration'ı değiştirme; sıradaki numarayla yeni migration oluş
 
 1. `src/types/` yalnızca tip dosyası değildir; özellikle `types/ayarlar.ts` etiket varsayılanları, eski JSONB kayıt birleştirme, doğrulama ve DPL üretim mantığı da içerir.
 2. Sipariş, batch ve tamir durumları serbestçe yazılmamalıdır. Mevcut `GECERLI_GECISLER` kuralları ve `services/durumService.ts` yeniden hesaplamaları korunmalıdır.
-3. Mevcut migration dosyaları üretim geçmişidir. Şema değişiklikleri yeni ve artan numaralı migration ile yapılmalıdır; şu an sıradaki numara `046`dır.
+3. Mevcut migration dosyaları üretim geçmişidir. Şema değişiklikleri yeni ve artan numaralı migration ile yapılmalıdır; şu an sıradaki numara `058`dir.
 4. `siparis_detaylari` satırı bir sipariş kalemidir; `adet` o kalemdeki fiziksel cam sayısıdır. Satır `adet` kadar çoğaltılmaz. Kısmi yıkama/tarama ilerlemesi `uretim_emri_detay_id` bağlı `yikama_loglari` sayısından hesaplanır.
 5. `cam_kodu` sipariş kalemi kimliğidir (`GLS-XXXX`). Üretimde operatörün gördüğü/okuttuğu kısa kod çoğunlukla `uretim_emri_detaylari.sira_no` değeridir. Bu iki kimlik birbirine karıştırılmamalıdır.
 6. Etiketin otomatik fiziksel baskısı Poz Giriş bilgisayarında yapılmaz. Poz Giriş `yeni_cam` broadcast'i gönderir; Kumanda Paneli kendi bilgisayarındaki `yazici-kopru` üzerinden basar ve `etiket_durumu` yayınlar.
@@ -76,7 +76,7 @@ src/
   types/                 Domain tipleri; etiket tarafında ayrıca çalışan iş mantığı
 
 supabase/
-  migrations/            Uygulama sırasına göre PostgreSQL şeması (`001`–`045`)
+  migrations/            Uygulama sırasına göre PostgreSQL şeması (`001`–`057`)
   functions/             Deno Edge Functions (OCR, Telegram, yazıcı testi)
 
 cloudflare-worker/       Personel ve etiket-zemin görsellerini R2'ye yükleyen Worker
@@ -215,6 +215,8 @@ RLS is enabled on application tables, but current policies are generally broad/o
 
 > Note: `siparis_taslaklari` (order drafts) and `cam_aile_katalogu` (glass family catalog) are **not** database tables — drafts live in `localStorage`, and the glass-family catalog is derived logic over `stok` (see `lib/cam.ts`).
 
+The `production_stations` RBAC module controls the sidebar's **Üretim İstasyonları** area and all four station screens under one role permission: Poz Giriş, Kumanda Paneli, Gösterge Ekranı and Tamir İstasyonu. It does not select production-entry station definitions. Those remain per-personnel through `hr_personel.uretim_yetkileri_sinirli` and `hr_personel_istasyon_yetkileri` in Personel Yönetimi.
+
 ### Postgres Functions
 
 | Function | Purpose |
@@ -295,8 +297,8 @@ Migration `044` adds performance indexes for repair lookups, wash-log progress, 
 
 14. **OperatorGirisPage.tsx** (`/istasyonlar/uretim-giris`, full-screen, opens in new tab from sidebar)
     - Operator daily production report form ("Üretim Takip Çizelgesi")
-    - Login via `hr_personel` password; per-station adet/fire, vehicle loading, personnel count, notes
-    - Filters available stations by `hr_personel.uretim_yetkileri_sinirli` + `hr_personel_istasyon_yetkileri`; the database trigger enforces the same rule
+    - Re-authenticates the linked Supabase Auth account; per-station adet/fire, vehicle loading, personnel count, notes
+    - Filters available stations through the person's `uretim_yetkileri_sinirli` setting and `hr_personel_istasyon_yetkileri`; the database trigger enforces the same rule
     - Saves to `gunluk_uretim_raporlari` + child tables; "Son 10 Günlük Rapor" history; resumes today's report on login
 
 15. **NotFoundPage.tsx** (`*`, standalone)

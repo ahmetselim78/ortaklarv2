@@ -12,6 +12,7 @@ import { etiketKopruSaglikKontrolu, etiketOtomatikYazdir } from '@/lib/etiketBas
 import type { EtiketBasimDurumu } from '@/lib/etiketBasim'
 import type { EtiketVeri } from '@/types/ayarlar'
 import { useAyarlar } from '@/hooks/useAyarlar'
+import { useAuth } from '@/auth/AuthContext'
 
 /* ========== Yardımcılar ========== */
 
@@ -96,6 +97,8 @@ interface TamirOlayPayload {
 
 export default function KumandaPaneliPage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
+  const canCreateRepair = hasPermission('production_stations', 'update')
   const [saat, setSaat] = useState(new Date())
   const [connected, setConnected] = useState(false)
   const [kartlar, setKartlar] = useState<CamKarti[]>([])
@@ -683,7 +686,7 @@ export default function KumandaPaneliPage() {
                         <Printer size={13} />
                         Yeniden Yazdır
                       </button>
-                      <button
+                      {canCreateRepair && <button
                         onClick={() => batchCam && setTamirCam({
                           cam_kodu: batchCam.cam_kodu,
                           siparis_detay_id: batchCam.siparis_detay_id,
@@ -703,7 +706,7 @@ export default function KumandaPaneliPage() {
                         title="Tamire Gönder"
                       >
                         <Wrench size={20} />
-                      </button>
+                      </button>}
                     </div>
                   </div>
 
@@ -822,7 +825,7 @@ export default function KumandaPaneliPage() {
       </div>
 
       {/* Tamir Modal */}
-      {tamirCam && (
+      {canCreateRepair && tamirCam && (
         <TamireGonderModal
           cam={tamirCam}
           kaynak="kumanda"

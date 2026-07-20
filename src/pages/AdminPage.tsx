@@ -1278,7 +1278,7 @@ const TABS: { id: AdminTab; label: string; icon: React.ElementType; aciklama: st
   { id: 'ayarlar',       label: 'Ayarlar Yönetimi',        icon: Settings,       aciklama: 'Tüm ayar panelleri ve /ayarlar sayfası görünürlük kontrolü' },
   { id: 'uretim-giris',  label: 'Üretim Girişi Kayıtları', icon: ClipboardCheck, aciklama: 'Operatörler tarafından girilen günlük üretim raporları' },
   { id: 'veri-yonetimi', label: 'Veri Yönetimi',           icon: Database,       aciklama: 'Batch ve sipariş kayıtlarını kalıcı silme' },
-  { id: 'kullanicilar',   label: 'Kullanıcılar',             icon: UserCog,        aciklama: 'Supabase Auth kullanıcıları ve hesap iptali' },
+  { id: 'kullanicilar',   label: 'Kullanıcılar ve Personel', icon: UserCog,        aciklama: 'Giriş hesapları, roller ve bağlı personel kayıtları' },
   { id: 'roller',         label: 'Roller',                   icon: KeyRound,       aciklama: 'Sabit katalogdan rol ve izin yönetimi' },
   { id: 'audit',          label: 'İşlem Kayıtları',         icon: ScrollText,     aciklama: 'Kim, ne zaman, neyi değiştirdi?' },
   { id: 'hatalar',        label: 'Merkezi Hatalar',         icon: Bug,            aciklama: 'Kritik hata takibi ve durum yönetimi' },

@@ -37,6 +37,8 @@ export default function ProtectedRoute({
     return <Navigate to="/parola-degistir" replace />
   }
   if (requireAal2 && access.aal !== 'aal2') return <Navigate to="/mfa" replace state={{ from: location.pathname }} />
-  if (module && !hasPermission(module, action)) return <Navigate to="/yetkisiz" replace />
+  if (module && !hasPermission(module, action)) {
+    return <Navigate to="/yetkisiz" replace state={{ from: location.pathname }} />
+  }
   return children
 }

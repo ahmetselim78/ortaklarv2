@@ -82,6 +82,27 @@ interface RaporData {
 
 // ─── LocalStorage Keys ────────────────────────────────────────────────────────
 const LS_TEMA = 'ogu_tema'
+const GIRIS_YUKLEME_ZAMAN_ASIMI_MS = 15_000
+
+/** Ağ isteği yanıtsız kalırsa çizelgeyi süresiz yükleme ekranında bırakma. */
+function zamanAsimli<T>(islem: PromiseLike<T>, ms = GIRIS_YUKLEME_ZAMAN_ASIMI_MS): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const zamanAsimi = window.setTimeout(() => {
+      reject(new Error('Çizelge verileri zamanında alınamadı. Bağlantınızı kontrol edip tekrar deneyin.'))
+    }, ms)
+
+    Promise.resolve(islem).then(
+      sonuc => {
+        window.clearTimeout(zamanAsimi)
+        resolve(sonuc)
+      },
+      hata => {
+        window.clearTimeout(zamanAsimi)
+        reject(hata)
+      },
+    )
+  })
+}
 
 // ─── Tema Yardımcıları ────────────────────────────────────────────────────────
 function pageBg(dk: boolean) { return dk ? 'bg-gray-950' : 'bg-gray-50' }
@@ -200,11 +221,13 @@ function GirisEkrani({
   sonKullanici,
   tema,
   onGiris,
+  onHesapDegistir,
   onTemaDegistir,
 }: {
   sonKullanici: SonKullanici | null
   tema: Tema
-  onGiris: (p: HrPersonel) => void
+  onGiris: (p: HrPersonel) => Promise<void>
+  onHesapDegistir: () => Promise<void>
   onTemaDegistir: () => void
 }) {
   type Adim = 'hatirlatma' | 'sifre' | 'onay'
@@ -228,6 +251,17 @@ function GirisEkrani({
     // Hatırlanan kişi hiçbir zaman kimlik doğrulama yerine kullanılmaz.
     setHata(null)
     setAdim('sifre')
+  }
+
+  async function hesapDegistir() {
+    setYukleniyor(true)
+    setHata(null)
+    try {
+      await onHesapDegistir()
+    } catch (err) {
+      setHata(err instanceof Error ? err.message : 'Oturum kapatılırken bir hata oluştu.')
+      setYukleniyor(false)
+    }
   }
 
   async function sifreIleGiris(e?: React.FormEvent) {
@@ -364,7 +398,15 @@ function GirisEkrani({
                 {yukleniyor ? 'Kontrol ediliyor…' : 'Giriş Yap'}
               </button>
             </form>
-            <p className={`text-xs text-center mt-5 ${txtMuted(dk)}`}>
+            <button
+              type="button"
+              onClick={() => void hesapDegistir()}
+              disabled={yukleniyor}
+              className={`mt-5 w-full py-2.5 text-sm font-semibold rounded-lg border transition-colors disabled:opacity-50 ${dk ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+            >
+              Başka hesapla giriş yap
+            </button>
+            <p className={`text-xs text-center mt-3 ${txtMuted(dk)}`}>
               Şifrenizi bilmiyorsanız yöneticinize başvurun.
             </p>
           </div>
@@ -391,11 +433,27 @@ function GirisEkrani({
             <p className="text-xs text-green-400 mb-6">Hoş geldiniz!</p>
             <button
               type="button"
-              onClick={() => onGiris(bulunanPersonel)}
+              onClick={async () => {
+                setYukleniyor(true)
+                setHata(null)
+                try {
+                  await onGiris(bulunanPersonel)
+                } catch (err) {
+                  setHata(err instanceof Error ? err.message : 'Çizelge açılırken bir hata oluştu.')
+                } finally {
+                  setYukleniyor(false)
+                }
+              }}
+              disabled={yukleniyor}
               className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-gray-950 font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
             >
-              Devam Et <ChevronRight size={15} />
+              {yukleniyor ? <Loader2 size={15} className="animate-spin" /> : <>Devam Et <ChevronRight size={15} /></>}
             </button>
+            {hata && (
+              <div className={`${errBoxCls(dk)} mt-4 text-left`}>
+                <AlertCircle size={14} className="shrink-0 mt-0.5" />{hata}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1396,14 +1454,11 @@ export default function OperatorGirisPage() {
   }
 
   async function girisYap(p: HrPersonel) {
-    const sk: SonKullanici = { id: p.id, ad_soyad: p.ad_soyad, foto_url: p.foto_url ?? null, rol: p.rol }
-    setSonKullanici(sk)
-    setAktifPersonel(p)
     setIlkYukleniyor(true)
 
     try {
       const tarih = bugunTarih()
-      const [raporRes, istRes, aracRes, yetkiRes] = await Promise.all([
+      const [raporRes, istRes, aracRes, yetkiRes] = await zamanAsimli(Promise.all([
         supabase
           .from('gunluk_uretim_raporlari')
           .select('*, gunluk_uretim_istasyon_kayitlari(*), gunluk_uretim_arac_yuklemeleri(*)')
@@ -1416,7 +1471,11 @@ export default function OperatorGirisPage() {
           .from('hr_personel_istasyon_yetkileri')
           .select('istasyon_id')
           .eq('personel_id', p.id),
-      ])
+      ]))
+      if (raporRes.error) throw raporRes.error
+      if (istRes.error) throw istRes.error
+      if (aracRes.error) throw aracRes.error
+      if (yetkiRes.error) throw yetkiRes.error
 
       const mevcut = raporRes.data as unknown as KayitliGunlukRapor | null
       if (mevcut) {
@@ -1453,20 +1512,24 @@ export default function OperatorGirisPage() {
         setRaporData(null)
         setEkran('form')
       }
-    } catch {
-      setRaporData(null)
-      setEkran('form')
+      const sk: SonKullanici = { id: p.id, ad_soyad: p.ad_soyad, foto_url: p.foto_url ?? null, rol: p.rol }
+      setSonKullanici(sk)
+      setAktifPersonel(p)
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Çizelge verileri yüklenemedi.')
     } finally {
       setIlkYukleniyor(false)
     }
   }
 
   async function cikisYap() {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
     setAktifPersonel(null)
     setSonKullanici(null)
     setEkran('form')
     setRaporData(null)
+    window.location.replace('/giris')
   }
 
   if (!aktifPersonel) {
@@ -1475,6 +1538,7 @@ export default function OperatorGirisPage() {
         sonKullanici={sonKullanici}
         tema={tema}
         onGiris={girisYap}
+        onHesapDegistir={cikisYap}
         onTemaDegistir={temaDegistir}
       />
     )

@@ -556,22 +556,12 @@ export default function PersonelYonetimiPanel() {
             {personeller.map(p => (
               <div
                 key={p.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => duzenlePersonel?.id === p.id ? duzenleIptal() : duzenleBaslat(p)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    if (duzenlePersonel?.id === p.id) duzenleIptal()
-                    else duzenleBaslat(p)
-                  }
-                }}
-                className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer focus:outline-none focus:shadow-[inset_0_0_0_2px_rgba(59,130,246,0.35)] ${
+                className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] items-center gap-3 p-3 rounded-xl border transition-all ${
                   duzenlePersonel?.id === p.id
                     ? 'bg-blue-50 border-blue-400 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)]'
                     : p.is_aktif
-                    ? 'bg-white border-gray-200 hover:border-blue-200 hover:bg-blue-50/30'
-                    : 'bg-gray-50 border-gray-100 opacity-60 hover:border-blue-200'
+                    ? 'bg-white border-gray-200'
+                    : 'bg-gray-50 border-gray-100 opacity-60'
                 }`}
               >
                 <PersonelAvatar foto_url={p.foto_url} ad_soyad={p.ad_soyad} boyut="md" />

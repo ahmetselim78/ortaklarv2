@@ -27,11 +27,21 @@ Deno.serve(async (req) => {
     if (operation === 'list') {
       const [{ data: authData, error: authError }, { data: profiles, error: profileError }] = await Promise.all([
         admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-        admin.from('app_users').select('auth_user_id, personel_id, username, display_name, account_type, is_active, must_change_password, user_roles!user_roles_auth_user_id_fkey(role_id, roles(slug, name_tr))'),
+        admin.from('app_users').select('auth_user_id, personel_id, username, display_name, account_type, is_active, must_change_password, created_at, personel:hr_personel(id, ad_soyad, rol, is_aktif), user_roles!user_roles_auth_user_id_fkey(role_id, roles(slug, name_tr))'),
       ])
       if (authError || profileError) throw new ResponseError(500, authError?.message ?? profileError?.message ?? 'Kullanıcılar alınamadı')
-      const emails = new Map(authData.users.map(item => [item.id, item.email ?? null]))
-      return json(req, { users: (profiles ?? []).map(item => ({ ...item, email: emails.get(item.auth_user_id) ?? null })) })
+      const authUsers = new Map(authData.users.map(item => [item.id, item]))
+      return json(req, { users: (profiles ?? []).map(item => {
+        const authUser = authUsers.get(item.auth_user_id)
+        const roleRelation = item.user_roles
+        return {
+          ...item,
+          user_roles: roleRelation ? (Array.isArray(roleRelation) ? roleRelation : [roleRelation]) : [],
+          email: authUser?.email ?? null,
+          last_sign_in_at: authUser?.last_sign_in_at ?? null,
+          created_at: authUser?.created_at ?? item.created_at ?? null,
+        }
+      }) })
     }
     const targetId = String(body.auth_user_id ?? body.email ?? 'new-user').slice(0, 200)
     const { data: intent, error: intentError } = await client.rpc('begin_admin_operation', {
@@ -46,26 +56,50 @@ Deno.serve(async (req) => {
     if (operation === 'create') {
       const email = String(body.email ?? '').trim().toLowerCase()
       const password = String(body.temporary_password ?? '')
+      const roleId = String(body.role_id ?? '')
+      const accountType = String(body.account_type ?? 'personal')
       if (!email.includes('@') || !isValidPassword(password)) throw new ResponseError(400, `Geçerli e-posta ve ${passwordPolicyMessage.toLowerCase()} gerekli`)
+      const { data: selectedRole, error: roleError } = await admin
+        .from('roles')
+        .select('id, slug, name_tr, is_active')
+        .eq('id', roleId)
+        .maybeSingle()
+      if (roleError || !selectedRole?.is_active) throw new ResponseError(400, 'Seçilen rol aktif değil veya bulunamadı')
+      if (accountType === 'device' && selectedRole.slug !== 'viewer_device') {
+        throw new ResponseError(400, 'Cihaz hesabı yalnız Görüntüleyici/Cihaz rolünü kullanabilir')
+      }
+      if (accountType !== 'device' && selectedRole.slug === 'viewer_device') {
+        throw new ResponseError(400, 'Kişisel hesap için kişisel bir rol seçin')
+      }
       const { data, error } = await admin.auth.admin.createUser({
         email, password, email_confirm: true,
-        user_metadata: { display_name: String(body.display_name ?? ''), account_type: body.account_type ?? 'personal', must_change_password: true },
+        user_metadata: { display_name: String(body.display_name ?? ''), account_type: accountType, must_change_password: true },
       })
       if (error || !data.user) throw new ResponseError(400, error?.message ?? 'Auth kullanıcısı oluşturulamadı')
       createdUserId = data.user.id
       const { error: accessError } = await client.rpc('admin_set_user_access', {
         p_auth_user_id: data.user.id,
         p_personel_id: body.personel_id ?? null,
-        p_role_id: body.role_id,
+        p_role_id: roleId,
         p_display_name: String(body.display_name ?? ''),
         p_username: String(body.username ?? ''),
-        p_account_type: body.account_type ?? 'personal',
+        p_account_type: accountType,
         p_must_change_password: true,
       })
       if (accessError) {
         await admin.auth.admin.deleteUser(data.user.id)
         createdUserId = null
         throw new ResponseError(400, accessError.message)
+      }
+      const { data: assignedRole, error: assignedRoleError } = await admin
+        .from('user_roles')
+        .select('role_id')
+        .eq('auth_user_id', data.user.id)
+        .maybeSingle()
+      if (assignedRoleError || assignedRole?.role_id !== roleId) {
+        await admin.auth.admin.deleteUser(data.user.id)
+        createdUserId = null
+        throw new ResponseError(500, 'Seçilen rol kullanıcıya doğrulanarak atanamadı')
       }
     } else if (operation === 'temporary_password') {
       const password = String(body.temporary_password ?? '')
@@ -93,12 +127,67 @@ Deno.serve(async (req) => {
         }
         throw new ResponseError(400, authError.message)
       }
+    } else if (operation === 'update_personnel_link') {
+      const personelId = body.personel_id ? String(body.personel_id) : null
+      if (personelId) {
+        const { data: personel, error: personelError } = await admin
+          .from('hr_personel')
+          .select('id, is_aktif')
+          .eq('id', personelId)
+          .maybeSingle()
+        if (personelError || !personel) throw new ResponseError(400, 'Personel kaydı bulunamadı')
+        if (!personel.is_aktif) throw new ResponseError(400, 'Pasif personel kaydı bir hesaba bağlanamaz')
+      }
+      const { data: target, error: targetError } = await admin
+        .from('app_users')
+        .select('account_type')
+        .eq('auth_user_id', body.auth_user_id)
+        .maybeSingle()
+      if (targetError || !target) throw new ResponseError(400, 'Kullanıcı hesabı bulunamadı')
+      if (target.account_type === 'device' && personelId) throw new ResponseError(400, 'Cihaz hesapları personel kaydına bağlanamaz')
+      const { error } = await admin
+        .from('app_users')
+        .update({ personel_id: personelId, updated_at: new Date().toISOString() })
+        .eq('auth_user_id', body.auth_user_id)
+      if (error) {
+        if (error.code === '23505') throw new ResponseError(400, 'Bu personel kaydı başka bir kullanıcı hesabına bağlı')
+        throw new ResponseError(400, error.message)
+      }
     } else if (operation === 'assign_role') {
       const { error } = await client.rpc('admin_assign_user_role', {
         p_auth_user_id: body.auth_user_id,
         p_role_id: body.role_id,
       })
       if (error) throw new ResponseError(400, error.message)
+    } else if (operation === 'delete') {
+      const authUserId = String(body.auth_user_id ?? '')
+      if (!authUserId) throw new ResponseError(400, 'Silinecek kullanıcı belirtilmedi')
+      if (authUserId === user.id) throw new ResponseError(400, 'Kendi hesabınızı silemezsiniz')
+
+      const [{ data: target, error: targetError }, { data: targetRole, error: targetRoleError }] = await Promise.all([
+        admin.from('app_users').select('auth_user_id, display_name, is_active').eq('auth_user_id', authUserId).maybeSingle(),
+        admin.from('user_roles').select('role_id, roles(slug)').eq('auth_user_id', authUserId).maybeSingle(),
+      ])
+      if (targetError || targetRoleError || !target) throw new ResponseError(400, 'Kullanıcı hesabı bulunamadı')
+
+      if (target.is_active && targetRole?.roles?.slug === 'administrator') {
+        const { data: adminAssignments, error: assignmentError } = await admin
+          .from('user_roles')
+          .select('auth_user_id')
+          .eq('role_id', targetRole.role_id)
+        if (assignmentError) throw new ResponseError(500, 'Yönetici hesapları doğrulanamadı')
+        const adminIds = (adminAssignments ?? []).map(item => item.auth_user_id)
+        const { count, error: countError } = await admin
+          .from('app_users')
+          .select('auth_user_id', { count: 'exact', head: true })
+          .in('auth_user_id', adminIds)
+          .eq('is_active', true)
+        if (countError) throw new ResponseError(500, 'Aktif yönetici sayısı doğrulanamadı')
+        if ((count ?? 0) <= 1) throw new ResponseError(400, 'Son aktif yönetici hesabı silinemez')
+      }
+
+      const { error: deleteError } = await admin.auth.admin.deleteUser(authUserId)
+      if (deleteError) throw new ResponseError(400, deleteError.message)
     } else {
       throw new ResponseError(400, 'Desteklenmeyen kullanıcı yönetim işlemi')
     }

@@ -14,6 +14,7 @@ import { fizikselGlsKodu, normalizeBatchSiraInput } from '@/lib/siparisDetay'
 import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
+import { useAuth } from '@/auth/AuthContext'
 
 /* ========== Tipler ========== */
 
@@ -204,6 +205,8 @@ function durumRenk(d: TaramaDurum) {
 
 export default function PozGirisPage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
+  const canCreateRepair = hasPermission('production_stations', 'update')
   const [saat, setSaat] = useState(new Date())
   const [connected, setConnected] = useState(false)
 
@@ -1018,14 +1021,14 @@ export default function PozGirisPage() {
                       {sonTarananCam.taranan_adet} / {sonTarananCam.adet} adet
                     </p>
                   )}
-                  <button
+                  {canCreateRepair && <button
                     onClick={() => setTamirCam(sonTarananCam)}
                     className="mt-3 flex items-center gap-2 mx-auto px-4 py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-700 rounded-xl text-red-300 text-sm font-semibold transition-colors"
                   >
                     <Wrench size={14} />
                     Tamire Gönder
                     <kbd className="ml-1 px-1.5 py-0.5 rounded bg-red-950 border border-red-800 text-red-400 text-xs font-mono">X</kbd>
-                  </button>
+                  </button>}
                 </>
               )}
               {durum === 'tekrar' && (
@@ -1062,7 +1065,8 @@ export default function PozGirisPage() {
                     !input &&
                     sonTarananCam &&
                     !tamirCam &&
-                    durum !== 'tamamlandi'
+                    durum !== 'tamamlandi' &&
+                    canCreateRepair
                   ) {
                     e.preventDefault()
                     setTamirCam(sonTarananCam)
@@ -1076,7 +1080,7 @@ export default function PozGirisPage() {
             </form>
 
             {/* Tamir butonu — yeni cam girilene kadar göster */}
-            {sonTarananCam && durum !== 'basarili' && durum !== 'tamamlandi' && (
+            {canCreateRepair && sonTarananCam && durum !== 'basarili' && durum !== 'tamamlandi' && (
               <button
                 onClick={() => setTamirCam(sonTarananCam)}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-900/30 hover:bg-red-800/50 border border-red-800 rounded-xl text-red-400 text-sm font-semibold transition-colors"
@@ -1208,7 +1212,7 @@ export default function PozGirisPage() {
       </div>
 
       {/* Tamir Modal */}
-      {tamirCam && seciliBatch && (
+      {canCreateRepair && tamirCam && seciliBatch && (
         <TamireGonderModal
           cam={{
             cam_kodu: tamirCam.cam_kodu,

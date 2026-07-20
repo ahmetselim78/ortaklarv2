@@ -1,8 +1,19 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, LayoutGrid, Monitor, Wrench, Info, Keyboard } from 'lucide-react'
+import type { PermissionAction } from '@/auth/AuthContext'
+import { useAuth } from '@/auth/AuthContext'
 
-const stations = [
+const stations: Array<{
+  key: number
+  to: string
+  label: string
+  sub: string
+  desc: string
+  icon: typeof ClipboardList
+  module: string
+  action: PermissionAction
+}> = [
   {
     key: 1,
     to: '/istasyonlar/poz-giris',
@@ -10,6 +21,8 @@ const stations = [
     sub: 'Planlama / Ofis',
     desc: 'Üretim sırasındaki poz numarasını girmek için.',
     icon: ClipboardList,
+    module: 'production_stations',
+    action: 'update',
   },
   {
     key: 2,
@@ -18,6 +31,8 @@ const stations = [
     sub: 'Çıta İstasyonu',
     desc: 'Gelen pozu gör, ölçüyü seç ve gönder.',
     icon: LayoutGrid,
+    module: 'production_stations',
+    action: 'update',
   },
   {
     key: 3,
@@ -26,6 +41,8 @@ const stations = [
     sub: 'Macun Robotu',
     desc: 'Sadece ölçü bilgisini dev ekranda gösterir.',
     icon: Monitor,
+    module: 'production_stations',
+    action: 'update',
   },
   {
     key: 4,
@@ -34,21 +51,28 @@ const stations = [
     sub: 'Kalite Kontrol',
     desc: 'Kırık ve sorunlu camları takip et, tamire al.',
     icon: Wrench,
+    module: 'production_stations',
+    action: 'update',
   },
 ]
 
 export default function UretimIstasyonlariPage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
+  const visibleStations = useMemo(
+    () => stations.filter(station => hasPermission(station.module, station.action)),
+    [hasPermission],
+  )
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      const s = stations.find((s) => String(s.key) === e.key)
+      const s = visibleStations.find((s) => String(s.key) === e.key)
       if (s) navigate(s.to)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [navigate])
+  }, [navigate, visibleStations])
 
   return (
     <div className="min-h-full bg-gray-950 flex flex-col items-center justify-center px-6 py-16">
@@ -62,7 +86,7 @@ export default function UretimIstasyonlariPage() {
 
       {/* Kartlar */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl w-full">
-        {stations.map((s) => {
+        {visibleStations.map((s) => {
           const Icon = s.icon
           return (
             <button
@@ -100,15 +124,7 @@ export default function UretimIstasyonlariPage() {
               Klavye Kısayolları
             </p>
             <p className="text-gray-400 text-sm mt-1">
-              Hızlı seçim için klavyenizdeki{' '}
-              <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">1</kbd>
-              {' '},{' '}
-              <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">2</kbd>
-              {' '},{' '}
-              <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">3</kbd>
-              {' '}veya{' '}
-              <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-xs font-mono text-white">4</kbd>
-              {' '}tuşlarını kullanabilirsiniz.
+              Hızlı seçim için gösterilen istasyon kartının numara tuşunu kullanabilirsiniz.
             </p>
           </div>
         </div>
