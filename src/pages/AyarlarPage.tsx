@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Printer, ChevronRight, ArrowLeft, Truck, Users, Target, MessageSquare, Send, Factory } from 'lucide-react'
+import { Printer, ChevronRight, ArrowLeft, Truck, Target, MessageSquare, Send, Factory } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { supabase } from '@/lib/supabase'
 
@@ -8,7 +8,6 @@ const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 const VARSAYILAN_GORUNUM = {
   etiket: true,
   araclar: true,
-  personel: true,
   hedef: true,
   presets: true,
   telegram: true,
@@ -32,7 +31,7 @@ function useGorunumAyarlari() {
         } else {
           setGorunum(VARSAYILAN_GORUNUM)
         }
-      } catch (err) {
+      } catch {
         setGorunum(VARSAYILAN_GORUNUM)
       } finally {
         setYukleniyor(false)
@@ -44,7 +43,6 @@ function useGorunumAyarlari() {
 }
 import EtiketAyarlariPanel from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
-import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
 import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
@@ -52,7 +50,7 @@ import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
 
 /* ── Kategori tanımları ──────────────────────────────────────── */
 
-type AyarKategori = 'etiket' | 'araclar' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
+type AyarKategori = 'etiket' | 'araclar' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
 
 interface Kategori {
   id: AyarKategori
@@ -79,14 +77,6 @@ const kategoriler: Kategori[] = [
     icon: Truck,
     renk: 'bg-orange-50 hover:bg-orange-100 border-orange-200',
     ikonRenk: 'text-orange-600 bg-orange-100',
-  },
-  {
-    id: 'personel',
-    label: 'Personel Yönetimi',
-    aciklama: 'Saatlik takip panosunda görünecek üretim personelini ekle, düzenle, aktif/pasif yap.',
-    icon: Users,
-    renk: 'bg-violet-50 hover:bg-violet-100 border-violet-200',
-    ikonRenk: 'text-violet-600 bg-violet-100',
   },
   {
     id: 'hedef',
@@ -241,30 +231,6 @@ export default function AyarlarPage() {
       </div>
       <div className="flex-1 overflow-auto p-8">
         <AraclarPanel />
-      </div>
-    </div>
-  )
-
-  /* Personel Yönetimi */
-  if (aktifKategori === 'personel') return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
-        <button
-          type="button"
-          onClick={() => setAktifKategori(null)}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
-        >
-          <ArrowLeft size={15} />
-          Ayarlar
-        </button>
-        <span className="text-gray-300">/</span>
-        <div className="flex items-center gap-2">
-          <Users size={16} className="text-violet-600" />
-          <span className="text-sm font-semibold text-gray-900">Personel Yönetimi</span>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto p-8">
-        <PersonelYonetimiPanel />
       </div>
     </div>
   )

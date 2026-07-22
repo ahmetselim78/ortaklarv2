@@ -495,7 +495,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
             <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto whitespace-pre-wrap">
               {dplSonucu.hata
                 ? `HATA: ${dplSonucu.hata}`
-                : dplSonucu.dpl.replace(/\x02/g, '<STX>').replace(/\r/g, '↵\n')}
+                : dplSonucu.dpl.split('\x02').join('<STX>').replace(/\r/g, '↵\n')}
             </pre>
           </details>
         </div>
@@ -585,7 +585,7 @@ export default function EtiketAyarlariPanel({ ayarlar, kaydediyor, hata, onKayde
             <pre className="mt-2 p-3 bg-gray-900 text-green-400 text-xs rounded-lg overflow-x-auto whitespace-pre-wrap">
               {dplSonucu.hata
                 ? `HATA: ${dplSonucu.hata}`
-                : dplSonucu.dpl.replace(/\x02/g, '<STX>').replace(/\r/g, '↵\n')}
+                : dplSonucu.dpl.split('\x02').join('<STX>').replace(/\r/g, '↵\n')}
             </pre>
           </details>
         </div>

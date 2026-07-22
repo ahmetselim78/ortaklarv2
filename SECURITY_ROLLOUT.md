@@ -14,6 +14,8 @@ Bu değişiklikler tek final güvenlik kapısına bağlıdır; production'a tek 
 | 6 | `049_append_only_audit.sql`, audit paneli/arşiv Job'u | Audit failure rollback, filtre, şifreleme geri okuma/hash testi | Etkilenen modül bakım modu; auditsiz işlem yok |
 | 7 | `050_central_error_tracking.sql`, istemci/Edge/Job hata aktarımı | Altı kaynak, dedup, rate-limit, hassas veri temizleme | İstemci aktarımı kapatılabilir; Monitoring korunur |
 | 8 | `053_legacy_security_cleanup.sql`, `054_account_lockout_guards.sql` | Tam Auth eşleme/rol kapısı, parola kolonu ve geniş grant taraması; kendi/son yönetici kilitlenme testleri | İleri düzeltme veya izole restore; plaintext kolon geri açılmaz |
+| 9 | `055_role_management_operations.sql`, `056_production_stations_rbac.sql`, `057_production_stations_single_umbrella.sql` | Atomik rol matrisi, üretim istasyonu modül izinleri ve dört istasyon ekranı smoke testi | İleri düzeltme; rol/izin geçmişi korunur |
+| 10 | `058_error_resolution_report.sql`, `059_ai_error_export_workflow.sql`, `060_fix_ai_error_export_function.sql` | AI hata dışa aktarma/inceleme/çözüm raporu doğrulaması, AAL2 ve toplu işlem sınırları | İstemci iş akışı kapatılabilir; hata kayıtları silinmez |
 
 `049`–`052` dosya numaraları migration bağımlılığına göre sıralıdır; operasyonel aşama sırası yukarıdaki yayın paketleriyle korunur. `053`, aktif her personelde doğrulanmış Auth eşlemesi ve rol yoksa bilinçli olarak hata verir. `054`, final pakette hemen ardından uygulanır; kendi hesabını/son aktif yöneticiyi pasifleştirme veya düşürme ile yönetici temel iznini kaldırmayı veritabanında engeller.
 
@@ -22,6 +24,7 @@ Bu değişiklikler tek final güvenlik kapısına bağlıdır; production'a tek 
 - `hr_personel.giris_sifresi`, 046 sonrasında Data API rollerine kapalıdır; yalnız tek kullanımlık sunucu geçiş işi okuyabilir.
 - Hesap `auth_migrated_at` aldıktan sonra legacy fallback yoktur ve Auth ile eski kolon arasında senkronizasyon yapılmaz.
 - RLS, modül bazında yeni dar politika uygulanarak açılır. `USING(true)`, `anon_all` veya `authenticated_all` rollback seçeneği değildir.
+- `ops/emergency-restore-pre-046-compatibility.sql` yalnız belgelenmiş acil durumda, doğrulanmış yedek ve iki kişi onayıyla kullanılabilecek fail-closed bir uyumluluk aracıdır; normal rollback yöntemi değildir.
 - Gerektiğinde yalnız giriş, üretim girişi, Telegram veya ilgili entegrasyon bakım moduna alınır; uygulamanın tamamı uzun süre kapatılmaz.
 - `053` uygulanmadan önce Aşama 1 yedeği ve izole restore yeniden başarılı olmalıdır.
 
@@ -34,7 +37,7 @@ npm run test:security
 supabase test db
 ```
 
-Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işaretlenir ve erişilebilir CI/izole Supabase ortamında çalıştırılmadan aşama kapanmaz. pgTAP dosyaları `supabase/tests/rls_negative.test.sql`, `supabase/tests/audit_rollback.test.sql` ve `supabase/tests/account_lockout_guards.test.sql` altındadır.
+Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işaretlenir ve erişilebilir CI/izole Supabase ortamında çalıştırılmadan aşama kapanmaz. pgTAP dosyaları `supabase/tests/rls_negative.test.sql`, `supabase/tests/audit_rollback.test.sql`, `supabase/tests/account_lockout_guards.test.sql`, üretim istasyonu testleri ve `supabase/tests/error_resolution_workflow.test.sql` altındadır.
 
 ## Yerel kabul kaydı — 17 Temmuz 2026
 
@@ -44,6 +47,14 @@ Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işa
 - Build yalnız mevcut büyük bundle uyarısını üretir; kabulü engelleyen TypeScript/Vite hatası yoktur.
 - Reset sonrasında yerel test yöneticisi bootstrap edildi; ilk girişte parola değişimi ve yeni TOTP kaydı kullanıcı tarafından tamamlanmalıdır.
 - Bu kayıt yalnız yerel kabulü kapatır. GCP dağıtımı, gerçek backup/verify/restore, Auth canary, RPO/RTO, alarm, yedi günlük gözlem ve Bucket Lock onayı hâlâ dış production kapılarıdır.
+
+## Çalışma ağacı doğrulaması — 23 Temmuz 2026
+
+- Migration aralığı `001`–`060` olarak güncellendi; `058`–`060` hata inceleme ve çözüm raporu iş akışıdır.
+- Vitest: 20 dosya ve 183/183 test başarılı.
+- ESLint, TypeScript uygulama/Node tip kontrolleri ve statik güvenlik kontrolü başarılı.
+- `058`–`060` için pgTAP kapsamı `error_resolution_workflow.test.sql` ile eklendi.
+- Bu kayıt veritabanı reset/pgTAP sonucunu iddia etmez. `supabase db reset --local` ve `supabase test db` izole Supabase/Docker ortamında ayrıca başarılı olmadan Aşama 10 kapanmaz.
 
 ## Auth geçişi
 

@@ -23,6 +23,14 @@ async function fingerprint(parts: string[]) {
   return Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('')
 }
 
+export function shouldIgnoreGlobalError(error: unknown, isDevelopment = import.meta.env.DEV) {
+  if (!isDevelopment) return false
+
+  const candidate = error instanceof Error ? error : new Error(String(error))
+  return candidate.message === 'send was called before connect'
+    && candidate.stack?.includes('/@vite/client:') === true
+}
+
 export async function reportError(input: {
   source: ErrorSource
   error: unknown
@@ -54,9 +62,12 @@ export async function reportError(input: {
 
 export function installGlobalErrorReporting() {
   window.addEventListener('error', event => {
-    void reportError({ source: 'client_unhandled', error: event.error ?? event.message, title: 'Yakalanmamış istemci hatası' })
+    const error = event.error ?? event.message
+    if (shouldIgnoreGlobalError(error)) return
+    void reportError({ source: 'client_unhandled', error, title: 'Yakalanmamış istemci hatası' })
   })
   window.addEventListener('unhandledrejection', event => {
+    if (shouldIgnoreGlobalError(event.reason)) return
     void reportError({ source: 'client_unhandled', error: event.reason, title: 'Yakalanmamış promise hatası' })
   })
   window.addEventListener('ortaklar:api-error', event => {

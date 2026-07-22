@@ -332,7 +332,7 @@ function PersonelKarusel({ personeller, T }: { personeller: HrPersonel[]; T: Tem
     )
   }
 
-  const Divider = () => (
+  const renderDivider = () => (
     <div className="flex items-center gap-3 py-3 px-2">
       <div className={`flex-1 border-t ${T.dividerColor}`} />
       <span className={`text-xs ${T.dividerText} tracking-widest`}>— devam —</span>
@@ -344,9 +344,9 @@ function PersonelKarusel({ personeller, T }: { personeller: HrPersonel[]; T: Tem
     <div className="overflow-hidden">
       <div ref={innerRef} className="space-y-2 px-3 will-change-transform">
         {personeller.map(p => <Kart key={`a-${p.id}`} p={p} />)}
-        <Divider />
+        {renderDivider()}
         {personeller.map(p => <Kart key={`b-${p.id}`} p={p} />)}
-        <Divider />
+        {renderDivider()}
       </div>
     </div>
   )

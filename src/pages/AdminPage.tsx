@@ -1,19 +1,19 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import {
-  ShieldCheck, Settings, ClipboardCheck, Database,
-  Eye, ChevronRight, ArrowLeft, Loader2, AlertCircle,
+  ShieldCheck, Settings, ClipboardCheck, Database, LayoutDashboard,
+  Eye, ChevronRight, ChevronDown, ArrowLeft, Loader2, AlertCircle,
   RefreshCw, Calendar,
   User, Truck, Factory, FileDown, Trash2, StickyNote, X,
   Printer, Users, Target, MessageSquare, Send,
   Pencil, Check,
-  ScrollText, Bug, UserCog, KeyRound,
+  ScrollText, Bug, UserCog, KeyRound, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bugunTarih, formatSaatTr, formatTarihTr, tarihEkleTr } from '@/lib/tarih'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import EtiketAyarlariPanel from '@/components/ayarlar/EtiketAyarlariPanel'
 import AraclarPanel from '@/components/ayarlar/AraclarPanel'
-import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
 import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
@@ -24,18 +24,17 @@ import AuditKayitlariPanel from '@/components/admin/AuditKayitlariPanel'
 import HataKayitlariPanel from '@/components/admin/HataKayitlariPanel'
 import RolYonetimiPanel from '@/components/admin/RolYonetimiPanel'
 import KullaniciYonetimiPanel from '@/components/admin/KullaniciYonetimiPanel'
+import AdminOverview from '@/components/admin/AdminOverview'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 // ── Ayar görünürlük anahtarı ──────────────────────────────────────────────────
 const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 
-type AyarKategori = 'etiket' | 'araclar' | 'personel' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti'
-type AdminTab = 'ayarlar' | 'uretim-giris' | 'veri-yonetimi' | 'kullanicilar' | 'roller' | 'audit' | 'hatalar'
+type AyarKategori = 'etiket' | 'araclar' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti'
 
 interface GorunumAyarlari {
   etiket: boolean
   araclar: boolean
-  personel: boolean
   hedef: boolean
   presets: boolean
   telegram: boolean
@@ -44,7 +43,7 @@ interface GorunumAyarlari {
 }
 
 const VARSAYILAN_GORUNUM: GorunumAyarlari = {
-  etiket: true, araclar: true, personel: true,
+  etiket: true, araclar: true,
   hedef: true, presets: true, telegram: true, istasyon: true, opti: true,
 }
 
@@ -61,7 +60,6 @@ interface AyarKategoriTanim {
 const KATEGORILER: AyarKategoriTanim[] = [
   { id: 'etiket',   label: 'Etiket Basım',              aciklama: 'Yazıcı bağlantısı, etiket boyutu ve DPL şablonu ayarları.', icon: Printer,       renk: 'bg-blue-50 border-blue-200',   ikonRenk: 'text-blue-600 bg-blue-100',    ikonRenkRaw: 'text-blue-600' },
   { id: 'araclar',  label: 'Araçlar',                   aciklama: 'Sevkiyat planlamada kullanılan şirket araçlarını yönet.',    icon: Truck,         renk: 'bg-orange-50 border-orange-200', ikonRenk: 'text-orange-600 bg-orange-100', ikonRenkRaw: 'text-orange-600' },
-  { id: 'personel', label: 'Personel Yönetimi',         aciklama: 'Üretim personelini ekle, düzenle, aktif/pasif yap.',        icon: Users,         renk: 'bg-violet-50 border-violet-200', ikonRenk: 'text-violet-600 bg-violet-100', ikonRenkRaw: 'text-violet-600' },
   { id: 'hedef',    label: 'Hedef & Vardiya',            aciklama: 'Vardiya şablonları ve saatlik üretim hedefleri.',           icon: Target,        renk: 'bg-rose-50 border-rose-200',   ikonRenk: 'text-rose-600 bg-rose-100',    ikonRenkRaw: 'text-rose-600' },
   { id: 'presets',  label: 'Aksiyon Notu Hazır Cevaplar', aciklama: 'Saatlik takipte hızlı not eklemek için hazır cevaplar.', icon: MessageSquare, renk: 'bg-sky-50 border-sky-200',     ikonRenk: 'text-sky-600 bg-sky-100',      ikonRenkRaw: 'text-sky-600' },
   { id: 'telegram', label: 'Telegram Raporu',            aciklama: 'Bot token, rapor saatleri, mesaj bölümleri ve rapor tipi.', icon: Send,          renk: 'bg-teal-50 border-teal-200',   ikonRenk: 'text-teal-600 bg-teal-100',    ikonRenkRaw: 'text-teal-600' },
@@ -403,12 +401,12 @@ function GorunurlukModal({
   )
 }
 
-function AyarlarYonetimiTab() {
+function AyarlarYonetimiTab({ kategori }: { kategori: AyarKategori | null }) {
   const [gorunum, setGorunum] = useState<GorunumAyarlari>(VARSAYILAN_GORUNUM)
   const [yukleniyor, setYukleniyor] = useState(true)
   const [kaydediyor, setKaydediyor] = useState(false)
   const [modalAcik, setModalAcik] = useState(false)
-  const [aktifPanel, setAktifPanel] = useState<AyarKategori | null>(null)
+  const navigate = useNavigate()
   const { etiketAyarlari, kaydediyor: etiketKaydediyor, hata: etiketHata, etiketAyarlariGuncelle } = useAyarlar()
 
   // Görünürlük ayarlarını yükle
@@ -440,15 +438,15 @@ function AyarlarYonetimiTab() {
   }, [gorunum])
 
   // Panel görünümü
-  if (aktifPanel) {
+  if (kategori) {
     return (
       <AyarlarPanelGorunum
-        kategori={aktifPanel}
+        kategori={kategori}
         etiketAyarlari={etiketAyarlari}
         etiketKaydediyor={etiketKaydediyor}
         etiketHata={etiketHata}
         etiketAyarlariGuncelle={etiketAyarlariGuncelle}
-        onGeri={() => setAktifPanel(null)}
+        onGeri={() => navigate('/admin/ayarlar')}
       />
     )
   }
@@ -475,8 +473,8 @@ function AyarlarYonetimiTab() {
         />
       )}
 
-      <div className="p-8">
-        <div className="flex items-center justify-between mb-6">
+      <div className="p-4 sm:p-6 xl:p-8">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Ayar Panelleri</h2>
             <p className="text-sm text-gray-500 mt-0.5">
@@ -486,7 +484,7 @@ function AyarlarYonetimiTab() {
           <button
             type="button"
             onClick={() => setModalAcik(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
             <Eye size={15} />
             Ayarlarda Görünürlük
@@ -498,16 +496,16 @@ function AyarlarYonetimiTab() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {KATEGORILER.map(({ id, label, aciklama, icon: Icon, renk, ikonRenk }) => {
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {KATEGORILER.map(({ id, label, aciklama, icon: Icon }) => {
             return (
               <button
                 key={id}
                 type="button"
-                onClick={() => setAktifPanel(id)}
-                className={`relative flex items-start gap-3 p-5 rounded-xl border text-left transition-all group hover:shadow-sm ${renk}`}
+                onClick={() => navigate(`/admin/ayarlar/${id}`)}
+                className="group relative flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md"
               >
-                <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${ikonRenk}`}>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100">
                   <Icon size={18} />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -544,9 +542,9 @@ function AyarlarPanelGorunum({
   const Icon = kat.icon
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex min-h-full flex-col">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-3 px-8 py-4 border-b border-gray-200 bg-white shrink-0">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-4 sm:px-6 xl:px-8">
         <button
           type="button"
           onClick={onGeri}
@@ -564,8 +562,8 @@ function AyarlarPanelGorunum({
 
       {/* İçerik */}
       {kategori === 'etiket' && (
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-auto p-8">
+        <div className="flex flex-1">
+          <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8">
             <EtiketAyarlariPanel
               ayarlar={etiketAyarlari}
               kaydediyor={etiketKaydediyor}
@@ -575,13 +573,12 @@ function AyarlarPanelGorunum({
           </div>
         </div>
       )}
-      {kategori === 'araclar'  && <div className="flex-1 overflow-auto p-8"><AraclarPanel /></div>}
-      {kategori === 'personel' && <div className="flex-1 overflow-auto p-8"><PersonelYonetimiPanel /></div>}
-      {kategori === 'hedef'    && <div className="flex-1 overflow-auto p-8"><HedefVardiyaPanel /></div>}
-      {kategori === 'presets'  && <div className="flex-1 overflow-auto p-8"><AksiyonNotuPresetsPanel /></div>}
-      {kategori === 'telegram' && <div className="flex-1 overflow-auto p-8"><TelegramAyarlariPanel /></div>}
-      {kategori === 'istasyon' && <div className="flex-1 overflow-auto p-8"><IstasyonYonetimiPanel /></div>}
-      {kategori === 'opti'     && <div className="flex-1 overflow-auto p-8"><OptiExportAyarlariPanel /></div>}
+      {kategori === 'araclar'  && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><AraclarPanel /></div>}
+      {kategori === 'hedef'    && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><HedefVardiyaPanel /></div>}
+      {kategori === 'presets'  && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><AksiyonNotuPresetsPanel /></div>}
+      {kategori === 'telegram' && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><TelegramAyarlariPanel /></div>}
+      {kategori === 'istasyon' && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><IstasyonYonetimiPanel /></div>}
+      {kategori === 'opti'     && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><OptiExportAyarlariPanel /></div>}
     </div>
   )
 }
@@ -1076,7 +1073,7 @@ function UretimGirisiTab() {
   }, [tumRaporlar])
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex min-h-full flex-col">
       {detayGun && (
         <GunDetayModal
           gunRaporu={detayGun}
@@ -1092,7 +1089,7 @@ function UretimGirisiTab() {
       )}
 
       {/* Filtre çubuğu */}
-      <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-3">
+      <div className="shrink-0 space-y-3 border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Başlangıç Tarihi</label>
@@ -1109,7 +1106,7 @@ function UretimGirisiTab() {
             {yukleniyor ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             Raporları Getir
           </button>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
             {!yukleniyor && gunler.length > 0 && (
               <span className="text-xs text-gray-500">{gunler.length} gün · {tumRaporlar.length} giriş</span>
             )}
@@ -1122,7 +1119,7 @@ function UretimGirisiTab() {
           </div>
         </div>
         {/* Kısayollar */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-gray-400">Hızlı seçim:</span>
           {KISAYOLLAR.map(k => (
             <button key={k.gun} type="button" onClick={() => kisayolSec(k.gun)}
@@ -1134,7 +1131,7 @@ function UretimGirisiTab() {
       </div>
 
       {/* Tablo */}
-      <div className="flex-1 overflow-auto">
+      <div className="min-w-0 flex-1">
         {yukleniyor && (
           <div className="flex items-center justify-center py-20 text-gray-400">
             <Loader2 size={20} className="animate-spin mr-2" /> Yükleniyor…
@@ -1153,7 +1150,33 @@ function UretimGirisiTab() {
           </div>
         )}
         {!yukleniyor && !hata && gunler.length > 0 && (
-          <div className="overflow-x-auto">
+          <>
+          <div className="space-y-3 p-4 md:hidden">
+            {gunler.map(g => {
+              const ops = operatorlerGun(g)
+              const pers = toplamPersonelGun(g)
+              const istasyonOzetleri = istasyonlar.map(s => ({ ad: s.ad, ...istasyonGun(g, s.ad) })).filter(s => s.adet > 0 || s.fire > 0)
+              const toplamAdet = istasyonOzetleri.reduce((sum, item) => sum + item.adet, 0)
+              const toplamFire = istasyonOzetleri.reduce((sum, item) => sum + item.fire, 0)
+              return (
+                <article key={g.tarih} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <button type="button" onClick={() => setDetayGunTarih(g.tarih)} className="w-full p-4 text-left">
+                    <div className="flex items-start justify-between gap-3">
+                      <div><p className="text-base font-bold text-slate-900">{formatTarih(g.tarih)}</p><p className="mt-1 text-xs text-slate-500">{g.kayitlar.length} giriş · {ops.map(op => op.ad).join(', ')}</p></div>
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700"><Eye size={13} /> Detay</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl bg-slate-50 p-2.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Personel</p><p className="mt-1 text-lg font-extrabold text-slate-900">{pers}</p></div>
+                      <div className="rounded-xl bg-indigo-50 p-2.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-400">Üretim</p><p className="mt-1 text-lg font-extrabold text-indigo-800">{toplamAdet}</p></div>
+                      <div className={`rounded-xl p-2.5 ${toplamFire > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}><p className={`text-[10px] font-semibold uppercase tracking-wide ${toplamFire > 0 ? 'text-red-400' : 'text-emerald-500'}`}>Fire</p><p className={`mt-1 text-lg font-extrabold ${toplamFire > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{toplamFire}</p></div>
+                    </div>
+                    {istasyonOzetleri.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{istasyonOzetleri.slice(0, 4).map(item => <span key={item.ad} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600">{item.ad}: <strong>{item.adet}</strong>{item.fire > 0 ? ` · ${item.fire} fire` : ''}</span>)}</div>}
+                  </button>
+                </article>
+              )
+            })}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
@@ -1265,6 +1288,7 @@ function UretimGirisiTab() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>
@@ -1274,62 +1298,171 @@ function UretimGirisiTab() {
 // ║ ANA SAYFA
 // ╚══════════════════════════════════════════════════════════════════════════════
 
-const TABS: { id: AdminTab; label: string; icon: React.ElementType; aciklama: string }[] = [
-  { id: 'ayarlar',       label: 'Ayarlar Yönetimi',        icon: Settings,       aciklama: 'Tüm ayar panelleri ve /ayarlar sayfası görünürlük kontrolü' },
-  { id: 'uretim-giris',  label: 'Üretim Girişi Kayıtları', icon: ClipboardCheck, aciklama: 'Operatörler tarafından girilen günlük üretim raporları' },
-  { id: 'veri-yonetimi', label: 'Veri Yönetimi',           icon: Database,       aciklama: 'Batch ve sipariş kayıtlarını kalıcı silme' },
-  { id: 'kullanicilar',   label: 'Kullanıcılar ve Personel', icon: UserCog,        aciklama: 'Giriş hesapları, roller ve bağlı personel kayıtları' },
-  { id: 'roller',         label: 'Roller',                   icon: KeyRound,       aciklama: 'Sabit katalogdan rol ve izin yönetimi' },
-  { id: 'audit',          label: 'İşlem Kayıtları',         icon: ScrollText,     aciklama: 'Kim, ne zaman, neyi değiştirdi?' },
-  { id: 'hatalar',        label: 'Merkezi Hatalar',         icon: Bug,            aciklama: 'Kritik hata takibi ve durum yönetimi' },
+const ADMIN_NAV_GROUPS: Array<{ label?: string; items: Array<{ to: string; label: string; icon: React.ElementType; end?: boolean }> }> = [
+  { items: [{ to: '/admin', label: 'Genel Bakış', icon: LayoutDashboard, end: true }] },
+  {
+    label: 'Erişim Yönetimi',
+    items: [
+      { to: '/admin/kullanicilar', label: 'Kullanıcılar', icon: UserCog },
+      { to: '/admin/roller', label: 'Roller ve Yetkiler', icon: KeyRound },
+    ],
+  },
+  {
+    label: 'Operasyon',
+    items: [
+      { to: '/admin/uretim-giris', label: 'Üretim Kayıtları', icon: ClipboardCheck },
+      { to: '/admin/ayarlar', label: 'Ayarlar Merkezi', icon: Settings },
+    ],
+  },
+  {
+    label: 'Sistem',
+    items: [
+      { to: '/admin/veri-yonetimi', label: 'Veri Yönetimi', icon: Database },
+      { to: '/admin/islem-kayitlari', label: 'İşlem Kayıtları', icon: ScrollText },
+      { to: '/admin/hatalar', label: 'Merkezi Hatalar', icon: Bug },
+    ],
+  },
 ]
 
+function ayarKategorisiMi(value: string | undefined): value is AyarKategori {
+  return Boolean(value && KATEGORILER.some(kategori => kategori.id === value))
+}
+
 export default function AdminPage() {
-  const [aktifTab, setAktifTab] = useState<AdminTab>('ayarlar')
+  const location = useLocation()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem('admin_nav_collapsed') === '1')
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+
+  const closeMobileMenu = useCallback((restoreFocus = false) => {
+    setMobileMenuOpen(false)
+    if (restoreFocus) window.setTimeout(() => mobileMenuTriggerRef.current?.focus(), 50)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMobileMenu(true)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [closeMobileMenu, mobileMenuOpen])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const scrollContainer = pageRef.current?.closest<HTMLElement>('[data-app-scroll-container]')
+    if (!scrollContainer) return
+    const previousOverflow = scrollContainer.style.overflow
+    scrollContainer.style.overflow = 'hidden'
+    return () => {
+      scrollContainer.style.overflow = previousOverflow
+    }
+  }, [mobileMenuOpen])
+
+  const toggleCollapsed = () => {
+    setNavCollapsed(current => {
+      const next = !current
+      localStorage.setItem('admin_nav_collapsed', next ? '1' : '0')
+      return next
+    })
+  }
+
+  const relativePath = location.pathname.replace(/^\/admin\/?/, '')
+  const [section, detail] = relativePath.split('/')
+  let content: React.ReactNode
+
+  if (!section) content = <AdminOverview />
+  else if (section === 'ayarlar' && detail === 'personel') content = <Navigate to="/admin/kullanicilar" replace />
+  else if (section === 'ayarlar' && (!detail || ayarKategorisiMi(detail))) content = <AyarlarYonetimiTab kategori={ayarKategorisiMi(detail) ? detail : null} />
+  else if (section === 'uretim-giris' && !detail) content = <UretimGirisiTab />
+  else if (section === 'veri-yonetimi' && !detail) content = <VeriYonetimiPanel />
+  else if (section === 'kullanicilar' && !detail) content = <KullaniciYonetimiPanel />
+  else if (section === 'roller' && !detail) content = <RolYonetimiPanel />
+  else if (section === 'islem-kayitlari' && !detail) content = <AuditKayitlariPanel />
+  else if (section === 'hatalar' && !detail) content = <HataKayitlariPanel />
+  else if (section === 'audit' && !detail) content = <Navigate to="/admin/islem-kayitlari" replace />
+  else content = <Navigate to="/admin" replace />
+
+  const currentNavItem = ADMIN_NAV_GROUPS
+    .flatMap(group => group.items)
+    .find(item => item.end
+      ? location.pathname === item.to
+      : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`))
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Sayfa başlığı */}
-      <div className="px-8 py-5 border-b border-gray-200 bg-white shrink-0">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-sm">
-            <ShieldCheck size={18} className="text-white" />
+    <div ref={pageRef} className="relative flex min-h-full min-w-0 bg-slate-50">
+      {mobileMenuOpen && <button type="button" aria-label="Admin menüsünü kapat" onClick={() => closeMobileMenu(true)} className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden" />}
+
+      <aside id="admin-navigation" className={`fixed inset-y-0 left-0 z-50 flex w-[min(20rem,88vw)] shrink-0 flex-col border-r border-slate-200 bg-white shadow-2xl transition-[transform,width] duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-[calc(100dvh-3.5rem)] lg:translate-x-0 lg:shadow-none xl:h-dvh ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} ${navCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
+        <div className={`flex h-[73px] items-center border-b border-slate-200 px-4 ${navCollapsed ? 'lg:justify-center' : 'justify-between'}`}>
+          <div className={`flex min-w-0 items-center gap-3 ${navCollapsed ? 'lg:hidden' : ''}`}>
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-600 text-white shadow-sm"><ShieldCheck size={20} /></span>
+            <span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-950">Admin Paneli</span><span className="block truncate text-[11px] text-slate-500">Sistem yönetimi</span></span>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Admin Paneli</h1>
-            <p className="text-xs text-gray-500">Sistem yönetimi ve raporlama merkezi</p>
-          </div>
+          <button type="button" aria-label="Admin menüsünü kapat" onClick={() => closeMobileMenu(true)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 lg:hidden"><X size={19} /></button>
+          <button type="button" aria-label={navCollapsed ? 'Admin menüsünü genişlet' : 'Admin menüsünü daralt'} onClick={toggleCollapsed} className="hidden rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-indigo-600 lg:grid">
+            {navCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+          </button>
         </div>
 
-        {/* Tab navigasyonu */}
-        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setAktifTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                aktifTab === id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Icon size={15} />
-              {label}
-            </button>
+        <nav aria-label="Admin bölümleri" className="flex-1 touch-pan-y space-y-5 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-5">
+          {ADMIN_NAV_GROUPS.map((group, groupIndex) => (
+            <div key={group.label ?? groupIndex}>
+              {group.label && (navCollapsed
+                ? <div className="mx-auto mb-2 hidden h-px w-7 bg-slate-200 lg:block" />
+                : <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{group.label}</p>)}
+              <div className="space-y-1">
+                {group.items.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      onClick={() => closeMobileMenu(false)}
+                      title={navCollapsed ? item.label : undefined}
+                      className={({ isActive }) => `group flex min-h-10 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${navCollapsed ? 'lg:justify-center lg:px-2' : ''} ${isActive ? 'bg-indigo-50 text-indigo-800 ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
+                    >
+                      <Icon size={18} className="shrink-0" />
+                      <span className={navCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
+                    </NavLink>
+                  )
+                })}
+              </div>
+            </div>
           ))}
+        </nav>
+        <div className={`border-t border-slate-200 p-3 ${navCollapsed ? 'lg:hidden' : ''}`}>
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500">Yönetim işlemleri güvenlik amacıyla kayıt altına alınır.</div>
         </div>
-      </div>
+      </aside>
 
-      {/* Tab içeriği */}
-      <div className="flex-1 overflow-auto flex flex-col min-h-0">
-        {aktifTab === 'ayarlar'        && <AyarlarYonetimiTab />}
-        {aktifTab === 'uretim-giris'   && <UretimGirisiTab />}
-        {aktifTab === 'veri-yonetimi'  && <VeriYonetimiPanel />}
-        {aktifTab === 'kullanicilar'    && <KullaniciYonetimiPanel />}
-        {aktifTab === 'roller'          && <RolYonetimiPanel />}
-        {aktifTab === 'audit'           && <AuditKayitlariPanel />}
-        {aktifTab === 'hatalar'         && <HataKayitlariPanel />}
+      <div className="min-w-0 flex-1">
+        <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-3 py-2.5 backdrop-blur lg:hidden">
+          <button
+            ref={mobileMenuTriggerRef}
+            type="button"
+            aria-label={`Admin bölümünü değiştir. Seçili bölüm: ${currentNavItem?.label ?? 'Admin Paneli'}`}
+            aria-controls="admin-navigation"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-left shadow-sm outline-none transition hover:border-indigo-200 hover:bg-indigo-50/40 focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+              <ShieldCheck size={17} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Admin bölümü</span>
+              <span className="block truncate text-sm font-bold text-slate-900">{currentNavItem?.label ?? 'Admin Paneli'}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-indigo-700">
+              Değiştir
+              <ChevronDown size={16} aria-hidden />
+            </span>
+          </button>
+        </div>
+        <div className="min-w-0">{content}</div>
       </div>
     </div>
   )

@@ -2,10 +2,24 @@
 -- DENEME ORTAMI - Seçili tabloları temizleme
 -- ============================================================
 -- Bu script yalnızca istenen tabloları sıfırlar.
--- Supabase SQL Editor'da çalıştırın.
+-- YALNIZCA izole deneme projesinde Supabase SQL Editor'da çalıştırın.
+-- Çalıştırmadan önce hedef proje ref'ini iki kez kontrol edin ve aşağıdaki
+-- SET LOCAL satırını bilinçli olarak yorumdan çıkarın.
 -- ============================================================
 
 BEGIN;
+
+-- SET LOCAL ortaklar.allow_test_data_cleanup = 'DENEME_VERISINI_SIL';
+
+DO $guard$
+BEGIN
+  IF current_setting('ortaklar.allow_test_data_cleanup', true)
+       IS DISTINCT FROM 'DENEME_VERISINI_SIL' THEN
+    RAISE EXCEPTION
+      'Güvenlik durdurması: yalnız izole deneme projesinde onay SET LOCAL satırını etkinleştirin';
+  END IF;
+END
+$guard$;
 
 -- 1. Tamir paneli kayıtları
 DELETE FROM tamir_kayitlari;

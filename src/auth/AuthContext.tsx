@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hasPermission: (module, action) => permissions.has(`${module}:${action}`),
     refreshAccess: () => loadAccess(),
     signOut: async () => {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
       setSession(null)
       setAccess(null)
     },

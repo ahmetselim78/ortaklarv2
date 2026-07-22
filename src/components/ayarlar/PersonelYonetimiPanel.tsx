@@ -525,12 +525,12 @@ export default function PersonelYonetimiPanel() {
 
       {/* ── Personel Listesi ── */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold text-gray-800">
             Personel Listesi
             <span className="ml-2 text-gray-400 font-normal">({personeller.length})</span>
           </h3>
-          <div className="flex gap-3 text-xs text-gray-500">
+          <div className="flex flex-wrap gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
               Aktif: {personeller.filter(p => p.is_aktif).length}
@@ -552,11 +552,11 @@ export default function PersonelYonetimiPanel() {
             Henüz personel eklenmemiş.
           </div>
         ) : (
-          <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto px-1">
+          <div className="space-y-2 px-1">
             {personeller.map(p => (
               <div
                 key={p.id}
-                className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] items-center gap-3 p-3 rounded-xl border transition-all ${
+                className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-3 transition-all sm:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] ${
                   duzenlePersonel?.id === p.id
                     ? 'bg-blue-50 border-blue-400 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)]'
                     : p.is_aktif
@@ -584,42 +584,45 @@ export default function PersonelYonetimiPanel() {
                   {p.rol}
                 </span>
 
-                {/* Düzenle */}
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation()
-                    if (duzenlePersonel?.id === p.id) duzenleIptal()
-                    else duzenleBaslat(p)
-                  }}
-                  title="Düzenle"
-                  className={`p-1.5 rounded-lg transition-colors ${
-                    duzenlePersonel?.id === p.id
-                      ? 'text-blue-600 bg-blue-100'
-                      : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
-                  }`}
-                >
-                  <Pencil size={14} />
-                </button>
+                <div className="col-span-3 flex items-center justify-end gap-1 border-t border-gray-100 pt-2 sm:contents">
+                  {/* Düzenle */}
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation()
+                      if (duzenlePersonel?.id === p.id) duzenleIptal()
+                      else duzenleBaslat(p)
+                    }}
+                    title="Düzenle"
+                    aria-label={`${p.ad_soyad} kaydını düzenle`}
+                    className={`grid h-9 w-9 place-items-center rounded-lg transition-colors ${
+                      duzenlePersonel?.id === p.id
+                        ? 'text-blue-600 bg-blue-100'
+                        : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'
+                    }`}
+                  >
+                    <Pencil size={14} />
+                  </button>
 
-                {/* Aktif/Pasif toggle */}
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation()
-                    aktiflikDegistir(p)
-                  }}
-                  title={p.is_aktif ? 'Pasife Al' : 'Aktif Et'}
-                  className={`p-1.5 rounded-lg transition-colors ${
-                    p.is_aktif ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'
-                  }`}
-                >
-                  {p.is_aktif ? <UserCheck size={16} /> : <UserX size={16} />}
-                </button>
+                  {/* Aktif/Pasif toggle */}
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation()
+                      aktiflikDegistir(p)
+                    }}
+                    title={p.is_aktif ? 'Pasife Al' : 'Aktif Et'}
+                    aria-label={`${p.ad_soyad} kaydını ${p.is_aktif ? 'pasife al' : 'aktif et'}`}
+                    className={`grid h-9 w-9 place-items-center rounded-lg transition-colors ${
+                      p.is_aktif ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'
+                    }`}
+                  >
+                    {p.is_aktif ? <UserCheck size={16} /> : <UserX size={16} />}
+                  </button>
 
-                {/* Sil */}
-                {silmeOnayId === p.id ? (
-                  <div className="flex items-center gap-1">
+                  {/* Sil */}
+                  {silmeOnayId === p.id ? (
+                    <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={e => {
@@ -640,19 +643,21 @@ export default function PersonelYonetimiPanel() {
                     >
                       Hayır
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={e => {
-                      e.stopPropagation()
-                      setSilmeOnayId(p.id)
-                    }}
-                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        setSilmeOnayId(p.id)
+                      }}
+                      aria-label={`${p.ad_soyad} kaydını sil`}
+                      className="grid h-9 w-9 place-items-center rounded-lg text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

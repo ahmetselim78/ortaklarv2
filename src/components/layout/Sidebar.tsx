@@ -1,18 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
+  ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  ExternalLink,
   Factory,
   GaugeCircle,
-  Info,
   Layers,
   LayoutDashboard,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   Radio,
   Settings,
   ShieldCheck,
   Users,
+  X,
 } from 'lucide-react'
 import type { PermissionAction } from '@/auth/AuthContext'
 import { useAuth } from '@/auth/AuthContext'
@@ -32,6 +36,13 @@ type NavItem = {
 type NavGroup = {
   baslik?: string
   items: NavItem[]
+}
+
+interface SidebarProps {
+  collapsed: boolean
+  mobileOpen: boolean
+  onCollapsedChange: (collapsed: boolean) => void
+  onMobileClose: () => void
 }
 
 const navGroups: NavGroup[] = [
@@ -69,17 +80,59 @@ const altNavItems: NavItem[] = [
   { to: '/ayarlar', label: 'Ayarlar', icon: Settings, module: 'settings' },
 ]
 
-function NavItemLink({ to, label, icon: Icon, end, newTab }: NavItem) {
+interface NavItemLinkProps extends NavItem {
+  collapsed: boolean
+  onNavigate: () => void
+}
+
+function ItemContents({ label, icon: Icon, collapsed, active = false, external = false }: {
+  label: string
+  icon: NavItem['icon']
+  collapsed: boolean
+  active?: boolean
+  external?: boolean
+}) {
+  return (
+    <>
+      <span
+        className={cn(
+          'absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-blue-400 transition-opacity duration-200',
+          active ? 'opacity-100' : 'opacity-0',
+        )}
+        aria-hidden
+      />
+      <Icon
+        size={19}
+        strokeWidth={active ? 2.2 : 1.85}
+        className={cn('shrink-0 transition-colors', active ? 'text-blue-300' : 'text-slate-400 group-hover:text-slate-100')}
+      />
+      <span className={cn('min-w-0 flex-1 truncate', collapsed && 'xl:sr-only')}>{label}</span>
+      {external && (
+        <ExternalLink size={13} strokeWidth={2} className={cn('shrink-0 text-slate-500', collapsed && 'xl:hidden')} aria-hidden />
+      )}
+    </>
+  )
+}
+
+function NavItemLink({ to, label, icon, end, newTab, collapsed, onNavigate }: NavItemLinkProps) {
+  const baseClass = cn(
+    'group relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-150',
+    'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400',
+    collapsed && 'xl:justify-center xl:px-0',
+  )
+
   if (newTab) {
     return (
       <a
         href={to}
         target="_blank"
         rel="noopener noreferrer"
-        className="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-all hover:bg-gray-800 hover:text-white"
+        onClick={onNavigate}
+        aria-label={`${label}, yeni sekmede açılır`}
+        title={collapsed ? `${label} · Yeni sekme` : undefined}
+        className={cn(baseClass, 'text-slate-400 hover:bg-white/[0.055] hover:text-slate-100')}
       >
-        <Icon size={18} strokeWidth={1.9} />
-        <span className="truncate">{label}</span>
+        <ItemContents label={label} icon={icon} collapsed={collapsed} external />
       </a>
     )
   }
@@ -88,35 +141,27 @@ function NavItemLink({ to, label, icon: Icon, end, newTab }: NavItem) {
     <NavLink
       to={to}
       end={end}
-      className={({ isActive }) =>
-        cn(
-          'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
-          isActive
-            ? 'bg-blue-600 text-white shadow-sm shadow-blue-900/30'
-            : 'text-gray-400 hover:bg-gray-800 hover:text-white',
-        )
-      }
+      onClick={onNavigate}
+      aria-label={label}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) => cn(
+        baseClass,
+        isActive
+          ? 'bg-blue-500/10 text-slate-50'
+          : 'text-slate-400 hover:bg-white/[0.055] hover:text-slate-100',
+      )}
     >
       {({ isActive }) => (
-        <>
-          <span
-            className={cn(
-              'absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-white transition-opacity',
-              isActive ? 'opacity-100' : 'opacity-0',
-            )}
-            aria-hidden
-          />
-          <Icon size={18} strokeWidth={isActive ? 2.2 : 1.9} />
-          <span className="truncate">{label}</span>
-        </>
+        <ItemContents label={label} icon={icon} collapsed={collapsed} active={isActive} />
       )}
     </NavLink>
   )
 }
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed, mobileOpen, onCollapsedChange, onMobileClose }: SidebarProps) {
   const { access, session, hasPermission } = useAuth()
   const [accountOpen, setAccountOpen] = useState(false)
+  const mobileCloseRef = useRef<HTMLButtonElement>(null)
   const displayName = access?.user.display_name || session?.user.email || 'Oturum sahibi'
   const roleName = access?.role?.name_tr
     ?? (access?.user.account_type === 'device'
@@ -133,63 +178,119 @@ export default function Sidebar() {
     .join('') || 'K'
   const canSee = (item: NavItem) => hasPermission(item.module, item.action ?? 'read')
 
-  return (
-    <aside className="flex min-h-screen w-56 flex-col bg-gray-900 text-white">
-      <div className="flex items-center gap-2.5 border-b border-gray-800 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-inner">
-          <Layers size={18} strokeWidth={2.2} />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-sm font-bold leading-tight tracking-wide text-white">Cam Yönetim</h2>
-          <p className="text-[10px] uppercase tracking-wider text-gray-500">Üretim Paneli</p>
-        </div>
-      </div>
+  useEffect(() => {
+    if (mobileOpen) window.setTimeout(() => mobileCloseRef.current?.focus(), 50)
+  }, [mobileOpen])
 
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {navGroups
-          .map(grup => ({ ...grup, items: grup.items.filter(canSee) }))
-          .filter(grup => grup.items.length > 0)
-          .map((grup, index) => (
-          <div key={index}>
-            {grup.baslik && (
-              <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">
-                {grup.baslik}
-              </div>
-            )}
-            <div className="space-y-1">
-              {grup.items.map(item => <NavItemLink key={item.to} {...item} />)}
+  const openAccount = () => setAccountOpen(true)
+
+  return (
+    <>
+      <aside
+        id="application-sidebar"
+        aria-label="Ana navigasyon"
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 flex w-[248px] flex-col border-r border-slate-800/90 bg-slate-950 text-white shadow-2xl shadow-slate-950/25',
+          'transition-[width,transform] duration-200 ease-out motion-reduce:transition-none',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          'xl:relative xl:z-20 xl:translate-x-0 xl:shadow-none',
+          collapsed ? 'xl:w-[72px]' : 'xl:w-[248px]',
+        )}
+      >
+        <div className={cn('relative flex h-[72px] shrink-0 items-center border-b border-slate-800/80 px-4', collapsed && 'xl:justify-center xl:px-0')}>
+          <div className={cn('flex min-w-0 items-center gap-3', collapsed && 'xl:justify-center')}>
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)]">
+              <Layers size={20} strokeWidth={2.2} />
+            </div>
+            <div className={cn('min-w-0', collapsed && 'xl:sr-only')}>
+              <h2 className="truncate text-[14px] font-bold leading-tight tracking-[0.01em] text-slate-50">Cam Yönetim</h2>
+              <p className="mt-1 truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">Üretim Paneli</p>
             </div>
           </div>
-          ))}
-      </nav>
 
-      <div className="space-y-1 border-t border-gray-800 px-3 pb-4 pt-3">
-        {altNavItems.filter(canSee).map(item => <NavItemLink key={item.to} {...item} />)}
-        <div className="mt-3 flex w-full items-center gap-2.5 rounded-xl border border-gray-800 bg-gray-950/50 p-2.5">
-          <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-blue-600 text-xs font-bold text-white ring-2 ring-blue-400/20">
-            {avatarUrl
-              ? <img src={avatarUrl} alt="Profil fotoğrafı" className="h-full w-full object-cover" />
-              : initials}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span title={displayName} className="line-clamp-2 break-words text-[12px] font-semibold leading-4 text-gray-100">{displayName}</span>
-            <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-blue-300">{roleName}</span>
-          </span>
+          <button
+            ref={mobileCloseRef}
+            type="button"
+            onClick={onMobileClose}
+            aria-label="Menüyü kapat"
+            className="ml-auto grid h-9 w-9 place-items-center rounded-lg text-slate-400 outline-none transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:ring-2 focus-visible:ring-blue-400 xl:hidden"
+          >
+            <X size={19} />
+          </button>
+
           <button
             type="button"
-            onClick={() => setAccountOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={accountOpen}
-            aria-label="Hesap bilgilerini aç"
-            title="Hesap bilgileri"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-700 bg-gray-900 text-gray-400 transition-all hover:border-blue-500 hover:bg-blue-500/10 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onClick={() => onCollapsedChange(!collapsed)}
+            aria-label={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
+            aria-pressed={collapsed}
+            className="absolute -right-3 top-1/2 z-10 hidden h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-slate-700 bg-slate-900 text-slate-400 shadow-lg outline-none transition-colors hover:border-blue-500 hover:text-blue-300 focus-visible:ring-2 focus-visible:ring-blue-400 xl:grid"
           >
-            <Info size={16} strokeWidth={2.2} />
+            {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
           </button>
         </div>
-      </div>
+
+        <nav className="sidebar-scrollbar flex-1 space-y-3 overflow-x-hidden overflow-y-auto px-3 py-3">
+          {navGroups
+            .map(group => ({ ...group, items: group.items.filter(canSee) }))
+            .filter(group => group.items.length > 0)
+            .map((group, index) => (
+              <div key={group.baslik ?? `primary-${index}`}>
+                {group.baslik && (
+                  <>
+                    <div className={cn('mb-1 px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-slate-600', collapsed && 'xl:sr-only')}>
+                      {group.baslik}
+                    </div>
+                    {collapsed && <div className="mx-2 mb-2 hidden h-px bg-slate-800 xl:block" aria-hidden />}
+                  </>
+                )}
+                <div className="space-y-0.5">
+                  {group.items.map(item => (
+                    <NavItemLink key={item.to} {...item} collapsed={collapsed} onNavigate={onMobileClose} />
+                  ))}
+                </div>
+              </div>
+            ))}
+        </nav>
+
+        <div className="shrink-0 border-t border-slate-800/80 px-3 pb-3 pt-2.5">
+          <div className="space-y-0.5">
+            {altNavItems.filter(canSee).map(item => (
+              <NavItemLink key={item.to} {...item} collapsed={collapsed} onNavigate={onMobileClose} />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={openAccount}
+            aria-haspopup="dialog"
+            aria-expanded={accountOpen}
+            aria-label={`Hesap bilgileri: ${displayName}`}
+            className={cn(
+              'group relative mt-2.5 flex w-full items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-900/55 p-2 text-left outline-none transition-colors',
+              'hover:border-slate-700 hover:bg-slate-900 focus-visible:ring-2 focus-visible:ring-blue-400',
+              collapsed && 'xl:justify-center xl:border-transparent xl:bg-transparent xl:p-1.5',
+            )}
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-blue-600 text-xs font-bold text-white ring-2 ring-blue-400/20">
+              {avatarUrl
+                ? <img src={avatarUrl} alt="Profil fotoğrafı" className="h-full w-full object-cover" />
+                : initials}
+            </span>
+            <span className={cn('min-w-0 flex-1', collapsed && 'xl:sr-only')}>
+              <span title={displayName} className="line-clamp-1 break-words text-[12px] font-semibold leading-4 text-slate-100">{displayName}</span>
+              <span className="mt-0.5 block truncate text-[9px] font-bold uppercase tracking-[0.1em] text-blue-300">{roleName}</span>
+            </span>
+            <ChevronRight size={15} className={cn('shrink-0 text-slate-600 transition-colors group-hover:text-slate-300', collapsed && 'xl:hidden')} aria-hidden />
+            {collapsed && (
+              <span role="tooltip" className="pointer-events-none absolute left-[calc(100%+12px)] top-1/2 z-[60] hidden -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-100 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 xl:block">
+                {displayName} · Hesap bilgileri
+              </span>
+            )}
+          </button>
+        </div>
+      </aside>
 
       <AccountDrawer open={accountOpen} onClose={() => setAccountOpen(false)} />
-    </aside>
+    </>
   )
 }

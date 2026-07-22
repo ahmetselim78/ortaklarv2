@@ -51,6 +51,22 @@ SELECT is(
   'pasifleştirme durumu kaydedilir'
 );
 
+-- Test veritabanında bootstrap edilmiş gerçek yöneticiler bulunabilir. Son yönetici
+-- kontrollerini deterministik yapmak için test yöneticisi dışındaki aktif
+-- yöneticiler bu transaction içinde pasifleştirilir; ROLLBACK hepsini geri alır.
+UPDATE public.app_users au
+SET is_active = false
+WHERE au.auth_user_id <> '91000000-0000-0000-0000-000000000001'
+  AND au.is_active
+  AND EXISTS (
+    SELECT 1
+    FROM public.user_roles ur
+    JOIN public.roles r ON r.id = ur.role_id
+    WHERE ur.auth_user_id = au.auth_user_id
+      AND r.slug = 'administrator'
+      AND r.is_active
+  );
+
 SELECT set_config('request.jwt.claims', '{}', true);
 
 SELECT throws_ok(
@@ -83,4 +99,3 @@ SELECT throws_ok(
 
 SELECT * FROM finish();
 ROLLBACK;
-

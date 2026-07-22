@@ -1,13 +1,20 @@
 import { createClient } from '@supabase/supabase-js'
+import { resolveSupabaseUrl } from './supabaseUrl'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!configuredSupabaseUrl || !supabaseAnonKey) {
   throw new Error(
     '.env.local dosyasında VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY tanımlı olmalı.'
   )
 }
+
+const supabaseUrl = resolveSupabaseUrl(
+  configuredSupabaseUrl,
+  typeof window === 'undefined' ? '' : window.location.hostname,
+  import.meta.env.DEV,
+)
 
 async function monitoredFetch(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init)

@@ -199,8 +199,9 @@
     <h2>Teknolojik Altyapı & State Yönetimi Analizi</h2>
     <p><strong>Proje Adı:</strong> OrtaklarV2</p>
     <p><strong>Oluşturma Tarihi:</strong> 15 Haziran 2026</p>
-    <p><strong>Son Güncelleme:</strong> 22 Haziran 2026</p>
-    <p><strong>Dokümantasyon Versiyonu:</strong> 2.0 (Saatlik Takip & AI Şablonu Eklendi)</p>
+    <p><strong>Son Güncelleme:</strong> 23 Temmuz 2026</p>
+    <p><strong>Dokümantasyon Versiyonu:</strong> 2.1</p>
+    <p><strong>Güncellik notu:</strong> Bu rapor state yönetimi odağındadır. Yetki, güvenlik ve veritabanı için <code>OrtaklarV2_Architecture.md</code> ve <code>SECURITY_ROLLOUT.md</code> nihai kaynaktır. Güncel migration aralığı <code>001–060</code>'tır.</p>
   </div>
 
   <h2>1. Teknoloji Stack'i</h2>
@@ -259,7 +260,7 @@
 
   <h3>1.7 Data Processing</h3>
   <ul class="tech-list">
-    <li><strong>PapaParse 5.5.3</strong> - CSV/TSV parsing</li>
+    <li><strong>PapaParse 5.5.3</strong> - Kurulu; mevcut kaynakta doğrudan kullanılmıyor</li>
     <li><strong>pdfjs-dist 5.6.205</strong> - PDF manipulation ve rendering</li>
   </ul>
 
@@ -1160,9 +1161,9 @@ Closes #123
       </tr>
       <tr>
         <td><strong>Testing</strong></td>
-        <td>Not visible</td>
-        <td><span class="badge badge-error">✗ Missing</span></td>
-        <td>Jest/Vitest + React Testing Library</td>
+        <td>Vitest + pgTAP</td>
+        <td><span class="badge badge-success">✓ Active</span></td>
+        <td>20 Vitest dosyası / 183 test; DB testleri ayrı çalışır</td>
       </tr>
     </tbody>
   </table>
@@ -1302,8 +1303,8 @@ Closes #123
 
   <ol>
     <li>React Query setup et ve Supabase queries'i migrate et</li>
-    <li>Error Boundary component'i implement et</li>
-    <li>Jest + React Testing Library ile test suite başlat</li>
+    <li>Mevcut Error Boundary ve merkezi hata raporlama testlerini sürdür</li>
+    <li>Vitest ve pgTAP kapsamını yeni davranışlarla birlikte güncelle</li>
     <li>Accessibility audit'i çalıştır (axe, WAVE tools)</li>
     <li>Production metrics monitoring kurulumu</li>
   </ol>
@@ -1313,8 +1314,8 @@ Closes #123
     <p><strong>Bu dokümantasyon projenin mevcut teknoloji stack'i, state yönetimi mimarisini, saatlik iş akışını ve AI entegrasyonunu detaylı olarak açıklamaktadır.</strong></p>
     <p>Saatlik takip şablonlarını ve AI soru formatını kullanarak daha organize ve yapılandırılmış bir geliştirme süreci sağlanabilir.</p>
     <p>Sorularınız veya önerileriniz varsa, geliştirme ekibinize başvurunuz.</p>
-    <p>© 2026 - OrtaklarV2 Project | Teknoloji Analizi Dokümantasyonu v2.0</p>
-    <p><em>Oluşturma Tarihi: 15 Haziran 2026 | Son Güncelleme: 22 Haziran 2026</em></p>
+    <p>© 2026 - OrtaklarV2 Project | Teknoloji Analizi Dokümantasyonu v2.1</p>
+    <p><em>Oluşturma Tarihi: 15 Haziran 2026 | Son Güncelleme: 23 Temmuz 2026</em></p>
     <p><em>Yeni Eklemeler: Saatlik Takip Sistemi, AI Şablonları, Rapor Formatları, Commit Standards</em></p>
   </div>
 

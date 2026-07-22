@@ -49,6 +49,25 @@ interface ActorAccount {
   username: string | null
 }
 
+interface Role {
+  id: string
+  name_tr: string
+}
+
+interface Permission {
+  id: string
+  module: string
+  action: string
+  description_tr: string
+}
+
+interface AuditLookups {
+  actorAccounts: Map<string, ActorAccount>
+  personnel: Map<string, string>
+  roles: Map<string, string>
+  permissions: Map<string, Permission>
+}
+
 interface Filters {
   start: string
   end: string
@@ -100,8 +119,12 @@ const FIELD_LABELS: Record<string, string> = {
   durum: 'Durum',
   rol: 'Rol',
   role_id: 'Rol',
+  permission_id: 'Yetki',
   personel_id: 'Personel',
   ad: 'Ad',
+  name_tr: 'Rol adı',
+  slug: 'Sistem adı',
+  is_system: 'Sistem rolü',
   aciklama: 'Açıklama',
   siparis_no: 'Sipariş no',
   siparis_id: 'Sipariş',
@@ -126,6 +149,70 @@ const FIELD_LABELS: Record<string, string> = {
   target_type: 'Hedef türü',
 }
 
+const TABLE_ENTITY_LABELS: Record<string, string> = {
+  app_users: 'kullanıcı hesabı',
+  hr_personel: 'personel',
+  hr_personel_istasyon_yetkileri: 'personel istasyon yetkisi',
+  roles: 'rol',
+  role_permissions: 'rol yetkisi',
+  user_roles: 'kullanıcı rolü',
+  siparisler: 'sipariş',
+  siparis_detaylari: 'sipariş kalemi',
+  uretim_emirleri: 'üretim partisi',
+  uretim_emri_detaylari: 'üretim kalemi',
+  gunluk_uretim_raporlari: 'günlük üretim raporu',
+  gunluk_uretim_istasyon_kayitlari: 'istasyon kaydı',
+  tamir_kayitlari: 'tamir kaydı',
+  ayarlar: 'ayar',
+  telegram_ayarlari: 'Telegram ayarı',
+  telegram_rapor_saatleri: 'Telegram rapor saati',
+  uretim_istasyonlari: 'üretim istasyonu',
+  stok: 'stok kartı',
+  admin_operation: 'yönetici işlemi',
+  auth_migration: 'hesap aktarımı',
+}
+
+const MODULE_LABELS: Record<string, string> = {
+  dashboard: 'Genel Bakış',
+  cari: 'Cari Yönetimi',
+  inventory: 'Stok Yönetimi',
+  orders: 'Siparişler',
+  production: 'Üretim',
+  production_stations: 'Üretim İstasyonları',
+  repair: 'Tamir',
+  shipping: 'Sevkiyat',
+  hourly_tracking: 'Saatlik Takip',
+  production_entry: 'Üretim Girişi',
+  settings: 'Ayarlar',
+  users: 'Kullanıcılar',
+  roles: 'Roller ve Yetkiler',
+  telegram: 'Telegram',
+  files: 'Dosyalar',
+  ocr: 'Belge Okuma (OCR)',
+  audit: 'İşlem Kayıtları',
+  errors: 'Hata Kayıtları',
+  admin: 'Sistem Yönetimi',
+}
+
+const PERMISSION_ACTION_LABELS: Record<string, string> = {
+  read: 'Görüntüleme',
+  create: 'Yeni kayıt ekleme',
+  update: 'Düzenleme',
+  delete: 'Silme',
+  manage: 'Tam yönetim',
+}
+
+const TECHNICAL_FIELDS = new Set([
+  'id',
+  'created_at',
+  'updated_at',
+  'olusturma_tarihi',
+  'guncelleme_tarihi',
+  'assigned_at',
+  'auth_migrated_at',
+  'slug',
+])
+
 const ACTION_CONFIG: Record<AuditAction, { label: string; description: string; classes: string; icon: typeof Plus }> = {
   INSERT: { label: 'Oluşturuldu', description: 'Yeni kayıt eklendi', classes: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20', icon: Plus },
   UPDATE: { label: 'Güncellendi', description: 'Kayıt bilgileri değiştirildi', classes: 'bg-blue-50 text-blue-700 ring-blue-600/20', icon: Pencil },
@@ -143,19 +230,120 @@ function fieldLabel(value: string) {
   return FIELD_LABELS[value] ?? value.replaceAll('_', ' ')
 }
 
-function formatValue(value: unknown): string {
+function formatPermission(permission: Permission) {
+  const moduleLabel = MODULE_LABELS[permission.module] ?? permission.module
+  const actionLabel = PERMISSION_ACTION_LABELS[permission.action] ?? permission.action
+  return `${moduleLabel} · ${actionLabel}`
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function formatTechnicalId(value: string) {
+  return isUuid(value) ? `${value.slice(0, 8)}…${value.slice(-4)}` : value
+}
+
+function formatDateTimeValue(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: 'Europe/Istanbul',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
+function formatValue(value: unknown, field?: string, lookups?: AuditLookups): string {
   if (value === null || value === undefined || value === '') return 'Boş'
   if (typeof value === 'boolean') return value ? 'Evet' : 'Hayır'
   if (typeof value === 'object') return JSON.stringify(value, null, 2)
-  return String(value)
+
+  const stringValue = String(value)
+  if (field && lookups) {
+    if (field === 'role_id') return lookups.roles.get(stringValue) ?? `Rol (${formatTechnicalId(stringValue)})`
+    if (field === 'permission_id') {
+      const permission = lookups.permissions.get(stringValue)
+      return permission ? formatPermission(permission) : `Yetki (${formatTechnicalId(stringValue)})`
+    }
+    if (field === 'personel_id') return lookups.personnel.get(stringValue) ?? `Personel (${formatTechnicalId(stringValue)})`
+    if (field === 'auth_user_id' || field === 'assigned_by') {
+      const account = lookups.actorAccounts.get(stringValue)
+      return account?.display_name.trim() || account?.username || `Kullanıcı (${formatTechnicalId(stringValue)})`
+    }
+  }
+
+  if (field && (field.endsWith('_at') || field.includes('tarih'))) return formatDateTimeValue(stringValue)
+  return field === 'id' || (field?.endsWith('_id') && isUuid(stringValue))
+    ? formatTechnicalId(stringValue)
+    : stringValue
 }
 
-function recordDescription(event: AuditEvent) {
+function recordDescription(event: AuditEvent, lookups: AuditLookups) {
   const data = event.new_data ?? event.old_data ?? {}
-  const preferredFields = ['ad_soyad', 'siparis_no', 'batch_no', 'stok_adi', 'ad', 'kullanici_adi', 'operation']
+  if (event.table_name === 'role_permissions') {
+    const role = data.role_id ? lookups.roles.get(String(data.role_id)) : null
+    const permission = data.permission_id ? lookups.permissions.get(String(data.permission_id)) : null
+    if (role && permission) return `${role} · ${formatPermission(permission)}`
+  }
+  if (event.table_name === 'user_roles' && data.auth_user_id) {
+    const account = lookups.actorAccounts.get(String(data.auth_user_id))
+    if (account) return account.display_name.trim() || account.username || 'Kullanıcı hesabı'
+  }
+  const preferredFields = ['ad_soyad', 'siparis_no', 'batch_no', 'stok_adi', 'name_tr', 'ad', 'kullanici_adi', 'operation']
   const preferred = preferredFields.find(field => data[field] !== undefined && data[field] !== null)
-  if (preferred) return formatValue(data[preferred])
-  return event.record_id
+  if (preferred) return formatValue(data[preferred], preferred, lookups)
+  return 'İlgili kayıt'
+}
+
+function eventFields(event: AuditEvent) {
+  return event.changed_fields.length > 0
+    ? event.changed_fields
+    : Array.from(new Set([...Object.keys(event.old_data ?? {}), ...Object.keys(event.new_data ?? {})]))
+}
+
+function eventSummary(event: AuditEvent, lookups: AuditLookups) {
+  const data = event.new_data ?? event.old_data ?? {}
+  const entity = TABLE_ENTITY_LABELS[event.table_name] ?? 'kayıt'
+
+  if (event.table_name === 'role_permissions') {
+    const role = data.role_id ? formatValue(data.role_id, 'role_id', lookups) : 'ilgili rol'
+    const permission = data.permission_id ? formatValue(data.permission_id, 'permission_id', lookups) : 'Yetki'
+    if (event.action === 'INSERT') return `${permission} yetkisi ${role} rolüne verildi.`
+    if (event.action === 'DELETE') return `${permission} yetkisi ${role} rolünden kaldırıldı.`
+  }
+
+  if (event.table_name === 'user_roles') {
+    const account = data.auth_user_id ? formatValue(data.auth_user_id, 'auth_user_id', lookups) : 'Kullanıcı'
+    if (event.action === 'UPDATE' && event.old_data?.role_id && event.new_data?.role_id) {
+      return `${account} rolü ${formatValue(event.old_data.role_id, 'role_id', lookups)} yerine ${formatValue(event.new_data.role_id, 'role_id', lookups)} olarak değiştirildi.`
+    }
+    const role = data.role_id ? formatValue(data.role_id, 'role_id', lookups) : 'rol'
+    if (event.action === 'INSERT') return `${account} kullanıcısına ${role} rolü atandı.`
+    if (event.action === 'DELETE') return `${account} kullanıcısından ${role} rolü kaldırıldı.`
+  }
+
+  const visibleFields = eventFields(event).filter(field => !TECHNICAL_FIELDS.has(field))
+  if (event.action === 'UPDATE') {
+    if (visibleFields.length === 1) {
+      const field = visibleFields[0]
+      return `${fieldLabel(field)}: ${formatValue(event.old_data?.[field], field, lookups)} → ${formatValue(event.new_data?.[field], field, lookups)}`
+    }
+    if (visibleFields.length > 1) {
+      const names = visibleFields.slice(0, 3).map(fieldLabel).join(', ')
+      const remaining = visibleFields.length > 3 ? ` ve ${visibleFields.length - 3} bilgi daha` : ''
+      return `${visibleFields.length} bilgi güncellendi: ${names}${remaining}.`
+    }
+  }
+
+  const name = recordDescription(event, lookups)
+  const namedRecord = name === 'İlgili kayıt' ? `Bu ${entity}` : `“${name}” ${entity} kaydı`
+  if (event.action === 'INSERT') return `${namedRecord} oluşturuldu.`
+  if (event.action === 'DELETE') return `${namedRecord} silindi.`
+  return ACTION_CONFIG[event.action].description
 }
 
 function formatDate(value: string) {
@@ -174,10 +362,19 @@ function isToday(value: string) {
   return formatter.format(new Date(value)) === formatter.format(new Date())
 }
 
-function EventDetails({ event }: { event: AuditEvent }) {
-  const fields = event.changed_fields.length > 0
-    ? event.changed_fields
-    : Array.from(new Set([...Object.keys(event.old_data ?? {}), ...Object.keys(event.new_data ?? {})]))
+function EventDetails({ event, lookups }: { event: AuditEvent; lookups: AuditLookups }) {
+  const fields = eventFields(event)
+  const visibleFields = fields.filter(field => !TECHNICAL_FIELDS.has(field))
+  const technicalFields = fields.filter(field => TECHNICAL_FIELDS.has(field))
+  const isUpdate = event.action === 'UPDATE'
+  const valueSource = event.action === 'DELETE' ? event.old_data : event.new_data
+  const detailTitle = event.action === 'INSERT'
+    ? 'Oluşturulan bilgiler'
+    : event.action === 'DELETE'
+      ? 'Silinen kaydın bilgileri'
+      : isUpdate
+        ? 'Neler değişti?'
+        : 'İşlem bilgileri'
 
   if (fields.length === 0) {
     return <p className="text-sm text-gray-500">Bu işlem için alan detayı bulunmuyor.</p>
@@ -185,22 +382,43 @@ function EventDetails({ event }: { event: AuditEvent }) {
 
   return (
     <div>
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Değişiklik detayı</p>
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <div className="grid grid-cols-[minmax(130px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)] bg-gray-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-          <span>Alan</span>
-          <span>Önce</span>
-          <span>Sonra</span>
-        </div>
-        {fields.map(field => (
-          <div key={field} className="grid grid-cols-[minmax(130px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)] border-t border-gray-100 px-4 py-3 text-xs">
-            <span className="font-semibold capitalize text-gray-700">{fieldLabel(field)}</span>
-            <pre className="whitespace-pre-wrap break-all font-sans text-gray-500">{formatValue(event.old_data?.[field])}</pre>
-            <pre className="whitespace-pre-wrap break-all font-sans font-medium text-gray-800">{formatValue(event.new_data?.[field])}</pre>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{detailTitle}</p>
+      {visibleFields.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className={`hidden sm:grid ${isUpdate ? 'sm:grid-cols-[minmax(130px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)]' : 'sm:grid-cols-[minmax(160px,0.8fr)_minmax(200px,2fr)]'} bg-gray-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500`}>
+            <span>Bilgi</span>
+            {isUpdate ? <><span>Önce</span><span>Sonra</span></> : <span>Değer</span>}
           </div>
-        ))}
-      </div>
-      <p className="mt-3 font-mono text-[11px] text-gray-400">Kayıt no: {event.record_id}</p>
+          {visibleFields.map(field => (
+            <div key={field} className={`grid grid-cols-1 gap-2 ${isUpdate ? 'sm:grid-cols-[minmax(130px,0.8fr)_minmax(160px,1fr)_minmax(160px,1fr)]' : 'sm:grid-cols-[minmax(160px,0.8fr)_minmax(200px,2fr)]'} border-t border-gray-100 px-4 py-3 text-xs`}>
+              <span className="font-semibold text-gray-700">{fieldLabel(field)}</span>
+              {isUpdate ? (
+                <>
+                  <pre className="whitespace-pre-wrap break-words font-sans text-gray-500"><span className="mr-1 font-semibold text-gray-400 sm:hidden">Önce:</span>{formatValue(event.old_data?.[field], field, lookups)}</pre>
+                  <pre className="whitespace-pre-wrap break-words font-sans font-medium text-gray-800"><span className="mr-1 font-semibold text-gray-400 sm:hidden">Sonra:</span>{formatValue(event.new_data?.[field], field, lookups)}</pre>
+                </>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words font-sans font-medium text-gray-800">{formatValue(valueSource?.[field], field, lookups)}</pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <details className="mt-3 text-xs text-gray-500">
+        <summary className="w-fit cursor-pointer select-none font-medium hover:text-gray-700">Teknik bilgileri göster</summary>
+        <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+          {technicalFields.map(field => (
+            <div key={field} className="grid grid-cols-1 gap-1 border-b border-gray-100 py-2 last:border-0 sm:grid-cols-[minmax(140px,0.7fr)_minmax(200px,2fr)] sm:gap-4">
+              <span className="font-medium text-gray-600">{fieldLabel(field)}</span>
+              <span className="break-all font-mono text-[11px] text-gray-500">{formatValue(valueSource?.[field], field, lookups)}</span>
+            </div>
+          ))}
+          <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(140px,0.7fr)_minmax(200px,2fr)] sm:gap-4">
+            <span className="font-medium text-gray-600">Kayıt no</span>
+            <span className="break-all font-mono text-[11px] text-gray-500">{event.record_id}</span>
+          </div>
+        </div>
+      </details>
     </div>
   )
 }
@@ -209,6 +427,8 @@ export default function AuditKayitlariPanel() {
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [actorAccounts, setActorAccounts] = useState<ActorAccount[]>([])
   const [personnel, setPersonnel] = useState<Personel[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
+  const [permissions, setPermissions] = useState<Permission[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draftFilters, setDraftFilters] = useState<Filters>(EMPTY_FILTERS)
@@ -248,16 +468,28 @@ export default function AuditKayitlariPanel() {
     Promise.all([
       supabase.from('app_users').select('auth_user_id, personel_id, display_name, username').order('display_name'),
       supabase.from('hr_personel').select('id, ad_soyad').order('ad_soyad'),
-    ]).then(([accountResult, personelResult]) => {
+      supabase.from('roles').select('id, name_tr').order('name_tr'),
+      supabase.from('permissions').select('id, module, action, description_tr').order('module').order('action'),
+    ]).then(([accountResult, personelResult, roleResult, permissionResult]) => {
       if (ignore) return
       setActorAccounts((accountResult.data ?? []) as ActorAccount[])
       setPersonnel((personelResult.data ?? []) as Personel[])
+      setRoles((roleResult.data ?? []) as Role[])
+      setPermissions((permissionResult.data ?? []) as Permission[])
     })
     return () => { ignore = true }
   }, [])
 
   const actorAccountById = useMemo(() => new Map(actorAccounts.map(account => [account.auth_user_id, account])), [actorAccounts])
   const personelById = useMemo(() => new Map(personnel.map(person => [person.id, person.ad_soyad])), [personnel])
+  const roleById = useMemo(() => new Map(roles.map(role => [role.id, role.name_tr])), [roles])
+  const permissionById = useMemo(() => new Map(permissions.map(permission => [permission.id, permission])), [permissions])
+  const lookups = useMemo<AuditLookups>(() => ({
+    actorAccounts: actorAccountById,
+    personnel: personelById,
+    roles: roleById,
+    permissions: permissionById,
+  }), [actorAccountById, personelById, permissionById, roleById])
   const actorOptions = useMemo(() => actorAccounts.map(account => ({
     id: account.auth_user_id,
     name: account.display_name.trim()
@@ -342,7 +574,34 @@ export default function AuditKayitlariPanel() {
           <EmptyState icon={Search} baslik={hasActiveFilters ? 'Bu filtrelere uygun kayıt bulunamadı' : 'Henüz işlem kaydı yok'} aciklama={hasActiveFilters ? 'Filtreleri değiştirerek yeniden deneyebilirsiniz.' : 'Yeni işlemler yapıldığında kayıtlar burada görünecek.'} boyut="md" aksiyon={hasActiveFilters ? <button type="button" onClick={clearFilters} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white">Filtreleri temizle</button> : undefined} />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="divide-y divide-gray-100 md:hidden">
+              {pageEvents.map(event => {
+                const config = ACTION_CONFIG[event.action]
+                const Icon = config.icon
+                const isExpanded = expandedId === event.id
+                const actorAccount = event.actor_user_id ? actorAccountById.get(event.actor_user_id) : null
+                const linkedPersonelName = actorAccount?.personel_id ? personelById.get(actorAccount.personel_id) : null
+                const eventPersonelName = event.actor_personel_id ? personelById.get(event.actor_personel_id) : null
+                const actorName = actorAccount?.display_name.trim() || linkedPersonelName || eventPersonelName || (event.actor_user_id ? 'Silinmiş kullanıcı' : 'Sistem')
+                return (
+                  <article key={event.id} className={isExpanded ? 'bg-blue-50/30' : 'bg-white'}>
+                    <button type="button" onClick={() => setExpandedId(isExpanded ? null : event.id)} aria-expanded={isExpanded} className="w-full p-4 text-left">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gray-100 text-gray-500"><User size={14} /></span><div className="min-w-0"><p className="truncate text-sm font-bold text-gray-900">{actorName}</p><p className="mt-0.5 text-[11px] text-gray-400">{formatDate(event.occurred_at)}</p></div></div>
+                        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ring-inset ${config.classes}`}><Icon size={11} />{config.label}</span>
+                      </div>
+                      <div className="mt-3 rounded-xl bg-gray-50 p-3">
+                        <p className="text-xs font-bold text-gray-800">{tableLabel(event.table_name)}</p>
+                        <p className="mt-1 text-xs leading-5 text-gray-600">{eventSummary(event, lookups)}</p>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-xs"><span className="truncate text-gray-400">{recordDescription(event, lookups)}</span><span className="ml-3 inline-flex shrink-0 items-center gap-1 font-semibold text-indigo-600">Detay {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span></div>
+                    </button>
+                    {isExpanded && <div className="border-t border-gray-100 bg-gray-50/70 p-4"><EventDetails event={event} lookups={lookups} /></div>}
+                  </article>
+                )
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500"><tr><th className="px-4 py-3.5">Tarih ve saat</th><th className="px-4 py-3.5">İşlemi yapan</th><th className="px-4 py-3.5">Kayıt</th><th className="px-4 py-3.5">İşlem</th><th className="px-4 py-3.5">Değişiklik özeti</th><th className="w-12 px-3 py-3.5"><span className="sr-only">Detay</span></th></tr></thead>
                 <tbody className="divide-y divide-gray-100">
@@ -359,20 +618,18 @@ export default function AuditKayitlariPanel() {
                       || (event.actor_user_id ? 'Silinmiş kullanıcı' : 'Sistem')
                     const actorDetail = actorAccount?.username
                       ? `@${actorAccount.username}`
-                      : event.actor_user_id
-                        ? `${event.actor_user_id.slice(0, 8)}…`
-                        : null
+                      : null
                     return (
                       <Fragment key={event.id}>
                         <tr className={`transition hover:bg-gray-50 ${isExpanded ? 'bg-blue-50/40' : ''}`}>
                           <td className="whitespace-nowrap px-4 py-4"><div className="font-medium text-gray-800">{formatDate(event.occurred_at)}</div><div className="mt-0.5 text-[11px] text-gray-400">İstanbul saati</div></td>
                           <td className="px-4 py-4"><div className="flex items-center gap-2"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500"><User size={14} /></div><div><div className="font-medium text-gray-800">{actorName}</div>{actorDetail && <div title={event.actor_user_id ?? undefined} className="mt-0.5 text-[10px] text-gray-400">{actorDetail}</div>}</div></div></td>
-                          <td className="px-4 py-4"><div className="font-medium text-gray-800">{tableLabel(event.table_name)}</div><div title={event.record_id} className="mt-0.5 max-w-52 truncate text-xs text-gray-500">{recordDescription(event)}</div></td>
+                          <td className="px-4 py-4"><div className="font-medium text-gray-800">{tableLabel(event.table_name)}</div><div className="mt-0.5 max-w-64 text-xs leading-5 text-gray-500">{recordDescription(event, lookups)}</div></td>
                           <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${config.classes}`}><Icon size={12} />{config.label}</span></td>
-                          <td className="px-4 py-4"><div className="max-w-72 text-xs text-gray-600">{event.changed_fields.length > 0 ? event.changed_fields.slice(0, 3).map(fieldLabel).join(', ') : config.description}{event.changed_fields.length > 3 && <span className="text-gray-400"> +{event.changed_fields.length - 3} alan</span>}</div></td>
+                          <td className="px-4 py-4"><div className="max-w-96 text-xs leading-5 text-gray-700">{eventSummary(event, lookups)}</div></td>
                           <td className="px-3 py-4"><button type="button" onClick={() => setExpandedId(isExpanded ? null : event.id)} aria-expanded={isExpanded} aria-label={isExpanded ? 'Detayı kapat' : 'Detayı göster'} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700">{isExpanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}</button></td>
                         </tr>
-                        {isExpanded && <tr key={`${event.id}-detail`}><td colSpan={6} className="bg-gray-50/70 px-5 py-5"><EventDetails event={event} /></td></tr>}
+                        {isExpanded && <tr key={`${event.id}-detail`}><td colSpan={6} className="bg-gray-50/70 px-5 py-5"><EventDetails event={event} lookups={lookups} /></td></tr>}
                       </Fragment>
                     )
                   })}

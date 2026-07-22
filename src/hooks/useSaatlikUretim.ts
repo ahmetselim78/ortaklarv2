@@ -244,7 +244,7 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
 
   // ── GLS barkod okuma ──────────────────────────────────────────────────────
   const handleGlsRead = useCallback(
-    async (_barkod?: string) => {
+    async () => {
       const hedefSatir = aktifSatiriBul(satirlar)
       if (!hedefSatir) return
 

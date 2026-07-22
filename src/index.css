@@ -21,6 +21,58 @@
   }
 }
 
+@keyframes authEnter {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes authFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+
+@keyframes authOrbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes authGlow {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+.auth-enter {
+  animation: authEnter 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-float {
+  animation: authFloat 4.5s ease-in-out infinite;
+}
+
+.auth-orbit {
+  animation: authOrbit 18s linear infinite;
+}
+
+.auth-orbit-reverse {
+  animation-direction: reverse;
+  animation-duration: 14s;
+}
+
+.auth-glow {
+  animation: authGlow 8s ease-in-out infinite;
+}
+
+.auth-delay-1 { animation-delay: 160ms; }
+.auth-delay-2 { animation-delay: 900ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-enter,
+  .auth-float,
+  .auth-orbit,
+  .auth-glow {
+    animation: none;
+  }
+}
+
 .tamir-karti-uyari {
   animation: tamirKartPulse 1.15s ease-in-out infinite;
 }
@@ -80,4 +132,33 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Uygulama içeriğini tek ve dokunmatik cihazlarda akıcı bir kaydırma yüzeyinde tut. */
+.app-scroll-area {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto;
+}
+
+/* Yan menünün koyu yüzeyle bütünleşen, dikkat çekmeyen kaydırma çubuğu. */
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #334155;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }

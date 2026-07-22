@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Sun, Moon, Eye, EyeOff, Factory, LogOut, Plus, Trash2,
   AlertCircle, CheckCircle2, Loader2, ChevronRight, UserCheck, Truck, Users,
-  History, ArrowLeft, FileText, Pencil,
+  History, ArrowLeft, ArrowRight, BadgeCheck, CalendarDays, ClipboardCheck,
+  FileText, LockKeyhole, Pencil, ShieldCheck,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bugunGoster, bugunTarih, formatSaatTr, tarihEtiketTr, trSaatStr } from '@/lib/tarih'
@@ -106,7 +107,6 @@ function zamanAsimli<T>(islem: PromiseLike<T>, ms = GIRIS_YUKLEME_ZAMAN_ASIMI_MS
 
 // ─── Tema Yardımcıları ────────────────────────────────────────────────────────
 function pageBg(dk: boolean) { return dk ? 'bg-gray-950' : 'bg-gray-50' }
-function cardCls(dk: boolean) { return `rounded-2xl border ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}` }
 function sectionCls(dk: boolean) { return `rounded-2xl border p-5 ${dk ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}` }
 function txtPrimary(dk: boolean) { return dk ? 'text-white' : 'text-gray-900' }
 function txtSub(dk: boolean) { return dk ? 'text-gray-400' : 'text-gray-600' }
@@ -217,6 +217,66 @@ function PersonelAvatar({
 }
 
 // ─── GİRİŞ EKRANI ─────────────────────────────────────────────────────────────
+function OperatorAuthShell({
+  tema,
+  onTemaDegistir,
+  children,
+}: {
+  tema: Tema
+  onTemaDegistir: () => void
+  children: React.ReactNode
+}) {
+  const dk = tema === 'dark'
+
+  return (
+    <main className={`relative h-dvh max-h-dvh overflow-hidden ${dk ? 'bg-[#07111f]' : 'bg-slate-100'}`}>
+      <div aria-hidden="true" className={`auth-glow absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full blur-3xl ${dk ? 'bg-blue-500/20' : 'bg-blue-300/25'}`} />
+      <div aria-hidden="true" className={`auth-glow auth-delay-2 absolute -bottom-52 right-[-8rem] h-[38rem] w-[38rem] rounded-full blur-3xl ${dk ? 'bg-cyan-400/10' : 'bg-cyan-300/20'}`} />
+      <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.055)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_90%)]" />
+
+      <div className="relative mx-auto grid h-full min-h-0 w-full max-w-7xl min-w-0 content-center items-start gap-4 px-4 py-4 sm:gap-6 sm:px-8 sm:py-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:gap-16 lg:px-12 lg:py-8">
+        <section className={`auth-enter mx-auto min-w-0 w-full max-w-lg lg:mx-0 ${dk ? 'text-white' : 'text-slate-950'}`}>
+          <div className="flex items-center justify-between gap-4 lg:mb-12">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/25"><Factory size={22} aria-hidden="true" /></div>
+              <div><p className="font-bold tracking-tight">OrtaklarV2</p><p className={`text-xs ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Üretim operasyonları</p></div>
+            </div>
+            <button type="button" onClick={onTemaDegistir} aria-label={dk ? 'Açık temaya geç' : 'Koyu temaya geç'} title={dk ? 'Açık temaya geç' : 'Koyu temaya geç'} className={`grid h-10 w-10 place-items-center rounded-xl border transition ${dk ? 'border-white/10 bg-white/[0.05] text-slate-300 hover:bg-white/10 hover:text-white' : 'border-slate-200 bg-white text-slate-500 hover:text-slate-900'}`}>
+              {dk ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+            </button>
+          </div>
+
+          <div className="hidden lg:block">
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${dk ? 'border-blue-400/20 bg-blue-400/10 text-blue-200' : 'border-blue-200 bg-blue-50 text-blue-700'}`}><BadgeCheck size={14} aria-hidden="true" /> Yetkili personel alanı</span>
+            <h1 className="mt-5 max-w-lg text-5xl font-bold leading-[1.06] tracking-tight">Vardiyanıza güvenle başlayın.</h1>
+            <p className={`mt-5 max-w-md text-base leading-7 ${dk ? 'text-slate-300' : 'text-slate-600'}`}>Günlük üretim, araç yükleme ve personel bilgilerini tek bir güvenli akışta kaydedin.</p>
+            <div className={`relative mt-10 overflow-hidden rounded-3xl border p-5 backdrop-blur-sm ${dk ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-white/70'}`}>
+              <div aria-hidden="true" className="auth-orbit absolute -right-10 -top-24 h-64 w-64 rounded-full border border-blue-300/20" />
+              <div className="relative grid gap-3">
+                {[
+                  { icon: ShieldCheck, label: 'Personel doğrulama', detail: 'Güvenli oturum kontrolü', tone: 'text-blue-300 bg-blue-400/10' },
+                  { icon: ClipboardCheck, label: 'Günlük üretim raporu', detail: 'İstasyon verilerini kaydedin', tone: 'text-emerald-300 bg-emerald-400/10' },
+                  { icon: CalendarDays, label: 'Güncel kayıt akışı', detail: 'Bugünün verileri tek yerde', tone: 'text-violet-300 bg-violet-400/10' },
+                ].map(({ icon: Icon, label, detail, tone }, index) => (
+                  <div key={label} className={`auth-float flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-lg ${index === 1 ? 'auth-delay-1' : ''} ${dk ? 'border-white/10 bg-[#0d1a2c]/90' : 'border-slate-200 bg-white/90'}`}>
+                    <div className={`grid h-10 w-10 place-items-center rounded-xl ${tone}`}><Icon size={19} aria-hidden="true" /></div>
+                    <div><p className="text-sm font-semibold">{label}</p><p className={`text-xs ${dk ? 'text-slate-400' : 'text-slate-500'}`}>{detail}</p></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className="auth-enter auth-delay-1 mx-auto min-w-0 w-full max-w-xl">{children}</section>
+      </div>
+    </main>
+  )
+}
+
+function operatorAuthCard(dk: boolean, extra = '') {
+  return `min-w-0 rounded-[1.75rem] border p-5 shadow-[0_35px_100px_-30px_rgba(0,0,0,0.65)] backdrop-blur-xl sm:p-8 lg:rounded-[2rem] lg:p-10 ${dk ? 'border-white/10 bg-slate-900/95 text-white' : 'border-white/60 bg-white/95 text-slate-950'} ${extra}`
+}
+
 function GirisEkrani({
   sonKullanici,
   tema,
@@ -304,23 +364,23 @@ function GirisEkrani({
     }
   }
 
-  const center = 'flex-1 flex flex-col items-center justify-center px-4 py-8'
-
   // ── Hatırlatma: "Bu sizin hesabınız mı?" ─────────────────────────────────
   if (adim === 'hatirlatma' && sonKullanici) {
     return (
-      <div className={`min-h-screen flex flex-col ${pageBg(dk)}`}>
-        <PageHeader tema={tema} onTemaDegistir={onTemaDegistir} />
-        <div className={center}>
-          <div className={`w-full max-w-xs ${cardCls(dk)} p-8 shadow-2xl`}>
-            <div className="flex justify-center mb-5">
-              <PersonelAvatar personel={sonKullanici} boyut="lg" dk={dk} />
+      <OperatorAuthShell tema={tema} onTemaDegistir={onTemaDegistir}>
+          <div className={operatorAuthCard(dk)}>
+            <div className="mb-6 flex items-center gap-4">
+              <PersonelAvatar personel={sonKullanici} boyut="md" dk={dk} />
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-500">Hatırlanan hesap</p>
+                <p className="mt-1 truncate text-xl font-bold">{sonKullanici.ad_soyad}</p>
+                <p className={`text-xs ${dk ? 'text-slate-400' : 'text-slate-500'}`}>{sonKullanici.rol}</p>
+              </div>
             </div>
-            <div className="text-center mb-5">
-              <p className={`text-xl font-bold ${txtPrimary(dk)}`}>{sonKullanici.ad_soyad}</p>
-              <p className={`text-xs mt-0.5 ${txtMuted(dk)}`}>{sonKullanici.rol}</p>
+            <div className={`mb-5 rounded-2xl border p-4 ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+              <p className="font-semibold">Bu sizin hesabınız mı?</p>
+              <p className={`mt-1 text-sm leading-6 ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Devam etmek için hesabınızı doğrulayın.</p>
             </div>
-            <p className={`text-sm text-center mb-5 ${txtSub(dk)}`}>Bu sizin hesabınız mı?</p>
             {hata && (
               <div className={`${errBoxCls(dk)} mb-4`}>
                 <AlertCircle size={14} className="shrink-0 mt-0.5" />{hata}
@@ -331,106 +391,103 @@ function GirisEkrani({
                 type="button"
                 onClick={hatirlatmaDevam}
                 disabled={yukleniyor}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-gray-950 font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:opacity-50"
               >
                 {yukleniyor ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
                 {yukleniyor ? 'Doğrulanıyor…' : 'Evet, devam et'}
+                {!yukleniyor && <ArrowRight size={16} aria-hidden="true" />}
               </button>
               <button
                 type="button"
                 onClick={() => { setHata(null); setAdim('sifre') }}
-                className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors ${dk ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
+                className={`w-full rounded-xl py-2.5 text-sm font-medium transition-colors ${dk ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
               >
                 Hayır, farklı hesap
               </button>
             </div>
           </div>
-        </div>
-      </div>
+      </OperatorAuthShell>
     )
   }
 
   // ── Şifre Girişi ─────────────────────────────────────────────────────────
   if (adim === 'sifre') {
     return (
-      <div className={`min-h-screen flex flex-col ${pageBg(dk)}`}>
-        <PageHeader tema={tema} onTemaDegistir={onTemaDegistir} />
-        <div className={center}>
-          <div className={`w-full max-w-xs ${cardCls(dk)} p-8 shadow-2xl`}>
-            <div className="text-center mb-6">
-              <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 ${dk ? 'bg-amber-500/10' : 'bg-amber-50'}`}>
-                <Factory size={26} className="text-amber-500" />
+      <OperatorAuthShell tema={tema} onTemaDegistir={onTemaDegistir}>
+          <div className={operatorAuthCard(dk)}>
+            <div className="mb-7">
+              <div className="mb-5 flex items-center gap-3 lg:hidden">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/20"><LockKeyhole size={19} aria-hidden="true" /></div>
+                <div><p className="text-sm font-bold">Güvenli doğrulama</p><p className={`text-xs ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Üretim girişine devam edin</p></div>
               </div>
-              <h2 className={`text-xl font-bold ${txtPrimary(dk)}`}>Operatör Girişi</h2>
-              <p className={`text-xs mt-1 ${txtMuted(dk)}`}>Şifrenizi girerek devam edin</p>
+              <p className="hidden text-xs font-bold uppercase tracking-[0.18em] text-blue-500 lg:block">Personel doğrulama</p>
+              <h2 className="text-[1.65rem] font-bold tracking-tight sm:text-2xl lg:mt-2 lg:text-3xl">Operatör girişi</h2>
+              <p className={`mt-2 text-sm leading-6 ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Günlük üretim ekranını açmak için mevcut parolanızı girin.</p>
             </div>
-            <form onSubmit={sifreIleGiris} className="space-y-4">
+            <form onSubmit={sifreIleGiris}>
+              <label htmlFor="operator-password" className="mb-2 block text-sm font-semibold">Parola</label>
               <div className="relative">
+                <LockKeyhole aria-hidden="true" size={19} className={`absolute left-4 top-1/2 -translate-y-1/2 ${dk ? 'text-slate-500' : 'text-slate-400'}`} />
                 <input
+                  id="operator-password"
                   ref={inputRef}
                   type={sifreGoster ? 'text' : 'password'}
                   value={sifre}
                   onChange={e => { setSifre(e.target.value); setHata(null) }}
-                  placeholder="Şifrenizi girin…"
+                  placeholder="Parolanızı girin"
                   autoComplete="current-password"
-                  className={`${inputCls(dk)} pr-12`}
+                  className={`h-14 min-w-0 w-full rounded-xl border pl-12 pr-12 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 ${dk ? 'border-slate-700 bg-slate-800 text-white placeholder:text-slate-500' : 'border-slate-300 bg-white text-slate-950 placeholder:text-slate-400'}`}
                 />
                 <button
                   type="button"
-                  tabIndex={-1}
                   onClick={() => setSifreGoster(v => !v)}
-                  className={`absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors ${dk ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                  aria-label={sifreGoster ? 'Parolayı gizle' : 'Parolayı göster'}
+                  className={`absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg transition ${dk ? 'text-slate-500 hover:bg-slate-700 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
                 >
                   {sifreGoster ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
               {hata && (
-                <div className={errBoxCls(dk)}>
+                <div className={`${errBoxCls(dk)} mt-4`}>
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />{hata}
                 </div>
               )}
               <button
                 type="submit"
                 disabled={yukleniyor || !sifre.trim()}
-                className="w-full flex items-center justify-center gap-2 py-3.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-gray-950 font-bold rounded-xl transition-colors"
+                className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {yukleniyor && <Loader2 size={15} className="animate-spin" />}
-                {yukleniyor ? 'Kontrol ediliyor…' : 'Giriş Yap'}
+                {yukleniyor ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={17} />}
+                {yukleniyor ? 'Kontrol ediliyor…' : 'Doğrula ve devam et'}
+                {!yukleniyor && <ArrowRight size={16} />}
               </button>
             </form>
             <button
               type="button"
               onClick={() => void hesapDegistir()}
               disabled={yukleniyor}
-              className={`mt-5 w-full py-2.5 text-sm font-semibold rounded-lg border transition-colors disabled:opacity-50 ${dk ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+              className={`mt-3 w-full rounded-xl border py-2.5 text-sm font-semibold transition disabled:opacity-50 ${dk ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
             >
               Başka hesapla giriş yap
             </button>
-            <p className={`text-xs text-center mt-3 ${txtMuted(dk)}`}>
-              Şifrenizi bilmiyorsanız yöneticinize başvurun.
-            </p>
+            <div className={`mt-5 flex items-center justify-center gap-2 text-xs ${dk ? 'text-slate-500' : 'text-slate-400'}`}><LockKeyhole size={13} /> Parolanız hiçbir zaman saklanmaz</div>
           </div>
-        </div>
-      </div>
+      </OperatorAuthShell>
     )
   }
 
   // ── Onay: Şifre girildi, kim olduğunu göster ─────────────────────────────
   if (adim === 'onay' && bulunanPersonel) {
     return (
-      <div className={`min-h-screen flex flex-col ${pageBg(dk)}`}>
-        <PageHeader tema={tema} onTemaDegistir={onTemaDegistir} />
-        <div className={center}>
-          <div className={`w-full max-w-xs ${cardCls(dk)} p-8 shadow-2xl text-center`}>
-            <div className="flex justify-center mb-2">
-              <CheckCircle2 size={28} className="text-green-400" />
-            </div>
+      <OperatorAuthShell tema={tema} onTemaDegistir={onTemaDegistir}>
+          <div className={operatorAuthCard(dk, 'text-center')}>
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-400"><CheckCircle2 size={25} /></div>
             <div className="flex justify-center my-4">
               <PersonelAvatar personel={bulunanPersonel} boyut="lg" dk={dk} />
             </div>
             <p className={`text-2xl font-bold mb-0.5 ${txtPrimary(dk)}`}>{bulunanPersonel.ad_soyad}</p>
             <p className={`text-sm ${txtMuted(dk)} mb-1`}>{bulunanPersonel.rol}</p>
-            <p className="text-xs text-green-400 mb-6">Hoş geldiniz!</p>
+            <p className="mb-6 mt-2 text-sm font-semibold text-emerald-400">Kimliğiniz doğrulandı</p>
             <button
               type="button"
               onClick={async () => {
@@ -445,9 +502,9 @@ function GirisEkrani({
                 }
               }}
               disabled={yukleniyor}
-              className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-gray-950 font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:opacity-50"
             >
-              {yukleniyor ? <Loader2 size={15} className="animate-spin" /> : <>Devam Et <ChevronRight size={15} /></>}
+              {yukleniyor ? <Loader2 size={15} className="animate-spin" /> : <>Üretim ekranını aç <ChevronRight size={16} /></>}
             </button>
             {hata && (
               <div className={`${errBoxCls(dk)} mt-4 text-left`}>
@@ -455,8 +512,7 @@ function GirisEkrani({
               </div>
             )}
           </div>
-        </div>
-      </div>
+      </OperatorAuthShell>
     )
   }
 
@@ -1523,7 +1579,7 @@ export default function OperatorGirisPage() {
   }
 
   async function cikisYap() {
-    const { error } = await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut({ scope: 'local' })
     if (error) throw error
     setAktifPersonel(null)
     setSonKullanici(null)

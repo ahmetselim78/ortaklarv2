@@ -1,6 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import fs from 'fs'
-import path from 'path'
 import {
   optiTumParcalar,
   optiImpOlustur,
@@ -26,8 +24,6 @@ import {
 } from './fixtures/imp-export-0851.fixture'
 import fixtureRows from './fixtures/imp-export-0851-rows.json'
 import type { UretimEmriDetay } from '@/types/uretim'
-
-const REFERANS_IMP = path.resolve('opti programı için export/gerçek.IMP')
 
 function detaySatir(
   overrides: Partial<UretimEmriDetay> & {
@@ -299,8 +295,19 @@ describe('N=1 referans satırları — pane doğrulama', () => {
 })
 
 describe('gerçek.IMP entegrasyon — sipariş 26/0851', () => {
-  const referansBuf = new Uint8Array(fs.readFileSync(REFERANS_IMP))
-  const referans = parseImpBytes(referansBuf)
+  // Harici/kişisel gerçek.IMP dosyasına bağımlı kalmadan, ondan türetilip
+  // anonimleştirilerek repoya alınmış satır fixture'ını referans kabul et.
+  const referansPieces = fixtureRows.rows.map((row, index) => ({
+    lineNo: index + 1,
+    n: row.expected.n,
+    b: row.expected.b,
+    h: row.expected.h,
+    fam: row.expected.fam,
+    ord: row.expected.ord,
+    cl: fixtureRows.cl,
+    nota3: '',
+    raw: '',
+  }))
   const detaylar = impExport0851Detaylari()
   const parcalar = optiTumParcalar(detaylar, IMP_EXPORT_0851_META.hedefFam)
   const icerik = optiImpOlustur(parcalar)
@@ -346,7 +353,7 @@ describe('gerçek.IMP entegrasyon — sipariş 26/0851', () => {
   })
 
   it('tüm satırlarda N/B/H/FAM/ORD/sıra referansla eşleşir (NOTA3 hariç)', () => {
-    const diffs = compareImpPiecesCore(uretilen.pieces, referans.pieces)
+    const diffs = compareImpPiecesCore(uretilen.pieces, referansPieces)
     expect(diffs).toEqual([])
   })
 
@@ -368,13 +375,6 @@ describe('gerçek.IMP entegrasyon — sipariş 26/0851', () => {
     expect(meta.hasBom).toBe(false)
     expect(meta.hasCrlf).toBe(true)
     expect(meta.isUtf8Blob).toBe(false)
-    expect(meta.turkishCp1254Ok).toBe(true)
-  })
-
-  it('referans dosya cp1254 meta', () => {
-    const meta = inspectImpBinary(referansBuf)
-    expect(meta.hasBom).toBe(false)
-    expect(meta.hasCrlf).toBe(true)
     expect(meta.turkishCp1254Ok).toBe(true)
   })
 

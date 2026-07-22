@@ -1,5 +1,10 @@
 /**
- * gerçek.IMP ile üretilen IMP karşılaştırma raporu (saf JS, ts import yok).
+ * Verilen referans IMP ile fixture'dan üretilen IMP'yi karşılaştırır.
+ *
+ * Kullanım:
+ *   node scripts/imp-karsilastir-rapor.mjs <referans.IMP> [cikti.IMP]
+ *
+ * Referans ve çıktı dosyaları kaynak deponun içinde olmak zorunda değildir.
  */
 import fs from 'fs'
 import path from 'path'
@@ -98,7 +103,21 @@ function inspectBinary(buf) {
   return { hasBom, hasCrlf, cp1254Ok, utf8Blob }
 }
 
-const referansPath = path.join(root, 'opti programı için export/gerçek.IMP')
+const referansArg = process.argv[2]
+
+if (!referansArg) {
+  console.error('Kullanım: node scripts/imp-karsilastir-rapor.mjs <referans.IMP> [cikti.IMP]')
+  process.exitCode = 1
+  process.exit()
+}
+
+const referansPath = path.resolve(referansArg)
+if (!fs.existsSync(referansPath) || !fs.statSync(referansPath).isFile()) {
+  console.error(`Referans IMP bulunamadı: ${referansPath}`)
+  process.exitCode = 1
+  process.exit()
+}
+
 const referansBuf = fs.readFileSync(referansPath)
 const referans = parseImp(iconv.decode(referansBuf, 'win1254'))
 
@@ -111,7 +130,22 @@ const diffs = compare(uretilen.pieces, referans.pieces)
 const meta = inspectBinary(uretilenBuf)
 const refMeta = inspectBinary(referansBuf)
 
-const outPath = path.join(root, 'opti programı için export/uretilen-karsilastirma.IMP')
+const outPath = process.argv[3]
+  ? path.resolve(process.argv[3])
+  : path.join(path.dirname(referansPath), 'uretilen-karsilastirma.IMP')
+
+if (outPath === referansPath) {
+  console.error('Çıktı yolu referans dosyasıyla aynı olamaz.')
+  process.exitCode = 1
+  process.exit()
+}
+
+if (!fs.existsSync(path.dirname(outPath))) {
+  console.error(`Çıktı klasörü bulunamadı: ${path.dirname(outPath)}`)
+  process.exitCode = 1
+  process.exit()
+}
+
 fs.writeFileSync(outPath, uretilenBuf)
 
 console.log('=== YENİ IMP ÜRETİM RAPORU ===')

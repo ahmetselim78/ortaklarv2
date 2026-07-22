@@ -463,7 +463,7 @@ export default function VeriYonetimiPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex min-h-full flex-col">
       <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
         <div className="flex items-center justify-between mb-3">
           <div>

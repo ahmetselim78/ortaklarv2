@@ -210,14 +210,15 @@ const htmlTemplate = (content) => `
   <div class="header-info">
     <h1>🚀 Cam Yönetim Üretim Paneli</h1>
     <h3>Teknolojik Altyapı & State Yönetimi Analizi</h3>
-    <p><strong>Proje:</strong> OrtaklarV2 | <strong>Tarih:</strong> ${new Date().toLocaleDateString('tr-TR')} | <strong>Versiyon:</strong> 1.0</p>
+    <p><strong>Proje:</strong> OrtaklarV2 | <strong>Tarih:</strong> ${new Date().toLocaleDateString('tr-TR')} | <strong>Versiyon:</strong> 2.1</p>
+    <p><strong>Güncellik notu:</strong> Bu rapor state yönetimi odağındadır. Yetki, güvenlik ve veritabanı için <code>OrtaklarV2_Architecture.md</code> ve <code>SECURITY_ROLLOUT.md</code> nihai kaynaktır.</p>
   </div>
 
   ${content}
 
   <div class="footer">
     <p>Bu dokümantasyon projenin mevcut teknoloji stack'i ve state yönetimi mimarisini detaylı olarak açıklamaktadır.</p>
-    <p>© 2024 - OrtaklarV2 Project Documentation</p>
+    <p>© 2026 - OrtaklarV2 Project Documentation</p>
   </div>
 </body>
 </html>
@@ -256,7 +257,7 @@ async function generatePDF() {
     const htmlPath = path.join(__dirname, 'Cam_Yonetim_Teknoloji_Analiz.html');
     fs.writeFileSync(htmlPath, htmlTemplate(markdownToHtml(getDocs())));
     console.log(`\n✅ HTML başarıyla oluşturuldu!\n📁 Konum: ${htmlPath}`);
-    console.log('💡 PDF'ye çevirmek için: wkhtmltopdf dosya.html dosya.pdf');
+    console.log("💡 PDF'ye çevirmek için: wkhtmltopdf dosya.html dosya.pdf");
     
   } catch (error) {
     console.error('❌ Hata:', error.message);
@@ -267,6 +268,9 @@ async function generatePDF() {
 function getDocs() {
   return `
 # Cam Yönetim Üretim Paneli - Teknolojik Altyapı & State Yönetimi Analizi
+
+> **Doğrulama:** 23 Temmuz 2026 — migration aralığı 001–060. Ayrıntılı ve
+> güncel mimari doğruluk kaynağı: \`Info/OrtaklarV2_Architecture.md\`.
 
 ## 1. Teknoloji Stack'i
 
@@ -301,7 +305,7 @@ function getDocs() {
 - **Zod 4.3.6** - Schema validation (TypeScript-first)
 
 ### Data Processing
-- **PapaParse 5.5.3** - CSV/TSV parsing
+- **PapaParse 5.5.3** - Kurulu; mevcut kaynakta doğrudan kullanılmıyor
 - **pdfjs-dist 5.6.205** - PDF manipulation
 
 ## 2. State Yönetimi Mimarisi
@@ -323,7 +327,7 @@ App Layer
 └── Supabase (External State)
     ├── PostgreSQL database
     ├── Real-time subscriptions
-    └── Authentication
+    └── Supabase Auth + DB RBAC/AAL2
 \`\`\`
 
 ### 2.2 State Türleri
@@ -468,7 +472,7 @@ Eğer prop drilling sorun olursa:
 | Build | Vite | ✓ Lightning-fast |
 | Caching | Manual/None | ⚠ Improvement needed |
 | Global State | None | ⚠ May need if scaling |
-| Testing | Not visible | ✗ Add Jest/Vitest |
+| Testing | Vitest + pgTAP | ✓ 20 Vitest dosyası / 183 test; DB testleri ayrı çalışır |
 
 ## 10. Mimari Karar Nedenleri
 
@@ -517,4 +521,3 @@ Proje, React hooks ve TypeScript kullanarak **scalable, type-safe, ve maintainab
 }
 
 generatePDF();
-`;

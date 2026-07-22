@@ -272,7 +272,7 @@ export default function Dashboard() {
   /* Sync bugünün notu */
   useEffect(() => {
     setBugunNot(takvimNotlari.find(n => n.tarih === today)?.not_metni ?? '')
-  }, [takvimNotlari])
+  }, [takvimNotlari, today])
 
   /* ===================================================================
      Data: yıkamada (30s polling)

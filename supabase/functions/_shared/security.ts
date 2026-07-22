@@ -48,6 +48,9 @@ export async function requirePermission(req: Request, module: string, action: st
   const client = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } })
   const token = authorization.slice('Bearer '.length)
   const { data: userData, error: userError } = await client.auth.getUser(token)
+  if (userError?.code === 'session_not_found') {
+    throw new ResponseError(401, 'Oturum artık geçerli değil. Lütfen yeniden giriş yapın')
+  }
   if (userError || !userData.user) throw new ResponseError(401, 'JWT doğrulanamadı')
   const { data: allowed, error: permissionError } = await client.rpc('has_permission', { p_module: module, p_action: action })
   if (permissionError || allowed !== true) throw new ResponseError(403, 'Bu işlem için yetkiniz yok')
@@ -84,7 +87,7 @@ export async function errorResponse(req: Request, error: unknown): Promise<Respo
           p_severity: status >= 500 ? 'critical' : 'warning',
           p_title: status >= 500 ? 'Edge Function hatası' : 'Yetkilendirme ihlali',
           p_message: error instanceof Error ? error.message : 'Bilinmeyen Edge hatası',
-          p_function_name: Deno.env.get('SB_EXECUTION_ID') ?? null,
+          p_function_name: new URL(req.url).pathname.replace(/^\/+|\/+$/g, '') || null,
           p_context: { status, method: req.method },
         })
       }

@@ -130,7 +130,8 @@ export function useUretim() {
             })
           }
         }
-        const { uretim_emri_detaylari: _, ...rest } = emir
+        const { uretim_emri_detaylari: kullanilanDetaylar, ...rest } = emir
+        void kullanilanDetaylar
         return { ...rest, cam_sayisi, taranan_cam, siparis_listesi: Array.from(siparisMap.values()) } as UretimEmri
       })
       setEmirler(enriched)

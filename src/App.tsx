@@ -58,7 +58,7 @@ export default function App() {
           <Route path="/istasyonlar" element={<ProtectedRoute module="production_stations" action="update"><UretimIstasyonlariPage /></ProtectedRoute>} />
           <Route path="/saatlik-takip" element={<ProtectedRoute module="hourly_tracking"><SaatlikTakipPage /></ProtectedRoute>} />
           <Route path="/ayarlar" element={<ProtectedRoute module="settings"><AyarlarPage /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute module="admin" action="manage" requireAal2><AdminPage /></ProtectedRoute>} />
+          <Route path="/admin/*" element={<ProtectedRoute module="admin" action="manage" requireAal2><AdminPage /></ProtectedRoute>} />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

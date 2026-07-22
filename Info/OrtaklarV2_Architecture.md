@@ -1,10 +1,10 @@
 # OrtaklarV2 — AI Proje Bağlamı ve Mimari Rehberi
 
-> **Son doğrulama:** 17 Temmuz 2026
+> **Son doğrulama:** 23 Temmuz 2026
 >
-> **Doğrulanan sürüm:** `main` / `5fcdb80`
+> **Doğrulanan sürüm:** `security-rollout` / `f1421b0` + mevcut çalışma ağacı
 >
-> **Veritabanı migration aralığı:** `001`–`057`
+> **Veritabanı migration aralığı:** `001`–`060`
 >
 > **Amaç:** Bu dosya, yeni özellik geliştirirken AI ile paylaşılacak ana proje bağlamıdır. Kod ve migration dosyaları her zaman nihai doğruluk kaynağıdır.
 
@@ -44,7 +44,7 @@ varsa mevcut migration'ı değiştirme; sıradaki numarayla yeni migration oluş
 
 1. `src/types/` yalnızca tip dosyası değildir; özellikle `types/ayarlar.ts` etiket varsayılanları, eski JSONB kayıt birleştirme, doğrulama ve DPL üretim mantığı da içerir.
 2. Sipariş, batch ve tamir durumları serbestçe yazılmamalıdır. Mevcut `GECERLI_GECISLER` kuralları ve `services/durumService.ts` yeniden hesaplamaları korunmalıdır.
-3. Mevcut migration dosyaları üretim geçmişidir. Şema değişiklikleri yeni ve artan numaralı migration ile yapılmalıdır; şu an sıradaki numara `058`dir.
+3. Mevcut migration dosyaları üretim geçmişidir. Şema değişiklikleri yeni ve artan numaralı migration ile yapılmalıdır; şu an sıradaki numara `061`dir.
 4. `siparis_detaylari` satırı bir sipariş kalemidir; `adet` o kalemdeki fiziksel cam sayısıdır. Satır `adet` kadar çoğaltılmaz. Kısmi yıkama/tarama ilerlemesi `uretim_emri_detay_id` bağlı `yikama_loglari` sayısından hesaplanır.
 5. `cam_kodu` sipariş kalemi kimliğidir (`GLS-XXXX`). Üretimde operatörün gördüğü/okuttuğu kısa kod çoğunlukla `uretim_emri_detaylari.sira_no` değeridir. Bu iki kimlik birbirine karıştırılmamalıdır.
 6. Etiketin otomatik fiziksel baskısı Poz Giriş bilgisayarında yapılmaz. Poz Giriş `yeni_cam` broadcast'i gönderir; Kumanda Paneli kendi bilgisayarındaki `yazici-kopru` üzerinden basar ve `etiket_durumu` yayınlar.
@@ -76,7 +76,7 @@ src/
   types/                 Domain tipleri; etiket tarafında ayrıca çalışan iş mantığı
 
 supabase/
-  migrations/            Uygulama sırasına göre PostgreSQL şeması (`001`–`057`)
+  migrations/            Uygulama sırasına göre PostgreSQL şeması (`001`–`060`)
   functions/             Deno Edge Functions (OCR, Telegram, yazıcı testi)
 
 cloudflare-worker/       Personel ve etiket-zemin görsellerini R2'ye yükleyen Worker
@@ -93,7 +93,11 @@ nginx.conf               SPA fallback ve statik asset cache kuralları
 
 ## Database Schema
 
-RLS is enabled on application tables, but current policies are generally broad/open. Do not treat RLS or the client-side login screens as a complete authorization boundary. Schema reconstructed from `supabase/migrations/001`–`045`.
+Migration `046`–`060` serisi Supabase Auth kimlik eşlemesini, merkezi RBAC'yi,
+dar RLS/RPC kurallarını, append-only audit'i ve merkezi hata takibini ekler.
+İstemci yönlendirmeleri yalnız kullanıcı deneyimi katmanıdır; nihai yetki sınırı
+veritabanı politikaları, güvenli RPC'ler ve Edge Function kimlik kontrolleridir.
+Şema değerlendirilirken `supabase/migrations/001`–`060` birlikte okunmalıdır.
 
 ### Tables and Key Columns
 
@@ -213,6 +217,14 @@ RLS is enabled on application tables, but current policies are generally broad/o
     - When `hr_personel.uretim_yetkileri_sinirli=false`, the operator sees all active stations. When true, only rows in this relation are allowed.
     - A database trigger also rejects unauthorized inserts/updates in `gunluk_uretim_istasyon_kayitlari`; this is not only a UI filter.
 
+26. **app_users** - Supabase Auth UUID ile uygulama personeli/cihazı arasındaki parola içermeyen kimlik köprüsü
+
+27. **roles / permissions / role_permissions / user_roles** - Merkezi ve veritabanı tarafından uygulanan RBAC kataloğu ve kullanıcı rol atamaları
+
+28. **audit_events** - Ana işlemle aynı transaction içinde yazılan append-only denetim olayları
+
+29. **system_errors** - Temizlenmiş merkezi hata kaydı; kaynak, önem, durum, tekrar sayısı, inceleme ve çözüm metadatası
+
 > Note: `siparis_taslaklari` (order drafts) and `cam_aile_katalogu` (glass family catalog) are **not** database tables — drafts live in `localStorage`, and the glass-family catalog is derived logic over `stok` (see `lib/cam.ts`).
 
 The `production_stations` RBAC module controls the sidebar's **Üretim İstasyonları** area and all four station screens under one role permission: Poz Giriş, Kumanda Paneli, Gösterge Ekranı and Tamir İstasyonu. It does not select production-entry station definitions. Those remain per-personnel through `hr_personel.uretim_yetkileri_sinirli` and `hr_personel_istasyon_yetkileri` in Personel Yönetimi.
@@ -228,6 +240,10 @@ The `production_stations` RBAC module controls the sidebar's **Üretim İstasyon
 | `telegram_saatlik_rapor_metni` / `telegram_uretim_giris_rapor_metni` / `telegram_rapor_mesaji` | SQL-side Telegram message builders |
 | `telegram_otomatik_rapor_gonder()` | Current auto-send path (043): checks schedule/settings, POSTs to `check-and-send-report` edge function via `pg_net` |
 | `uretim_istasyon_yetkisi_kontrol()` | Trigger function that enforces per-personnel station permissions on production report rows |
+| `my_access_context()` | Aktif oturumun kullanıcı, rol, izin ve parola-değiştirme bağlamını döndürür |
+| `report_system_error(...)` | Hassas veriyi temizleyerek hata kaydını dedup/rate-limit kurallarıyla oluşturur veya günceller |
+| `acknowledge_system_errors_for_ai_export(uuid[])` | AAL2 + `errors/manage` ile AI'a aktarılan açık hataları incelemeye alır; en fazla 5000 kimlik |
+| `resolve_system_errors_from_report(uuid[])` | AAL2 + `errors/manage` ile doğrulanmış çözüm raporundaki hataları topluca kapatır; en fazla 500 kimlik |
 
 **Extensions:** `pg_net`, `pg_cron`. **pg_cron job:** `telegram-rapor-gonder` runs every minute (`* * * * *`), calling `telegram_otomatik_rapor_gonder()`.
 
@@ -270,10 +286,9 @@ Migration `044` adds performance indexes for repair lookups, wash-log progress, 
    - Settings hub with category grid, visibility-filtered from admin: Etiket, Araçlar, Personel, Hedef & Vardiya, Aksiyon Notu Presets, Telegram, Üretim İstasyonları
 
 9. **AdminPage.tsx** (`/admin`)
-   - Password-gated admin console
-   - Tab 1: all setting panels (includes Opti Export, not shown on `/ayarlar`); controls `/ayarlar` category visibility
-   - Tab 2: Üretim Girişi (operator report) history — date-range table, day detail edit/delete, Excel export
-   - Tab 3: Veri Yönetimi — searchable/paginated permanent deletion of batches and orders with dependent status recalculation
+   - Protected admin console; sensitive user, role, audit and error operations require current DB permission and AAL2 where applicable
+   - Overview, user management, role management, audit records, error records, production-entry history, data management and settings sections
+   - Error workflow supports sanitized AI export/acknowledgement and validated resolution-report import
 
 10. **PozGirisPage.tsx** (`/istasyonlar/poz-giris`, full-screen, no sidebar)
     - Planning/office station — batch selection (export_edildi/yikamada/eksik_var) and GLS/poz barcode scanning
@@ -350,6 +365,11 @@ Migration `044` adds performance indexes for repair lookups, wash-log progress, 
 - **YikamaAdetBadge.tsx** - Shared partial/complete wash-count display for order and batch details
 
 ### Admin (src/components/admin/)
+- **AdminOverview.tsx** - Yönetim alanlarına ve operasyonel durumlara bağlantı veren özet ekran
+- **KullaniciYonetimiPanel.tsx** - Auth hesabı, personel bağlantısı, rol ve hesap yaşam döngüsü yönetimi
+- **RolYonetimiPanel.tsx** - Rol kataloğu ve atomik izin matrisi yönetimi
+- **AuditKayitlariPanel.tsx** - Append-only denetim kayıtlarını filtreleme ve inceleme
+- **HataKayitlariPanel.tsx** - Merkezi hata kayıtları, AI dışa aktarma ve çözüm raporu içe aktarma akışı
 - **VeriYonetimiPanel.tsx** - Permanent batch/order deletion UI with search, status filtering, server-side order pagination and confirmation warnings
 
 ### Ayarlar (src/components/ayarlar/)
@@ -495,7 +515,13 @@ type TelegramRaporTipi = 'saatlik' | 'uretim_giris' | 'her_ikisi'
 - generateBatchNo() → BATCH-YYYY-NNNN
 - Uses PostgreSQL `sonraki_sayac()` function with UPSERT for atomic increments
 
-**supabase.ts** - Supabase client initialization from Vite env vars
+**supabase.ts / supabaseUrl.ts** - Vite env değişkenlerinden Supabase istemcisi; yerel ağ geliştirmesinde localhost hedefini güvenli biçimde tarayıcı hostuna uyarlama
+
+**authError.ts / edgeFunctionError.ts** - Auth ve Edge Function hata yanıtlarını kullanıcıya anlaşılır, ayrıntı kaybetmeyen mesajlara dönüştürür
+
+**errorReporter.ts** - Global istemci hata aktarımı, geliştirme gürültüsü filtresi ve hassas veri temizleme sınırı
+
+**errorResolutionReport.ts** - AI çözüm raporunun türünü, kimliklerini ve tekrarlarını doğrulayan saf parser
 
 **utils.ts**
 - cn() - Tailwind class merging (clsx + tailwind-merge)
@@ -697,6 +723,6 @@ High-risk areas with existing regression tests include label DPL/printing, order
 - TypeScript 6.0.2, Vite 8.0.4
 - Tailwind CSS 4.2.2, Lucide React 1.8.0
 - React Hook Form 7.72.1, Zod 4.3.6, @hookform/resolvers 5.2.2
-- @tanstack/react-table 8.21.3
-- PapaParse 5.5.3, PDF.js (pdfjs-dist) 5.6.205, ExcelJS 4.4.0
+- @tanstack/react-table 8.21.3 ve PapaParse 5.5.3 paketleri kurulu ancak mevcut kaynakta doğrudan kullanılmıyor
+- PDF.js (pdfjs-dist) 5.6.205, ExcelJS 4.4.0
 - Vitest 4.1.10, ESLint 9.39.4

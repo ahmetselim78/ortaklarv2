@@ -18,6 +18,23 @@ Güvenli kanaldan aşağıdaki Edge Secrets değerlerini tanımlayın:
 
 `TELEGRAM_CRON_SECRET` ve `OPS_ALERT_SECRET` birbirinden farklı, rastgele en az 32 bayt değerler olmalıdır. Supabase'in yönettiği `SUPABASE_URL`, `SUPABASE_ANON_KEY` ve `SUPABASE_SERVICE_ROLE_KEY` yalnız Edge çalışma ortamında kullanılır.
 
+### Yerel OCR geliştirme ortamı
+
+OCR anahtarı frontend'deki `VITE_*` değişkenlerinden okunmaz. Yerel Edge Runtime için git tarafından yok sayılan `supabase/.env.local` dosyasını oluşturun:
+
+```dotenv
+MISTRAL_API_KEY=<mistral-anahtari>
+ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+```
+
+Ardından fonksiyonları bu dosyayla başlatın:
+
+```sh
+supabase functions serve --env-file supabase/.env.local
+```
+
+Uzak Supabase projesinde aynı değerler Edge Secrets olarak tanımlanmalı ve fonksiyon yeniden dağıtılmalıdır. Anahtarı `.env.local` içindeki `VITE_MISTRAL_API_KEY` adıyla tarayıcı bundle'ına vermeyin; daha önce bu adla kullanılan anahtarı Mistral tarafında döndürün.
+
 ## Telegram pg_cron kimliği
 
 `052` migration'ından sonra iki değer Supabase Vault'a yönetici SQL oturumuyla eklenir. Gerçek değerleri terminal geçmişine yazmayan güvenli parametre/secret enjeksiyon yöntemi kullanın:

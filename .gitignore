@@ -32,3 +32,12 @@ crash.log
 *.sw?
 
 before-security-schema.sql
+
+# Yerel Codex/test çalışma alanları
+.codex-sidebar-harness/
+
+# Harici Opti referansları ve yerel karşılaştırma çıktıları
+opti programı için export/
+
+# Yazıcı köprüsünün dağıtım çıktısı; kaynak dosya yazici-kopru.js'dir
+yazici-kopru/*.exe

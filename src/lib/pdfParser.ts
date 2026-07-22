@@ -1,4 +1,5 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import { functionErrorMessage } from './edgeFunctionError'
 import { supabase } from './supabase'
 import {
   extractKatmanYapisiFromText,
@@ -50,6 +51,16 @@ export interface PDFCamSatir {
 /** Progress callback tipi */
 export type PDFProgressCallback = (msg: string) => void
 
+class OcrEdgeFunctionError extends Error {
+  readonly status?: number
+
+  constructor(message: string, status?: number) {
+    super(message)
+    this.name = 'OcrEdgeFunctionError'
+    this.status = status
+  }
+}
+
 type PdfTextItem = {
   str?: unknown
   transform?: number[]
@@ -72,6 +83,7 @@ type PdfTextItem = {
  */
 export async function pdfToText(file: File, onProgress?: PDFProgressCallback): Promise<string> {
   const buffer = await file.arrayBuffer()
+  let imageOcrAvailable = true
 
   // 1) Raw PDF → Mistral OCR (BİRİNCİL YOL)
   try {
@@ -84,18 +96,24 @@ export async function pdfToText(file: File, onProgress?: PDFProgressCallback): P
     console.warn('[PDF] Raw PDF OCR çok az metin döndürdü, fallback denenecek')
   } catch (e) {
     console.warn('[PDF] Raw PDF OCR başarısız, fallback denenecek:', e)
+    // Yetki, yapılandırma veya gateway hatasında aynı Edge Function'ı her
+    // sayfa için yeniden çağırmak sonucu değiştirmez; yalnızca yeni hata
+    // kayıtları ve gereksiz bekleme üretir. Yerel metin çıkarımına geçilir.
+    imageOcrAvailable = !(e instanceof OcrEdgeFunctionError)
   }
 
   // 2) Sayfa-sayfa canvas OCR fallback
-  try {
-    onProgress?.('Sayfa-sayfa görüntü OCR fallback...')
-    const text = await mistralOCRPageByPage(buffer.slice(0), onProgress)
-    if (text && text.length > 100) {
-      console.log('[PDF] ✓ Sayfa-sayfa OCR fallback başarılı')
-      return text
+  if (imageOcrAvailable) {
+    try {
+      onProgress?.('Sayfa-sayfa görüntü OCR fallback...')
+      const text = await mistralOCRPageByPage(buffer.slice(0), onProgress)
+      if (text && text.length > 100) {
+        console.log('[PDF] ✓ Sayfa-sayfa OCR fallback başarılı')
+        return text
+      }
+    } catch (e) {
+      console.warn('[PDF] Sayfa-sayfa OCR de başarısız:', e)
     }
-  } catch (e) {
-    console.warn('[PDF] Sayfa-sayfa OCR de başarısız:', e)
   }
 
   // 3) pdf.js text extraction son çare
@@ -172,7 +190,9 @@ async function callMistralOcrEdgeFunction(
   )
 
   if (error) {
-    throw new Error(error.message ?? 'Edge Function hatası')
+    const status = (error as { context?: Response }).context?.status
+    const message = await functionErrorMessage(error, { serviceName: 'Mistral OCR servisi' })
+    throw new OcrEdgeFunctionError(message, status)
   }
 
   const pages = data?.pages as { index: number; markdown: string }[] | undefined

@@ -7,6 +7,7 @@ import {
 import { useAuth } from '@/auth/AuthContext'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import { useEscape } from '@/hooks/useEscape'
+import { functionErrorMessage } from '@/lib/edgeFunctionError'
 import { supabase } from '@/lib/supabase'
 import { isValidPassword, PASSWORD_POLICY_MESSAGE } from '@/lib/passwordPolicy'
 
@@ -38,17 +39,6 @@ const BOS_FORM = {
 }
 
 const inputSinifi = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-gray-100'
-
-async function functionErrorMessage(error: unknown) {
-  const context = (error as { context?: Response } | null)?.context
-  if (context) {
-    try {
-      const payload = await context.clone().json() as { error?: string }
-      if (payload.error) return payload.error
-    } catch { /* Yanıt JSON değilse standart hata mesajına düşülür. */ }
-  }
-  return error instanceof Error ? error.message : 'İşlem tamamlanamadı.'
-}
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || '?'
@@ -113,29 +103,50 @@ export default function KullaniciYonetimiPanel() {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const [userRes, roleRes, personelRes] = await Promise.all([
-      supabase.functions.invoke('admin-users', { body: { operation: 'list' } }),
-      supabase.from('roles').select('id, slug, name_tr').eq('is_active', true).order('name_tr'),
-      supabase.from('hr_personel').select('id, ad_soyad, rol, is_aktif').order('ad_soyad'),
-    ])
-    const firstError = userRes.error ?? roleRes.error ?? personelRes.error
-    if (firstError) {
-      setError(await functionErrorMessage(firstError))
-    } else {
-      const loadedRoles = (roleRes.data ?? []) as Role[]
-      const defaultPersonalRole = loadedRoles.find(role => role.slug === 'operator')
-        ?? loadedRoles.find(role => role.slug !== 'viewer_device')
-      setUsers(((userRes.data?.users ?? []) as UserRowWire[]).map(normalizeUserRow))
-      setRoles(loadedRoles)
-      setPersonnel((personelRes.data ?? []) as Personel[])
-      setForm(current => ({
-        ...current,
-        role_id: loadedRoles.some(role => role.id === current.role_id && role.slug !== 'viewer_device')
-          ? current.role_id
-          : (defaultPersonalRole?.id ?? ''),
+    try {
+      const [userRes, roleRes, personelRes] = await Promise.all([
+        supabase.functions.invoke('admin-users', { body: { operation: 'list' } }),
+        supabase.from('roles').select('id, slug, name_tr').eq('is_active', true).order('name_tr'),
+        supabase.from('hr_personel').select('id, ad_soyad, rol, is_aktif').order('ad_soyad'),
+      ])
+
+      const errors: string[] = []
+      if (userRes.error) {
+        errors.push(await functionErrorMessage(userRes.error, {
+          serviceName: 'Kullanıcı yönetimi servisi',
+          localEdgeRuntimeHint: import.meta.env.DEV,
+        }))
+      } else {
+        setUsers(((userRes.data?.users ?? []) as UserRowWire[]).map(normalizeUserRow))
+      }
+
+      if (roleRes.error) {
+        errors.push(roleRes.error.message)
+      } else {
+        const loadedRoles = (roleRes.data ?? []) as Role[]
+        const defaultPersonalRole = loadedRoles.find(role => role.slug === 'operator')
+          ?? loadedRoles.find(role => role.slug !== 'viewer_device')
+        setRoles(loadedRoles)
+        setForm(current => ({
+          ...current,
+          role_id: loadedRoles.some(role => role.id === current.role_id && role.slug !== 'viewer_device')
+            ? current.role_id
+            : (defaultPersonalRole?.id ?? ''),
+        }))
+      }
+
+      if (personelRes.error) errors.push(personelRes.error.message)
+      else setPersonnel((personelRes.data ?? []) as Personel[])
+
+      setError(errors[0] ?? null)
+    } catch (loadError) {
+      setError(await functionErrorMessage(loadError, {
+        serviceName: 'Kullanıcı yönetimi servisi',
+        localEdgeRuntimeHint: import.meta.env.DEV,
       }))
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [])
 
   useEffect(() => { queueMicrotask(() => void load()) }, [load])
@@ -147,7 +158,10 @@ export default function KullaniciYonetimiPanel() {
     setSuccess(null)
     const { data, error: invokeError } = await supabase.functions.invoke('admin-users', { body })
     if (invokeError || data?.error) {
-      setError(data?.error ?? await functionErrorMessage(invokeError))
+      setError(data?.error ?? await functionErrorMessage(invokeError, {
+        serviceName: 'Kullanıcı yönetimi servisi',
+        localEdgeRuntimeHint: import.meta.env.DEV,
+      }))
       setPending(null)
       return false
     }
@@ -318,7 +332,10 @@ export default function KullaniciYonetimiPanel() {
     for (const body of operations) {
       const { data, error: invokeError } = await supabase.functions.invoke('admin-users', { body })
       if (invokeError || data?.error) {
-        const message = data?.error ?? await functionErrorMessage(invokeError)
+        const message = data?.error ?? await functionErrorMessage(invokeError, {
+          serviceName: 'Kullanıcı yönetimi servisi',
+          localEdgeRuntimeHint: import.meta.env.DEV,
+        })
         await load()
         setError(message)
         setPending(null)
@@ -418,7 +435,39 @@ export default function KullaniciYonetimiPanel() {
               ) : filtreliKullanicilar.length === 0 ? (
                 <div className="py-20 text-center"><Users className="mx-auto text-gray-300" size={28} /><p className="mt-3 text-sm font-medium text-gray-600">Eşleşen kullanıcı bulunamadı</p></div>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                <div className="divide-y divide-gray-100 md:hidden">
+                  {filtreliKullanicilar.map(user => {
+                    const isSelf = user.auth_user_id === currentUserId
+                    const role = user.user_roles?.[0]?.roles
+                    const isLastAdministrator = user.is_active && role?.slug === 'administrator' && activeAdministratorCount <= 1
+                    const actionPending = pending?.endsWith(`:${user.auth_user_id}`) ?? false
+                    return (
+                      <article key={user.auth_user_id} className={`p-4 ${user.is_active ? 'bg-white' : 'bg-gray-50/80'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${user.is_active ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-500'}`}>{initials(user.display_name || user.email || '')}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2"><h4 className="break-words text-sm font-bold text-gray-900">{user.display_name || user.email}</h4>{isSelf && <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">SİZ</span>}</div>
+                            <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-gray-500"><Mail size={11} className="shrink-0" /><span className="truncate">{user.email ?? 'E-posta yok'}</span></p>
+                          </div>
+                          <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold ${user.is_active ? 'text-emerald-700' : 'text-gray-500'}`}><span className={`h-2 w-2 rounded-full ${user.is_active ? 'bg-emerald-500' : 'bg-gray-400'}`} />{user.is_active ? 'Aktif' : 'Pasif'}</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-bold ${roleRenk(role?.slug)}`}><ShieldCheck size={12} />{role?.name_tr ?? 'Rol yok'}</span>
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">{user.account_type === 'device' ? <Monitor size={12} /> : <UserCog size={12} />}{user.account_type === 'device' ? 'Ortak cihaz' : 'Kişisel hesap'}</span>
+                          {user.must_change_password && <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Parola değişimi bekliyor</span>}
+                        </div>
+                        {user.personel && <p className="mt-3 text-xs text-gray-500">Personel: <strong className="text-gray-700">{user.personel.ad_soyad}</strong> · {user.personel.rol}</p>}
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          <button type="button" onClick={() => duzenlemeAc(user)} className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs font-semibold text-gray-700"><Pencil size={12} /> Düzenle</button>
+                          <button type="button" disabled={isSelf || isLastAdministrator || actionPending} onClick={() => void changeActive(user)} className={`inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-semibold disabled:opacity-40 ${user.is_active ? 'border-amber-200 text-amber-700' : 'border-emerald-200 text-emerald-700'}`}>{actionPending ? <Loader2 size={12} className="animate-spin" /> : user.is_active ? <UserX size={12} /> : <UserCheck size={12} />}{user.is_active ? 'Pasifleştir' : 'Etkinleştir'}</button>
+                          <button type="button" disabled={isSelf || isLastAdministrator || actionPending} onClick={() => silmeOnayiAc(user)} className="inline-flex items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-xs font-semibold text-red-700 disabled:opacity-40"><Trash2 size={12} /> Sil</button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[1050px] text-left text-sm">
                     <thead className="bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                       <tr><th className="px-4 py-3">Kullanıcı</th><th className="px-4 py-3">Rol</th><th className="px-4 py-3">Personel</th><th className="px-4 py-3">Hesap bilgisi</th><th className="px-4 py-3">Durum</th><th className="px-4 py-3 text-right">İşlemler</th></tr>
@@ -455,6 +504,7 @@ export default function KullaniciYonetimiPanel() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </section>
           </>
@@ -504,10 +554,10 @@ export default function KullaniciYonetimiPanel() {
       )}
 
       {yeniHesapAcik && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="yeni-kullanici-baslik" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4"><div><h3 id="yeni-kullanici-baslik" className="font-bold text-gray-900">Yeni kullanıcı</h3><p className="mt-1 text-xs text-gray-500">Giriş hesabı oluşturun ve yetkisini belirleyin.</p></div><button type="button" aria-label="Pencereyi kapat" onClick={() => setYeniHesapAcik(false)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X size={18} /></button></div>
-            <div className="grid gap-4 p-5 sm:grid-cols-2">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-gray-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="yeni-kullanici-baslik" className="flex h-full max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl">
+            <div className="flex shrink-0 items-start justify-between border-b border-gray-200 px-4 py-4 sm:px-5"><div><h3 id="yeni-kullanici-baslik" className="font-bold text-gray-900">Yeni kullanıcı</h3><p className="mt-1 text-xs text-gray-500">Giriş hesabı oluşturun ve yetkisini belirleyin.</p></div><button type="button" aria-label="Pencereyi kapat" onClick={() => setYeniHesapAcik(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X size={18} /></button></div>
+            <div className="grid min-h-0 flex-1 touch-pan-y gap-4 overflow-y-auto overscroll-contain p-4 sm:grid-cols-2 sm:p-5">
               <div className="sm:col-span-2"><label className="mb-1.5 block text-xs font-semibold text-gray-700">Ad soyad *</label><input aria-label="Ad soyad" value={form.display_name} onChange={e => setForm(v => ({ ...v, display_name: e.target.value }))} className={inputSinifi} /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-gray-700">E-posta *</label><input aria-label="E-posta" type="email" value={form.email} onChange={e => setForm(v => ({ ...v, email: e.target.value }))} className={inputSinifi} /></div>
               <div><label className="mb-1.5 block text-xs font-semibold text-gray-700">Kullanıcı adı</label><input aria-label="Kullanıcı adı" value={form.username} onChange={e => setForm(v => ({ ...v, username: e.target.value }))} className={inputSinifi} /></div>
@@ -517,7 +567,7 @@ export default function KullaniciYonetimiPanel() {
               <div className="sm:col-span-2"><label className="mb-1.5 block text-xs font-semibold text-gray-700">Personel bağlantısı</label><select aria-label="Personel bağlantısı" value={form.personel_id} disabled={form.account_type === 'device'} onChange={e => setForm(v => ({ ...v, personel_id: e.target.value }))} className={inputSinifi}><option value="">Bağlantı yok</option>{secilebilirPersonel().map(person => <option key={person.id} value={person.id}>{person.ad_soyad} · {person.rol}</option>)}</select><p className="mt-1.5 text-[11px] text-gray-500">Yalnızca hesap belirli bir çalışana aitse seçim yapın.</p></div>
               {error && <div className="sm:col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
             </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4"><button type="button" onClick={() => setYeniHesapAcik(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Vazgeç</button><button type="button" disabled={pending !== null} onClick={() => void create()} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{pending?.startsWith('create:') ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Kullanıcı oluştur</button></div>
+            <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row sm:justify-end sm:px-5 sm:py-4"><button type="button" onClick={() => setYeniHesapAcik(false)} className="min-h-11 w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">Vazgeç</button><button type="button" disabled={pending !== null} onClick={() => void create()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 sm:w-auto">{pending?.startsWith('create:') ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Kullanıcı oluştur</button></div>
           </div>
         </div>
       )}
