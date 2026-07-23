@@ -341,7 +341,7 @@ export default function KumandaPaneliPage() {
 
   useEffect(() => {
     const channel = supabase
-      .channel('uretim-istasyonlar')
+      .channel('uretim-istasyonlar', { config: { private: true } })
       .on('broadcast', { event: 'cita_onay_durumu' }, ({ payload }) => {
         const p = payload as any
         if (p.bekliyor) {

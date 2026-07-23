@@ -17,13 +17,14 @@ const roleBySlug = new Map(roles.map(role => [role.slug, role.id]))
 
 for (const item of mapping) {
   const { data: personel, error: personelError } = await service.from('hr_personel')
-    .select('id, ad_soyad, kullanici_adi, giris_sifresi, is_aktif').eq('id', item.personel_id).single()
+    .select('id, ad_soyad, giris_sifresi, is_aktif').eq('id', item.personel_id).single()
   if (personelError) throw personelError
   if (!personel.is_aktif) { console.log(`${personel.id}: pasif, atlandı`); continue }
   const roleId = roleBySlug.get(item.role_slug)
   if (!roleId) throw new Error(`${personel.id}: rol bulunamadı: ${item.role_slug}`)
   const email = String(item.email ?? '').trim().toLowerCase()
   if (!email.includes('@')) throw new Error(`${personel.id}: geçerli e-posta gerekli`)
+  const username = String(item.username ?? '').trim() || null
 
   const intentId = randomUUID()
   await service.from('audit_events').insert({
@@ -36,7 +37,7 @@ for (const item of mapping) {
   const initialPassword = canKeepPassword ? legacyPassword : `${randomBytes(18).toString('base64url')}aA1!`
   const { data: created, error: createError } = await service.auth.admin.createUser({
     email, password: initialPassword, email_confirm: true,
-    user_metadata: { display_name: personel.ad_soyad, username: personel.kullanici_adi, must_change_password: !canKeepPassword },
+    user_metadata: { display_name: personel.ad_soyad, username, must_change_password: !canKeepPassword },
   })
   if (createError || !created.user) {
     await service.from('audit_events').insert({
@@ -47,7 +48,7 @@ for (const item of mapping) {
   }
   try {
     await service.from('app_users').upsert({
-      auth_user_id: created.user.id, personel_id: personel.id, username: personel.kullanici_adi,
+      auth_user_id: created.user.id, personel_id: personel.id, username,
       display_name: personel.ad_soyad, account_type: 'personal', is_active: true,
       must_change_password: !canKeepPassword, auth_migrated_at: null,
     }).throwOnError()

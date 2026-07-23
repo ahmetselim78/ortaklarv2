@@ -8,6 +8,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { bugunGoster, bugunTarih, formatSaatTr, tarihEtiketTr, trSaatStr } from '@/lib/tarih'
 import type { HrPersonel } from '@/types/saatlikUretim'
+import { recordSessionAction } from '@/lib/deviceSession'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tema = 'dark' | 'light'
@@ -344,7 +345,7 @@ function GirisEkrani({
 
       const { data, error } = await supabase
         .from('hr_personel')
-        .select('id, ad_soyad, foto_url, rol, is_aktif, olusturma, kullanici_adi, uretim_yetkileri_sinirli')
+        .select('id, ad_soyad, foto_url, rol, is_aktif, olusturma, uretim_yetkileri_sinirli')
         .eq('id', personelId)
         .eq('is_aktif', true)
         .maybeSingle()
@@ -1028,6 +1029,7 @@ function OzetEkrani({
       }
 
       setYerelKaydedildi(true)
+      recordSessionAction('production_entry_save')
       onKaydedildi(rapor.id)
     } catch (err) {
       setHata(err instanceof Error ? err.message : 'Kayıt hatası oluştu.')

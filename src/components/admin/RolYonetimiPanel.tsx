@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useEscape } from '@/hooks/useEscape'
 import { supabase } from '@/lib/supabase'
+import { recordSessionAction } from '@/lib/deviceSession'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 
 interface Role { id: string; slug: string; name_tr: string; is_system: boolean }
@@ -385,6 +386,7 @@ export default function RolYonetimiPanel() {
     } else {
       setName('')
       setCreateOpen(false)
+      recordSessionAction('admin_role_create')
       setSuccess('Yeni rol oluşturuldu. Şimdi bu role yetki seçebilirsiniz.')
       await load(data.id, true)
     }
@@ -447,6 +449,7 @@ export default function RolYonetimiPanel() {
     } else {
       setReviewOpen(false)
       await load(selected)
+      recordSessionAction('admin_role_permissions_update')
       setSuccess('Rol yetkileri başarıyla güncellendi.')
     }
     setSaving(false)
@@ -464,53 +467,53 @@ export default function RolYonetimiPanel() {
       const nextRole = roles.find(role => role.id !== selectedRole.id)
       setDeleteOpen(false)
       await load(nextRole?.id, true)
+      recordSessionAction('admin_role_delete')
       setSuccess(`“${selectedRole.name_tr}” rolü silindi.`)
     }
     setDeleting(false)
   }
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <header className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-white p-5">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-indigo-600 p-2.5 text-white"><ShieldCheck size={24} /></div>
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Rol ve Yetki Yönetimi</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-              Bir rol seçin, kullanabileceği işlemleri işaretleyin ve son olarak değişiklikleri kaydedin. Seçimleriniz, siz onaylayana kadar uygulanmaz.
-            </p>
+    <div className="flex flex-col gap-5 p-4 sm:p-6 xl:h-dvh xl:overflow-hidden">
+      <header className="shrink-0 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-white px-4 py-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="shrink-0 rounded-lg bg-indigo-600 p-2 text-white"><ShieldCheck size={18} /></div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-slate-900">Rol ve Yetki Yönetimi</h2>
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                Rol seçin, yetkileri işaretleyin ve kaydedin. Onaylanana kadar uygulanmaz.
+              </p>
+            </div>
           </div>
-        </div>
-        <div aria-live="polite" className="mt-4 flex min-h-16 flex-col gap-3 border-t border-indigo-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="font-semibold text-slate-900">
-              {changes.length > 0 ? `${changes.length} rolde ${totalChanges} kaydedilmemiş değişiklik var` : 'Kaydedilmemiş değişiklik yok'}
+          <div aria-live="polite" className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between lg:justify-end">
+            <p className="text-xs font-semibold text-slate-700 sm:mr-3">
+              {changes.length > 0
+                ? `${changes.length} rolde ${totalChanges} kaydedilmemiş değişiklik`
+                : 'Kaydedilmemiş değişiklik yok'}
             </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {changes.length > 0 ? 'Değişiklikler henüz kullanıcılara uygulanmadı.' : 'Yetki seçiminde değişiklik yaptığınızda buradan kaydedebilirsiniz.'}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button type="button" disabled={changes.length === 0} onClick={discardChanges} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"><RotateCcw size={15} />Geri al</button>
-            <button type="button" disabled={changes.length === 0} onClick={() => setReviewOpen(true)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 sm:flex-none"><Save size={16} />Değişiklikleri kaydet</button>
+            <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[22rem]">
+              <button type="button" disabled={changes.length === 0} onClick={discardChanges} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><RotateCcw size={14} />Geri al</button>
+              <button type="button" disabled={changes.length === 0} onClick={() => setReviewOpen(true)} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"><Save size={14} />Kaydet</button>
+            </div>
           </div>
         </div>
       </header>
 
-      {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><AlertCircle size={18} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-      {success && <div role="status" className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check size={18} className="mt-0.5 shrink-0" /><span>{success}</span></div>}
+      {error && <div role="alert" className="flex shrink-0 items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><AlertCircle size={18} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+      {success && <div role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check size={18} className="mt-0.5 shrink-0" /><span>{success}</span></div>}
 
       {loading ? (
-        <div className="flex min-h-64 items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /><span className="ml-2 text-sm text-slate-500">Roller yükleniyor...</span></div>
+        <div className="flex min-h-64 flex-1 items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /><span className="ml-2 text-sm text-slate-500">Roller yükleniyor...</span></div>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="space-y-3">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 p-4">
+        <div className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col gap-3 xl:overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="shrink-0 border-b border-slate-200 p-4">
                 <p className="text-sm font-bold text-slate-900">1. Rol seçin</p>
                 <p className="mt-1 text-xs text-slate-500">Yetkilerini düzenlemek istediğiniz rol</p>
               </div>
-              <div className="max-h-[560px] space-y-1 overflow-y-auto p-2">
+              <div className="max-h-[560px] space-y-1 overflow-y-auto overscroll-contain p-2 xl:max-h-none xl:min-h-0 xl:flex-1">
                 {roles.map(role => {
                   const isSelected = selected === role.id
                   const permissionCount = originalByRole[role.id]?.size ?? 0
@@ -537,7 +540,7 @@ export default function RolYonetimiPanel() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <button type="button" onClick={() => setCreateOpen(open => !open)} className="flex w-full items-center justify-between p-4 text-left">
                 <span className="flex items-center gap-2 text-sm font-bold text-slate-900"><Plus size={16} className="text-indigo-600" />Yeni rol oluştur</span>
                 {createOpen ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
@@ -556,41 +559,32 @@ export default function RolYonetimiPanel() {
             </div>
           </aside>
 
-          <main className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <main className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
             {selectedRole ? (
               <>
-                <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-bold text-slate-900">{selectedRole.name_tr}</h3>
-                      {selectedRole.is_system && <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Sistem rolü</span>}
-                      {changedRoleIds.has(selectedRole.id) && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800">Kaydedilmemiş değişiklik var</span>}
+                      <h3 className="truncate text-base font-bold text-slate-900">{selectedRole.name_tr}</h3>
+                      {selectedRole.is_system && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Sistem rolü</span>}
+                      {changedRoleIds.has(selectedRole.id) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Kaydedilmedi</span>}
+                      <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">{selectedPermissionIds.size} yetki</span>
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{selectedUserCount} kullanıcı</span>
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">2. Bu role verilecek yetkileri seçin.</p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-lg bg-indigo-50 px-2.5 py-1.5 font-medium text-indigo-700">{selectedPermissionIds.size} yetki seçili</span>
-                      <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">{selectedUserCount} kullanıcı bu rolde</span>
-                    </div>
+                    <p className="mt-0.5 text-xs text-slate-500">Bu role verilecek yetkileri seçin</p>
                   </div>
-                  <div className="sm:text-right">
-                    <button
-                      type="button"
-                      onClick={() => setDeleteOpen(true)}
-                      disabled={selectedRole.is_system || selectedUserCount > 0}
-                      title={selectedRole.is_system ? 'Sistem rolleri silinemez' : selectedUserCount > 0 ? 'Kullanıcıya atanmış roller silinemez' : 'Bu rolü sil'}
-                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:hover:bg-white"
-                    >
-                      <Trash2 size={15} />Rolü sil
-                    </button>
-                    {(selectedRole.is_system || selectedUserCount > 0) && (
-                      <p className="mt-1.5 max-w-64 text-xs leading-4 text-slate-400">
-                        {selectedRole.is_system ? 'Sistem rolleri güvenlik nedeniyle silinemez.' : `Bu rol ${selectedUserCount} kullanıcıya atanmış. Silmek için önce kullanıcıların rolünü değiştirin.`}
-                      </p>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={selectedRole.is_system || selectedUserCount > 0}
+                    title={selectedRole.is_system ? 'Sistem rolleri güvenlik nedeniyle silinemez' : selectedUserCount > 0 ? `Bu rol ${selectedUserCount} kullanıcıya atanmış. Silmek için önce kullanıcıların rolünü değiştirin.` : 'Bu rolü sil'}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-red-200 px-2.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:hover:bg-white"
+                  >
+                    <Trash2 size={13} />Rolü sil
+                  </button>
                 </div>
 
-                <div className="p-5">
+                <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
                   <div className="space-y-8">
                     {categorizedPermissionGroups.map(category => (
                       <section key={category.key}>

@@ -86,4 +86,6 @@ almadan çalışır. Anonimleştirilmiş otomatik test fixture'ları
 
 Dağıtım, Cloud Build üzerinden container imajı oluşturup Cloud Run'a gönderir.
 Operasyonel dağıtım ayrıntıları `cloudbuild.yaml`, `cloudbuild.ops.yaml`,
-`infra/gcp/` ve `ops/backup/` altında bulunur.
+`infra/gcp/` ve `ops/backup/` altında bulunur. Yeni Google Drive yedekleme
+akışı ise eski yönteme dokunmadan `cloudbuild.drive-backup.yaml`,
+`infra/gcp-drive/` ve `ops/drive-backup/` altında hazırlanmıştır.

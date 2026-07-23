@@ -10,6 +10,7 @@ import {
   DURUM_ETIKETLERI, SORUN_ETIKETLERI, KAYNAK_ETIKETLERI,
 } from '@/types/tamir'
 import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
+import { recordSessionAction } from '@/lib/deviceSession'
 
 /* ========== Yardımcı renkler ========== */
 
@@ -154,11 +155,13 @@ export default function TamirIstasyonuPage() {
         ? { ...k, durum: yeniDurum, tamamlanma_tarihi: patch.tamamlanma_tarihi as string ?? k.tamamlanma_tarihi, tamamlanma_notu: notu ?? k.tamamlanma_notu }
         : k,
     ))
+    recordSessionAction('repair_status_update')
     setGuncellenenId(null)
   }
 
   const kayitSil = async (id: string) => {
     await supabase.from('tamir_kayitlari').delete().eq('id', id)
+    recordSessionAction('repair_delete')
     setKayitlar(prev => prev.filter(k => k.id !== id))
   }
 

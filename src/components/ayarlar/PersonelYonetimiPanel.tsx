@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, ShieldCheck, Factory } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserCheck, UserX, User, AlertCircle, Loader2, Upload, X, Factory } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { r2Upload, R2UploadHata } from '@/lib/r2Upload'
 import type { HrPersonel, YeniPersonel } from '@/types/saatlikUretim'
@@ -19,7 +19,6 @@ const personelSchema = z.object({
     ),
   rol: z.enum(['Direkt', 'Endirekt'], { message: 'Rol seciniz' }),
   is_aktif: z.boolean(),
-  kullanici_adi: z.string(),
   uretim_yetkileri_sinirli: z.boolean(),
 })
 
@@ -216,7 +215,7 @@ export default function PersonelYonetimiPanel() {
     formState: { errors },
   } = useForm<PersonelFormDegerleri>({
     resolver: zodResolver(personelSchema),
-    defaultValues: { ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', uretim_yetkileri_sinirli: false },
+    defaultValues: { ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, uretim_yetkileri_sinirli: false },
   })
 
   const fotoUrl = watch('foto_url')
@@ -229,7 +228,7 @@ export default function PersonelYonetimiPanel() {
       const [personelRes, istasyonRes] = await Promise.all([
         supabase
           .from('hr_personel')
-          .select('id, ad_soyad, foto_url, rol, is_aktif, kullanici_adi, uretim_yetkileri_sinirli, hr_personel_istasyon_yetkileri(istasyon_id)')
+          .select('id, ad_soyad, foto_url, rol, is_aktif, uretim_yetkileri_sinirli, hr_personel_istasyon_yetkileri(istasyon_id)')
           .order('ad_soyad'),
         supabase.from('uretim_istasyonlari').select('id, ad, sira_no, aktif').eq('aktif', true).order('sira_no'),
       ])
@@ -257,7 +256,6 @@ export default function PersonelYonetimiPanel() {
       foto_url: p.foto_url ?? '',
       rol: p.rol as 'Direkt' | 'Endirekt',
       is_aktif: p.is_aktif,
-      kullanici_adi: p.kullanici_adi ?? '',
       uretim_yetkileri_sinirli: p.uretim_yetkileri_sinirli ?? false,
     })
     setYetkiliIstasyonIds(
@@ -269,7 +267,7 @@ export default function PersonelYonetimiPanel() {
 
   const duzenleIptal = () => {
     setDuzenlePersonel(null)
-    reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', uretim_yetkileri_sinirli: false })
+    reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, uretim_yetkileri_sinirli: false })
     setYetkiliIstasyonIds(istasyonlar.map(i => i.id))
   }
 
@@ -299,7 +297,6 @@ export default function PersonelYonetimiPanel() {
             ad_soyad: form.ad_soyad.trim(),
             foto_url: form.foto_url.trim(),
             rol: form.rol,
-            kullanici_adi: form.kullanici_adi?.trim() || null,
             uretim_yetkileri_sinirli: sinirli,
           })
           .eq('id', duzenlePersonel.id)
@@ -307,19 +304,18 @@ export default function PersonelYonetimiPanel() {
         await istasyonYetkileriniKaydet(duzenlePersonel.id, sinirli)
         setDuzenlePersonel(null)
       } else {
-        const yeni: YeniPersonel & { kullanici_adi?: string | null } = {
+        const yeni: YeniPersonel = {
           ad_soyad: form.ad_soyad.trim(),
           foto_url: form.foto_url.trim(),
           rol: form.rol,
           is_aktif: true,
-          kullanici_adi: form.kullanici_adi?.trim() || null,
           uretim_yetkileri_sinirli: sinirli,
         }
         const { data, error } = await supabase.from('hr_personel').insert([yeni]).select('id').single()
         if (error) throw error
         await istasyonYetkileriniKaydet(data.id, sinirli)
       }
-      reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, kullanici_adi: '', uretim_yetkileri_sinirli: false })
+      reset({ ad_soyad: '', foto_url: '', rol: 'Direkt', is_aktif: true, uretim_yetkileri_sinirli: false })
       setYetkiliIstasyonIds(istasyonlar.map(i => i.id))
       await getir()
     } catch (e) {
@@ -404,29 +400,11 @@ export default function PersonelYonetimiPanel() {
             </div>
           </div>
 
-          {/* ── Kimlik ve istasyon yetkisi ── */}
           <div className="border-t border-gray-100 pt-4">
-            <div className="flex items-center gap-2 mb-3">
-              <ShieldCheck size={13} className="text-violet-500" />
-              <p className="text-xs font-semibold text-gray-700">Operatör Kimliği</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-              {/* Kullanıcı Adı */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Kullanıcı Adı</label>
-                <input
-                  {...register('kullanici_adi')}
-                  placeholder="operatör1"
-                  autoComplete="off"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-                />
-              </div>
-              <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
-                <input type="checkbox" {...register('uretim_yetkileri_sinirli')} />
-                Üretim istasyonlarını sınırla
-              </label>
-            </div>
-            <p className="mt-2 text-[11px] text-gray-400">Parola yalnızca Supabase Auth tarafından tutulur. Mevcut parola görüntülenemez.</p>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
+              <input type="checkbox" {...register('uretim_yetkileri_sinirli')} />
+              Üretim istasyonlarını sınırla
+            </label>
           </div>
 
           {yetkiSinirli && (
@@ -570,12 +548,7 @@ export default function PersonelYonetimiPanel() {
                   <p className={`text-sm font-medium truncate ${p.is_aktif ? 'text-gray-800' : 'text-gray-500'}`}>
                     {p.ad_soyad}
                   </p>
-                  <p className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0">
-                    {p.rol}
-                    {p.kullanici_adi && (
-                      <span className="min-w-0 text-violet-500 truncate">@{p.kullanici_adi}</span>
-                    )}
-                  </p>
+                  <p className="text-xs text-gray-400 truncate">{p.rol}</p>
                 </div>
 
                 <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium ${

@@ -106,7 +106,7 @@ const TABLE_LABELS: Record<string, string> = {
 const FIELD_LABELS: Record<string, string> = {
   id: 'Kayıt no',
   ad_soyad: 'Ad soyad',
-  kullanici_adi: 'Kullanıcı adı',
+  username: 'Kullanıcı adı',
   email: 'E-posta',
   account_type: 'Hesap türü',
   auth_user_id: 'Giriş hesabı',
@@ -293,7 +293,7 @@ function recordDescription(event: AuditEvent, lookups: AuditLookups) {
     const account = lookups.actorAccounts.get(String(data.auth_user_id))
     if (account) return account.display_name.trim() || account.username || 'Kullanıcı hesabı'
   }
-  const preferredFields = ['ad_soyad', 'siparis_no', 'batch_no', 'stok_adi', 'name_tr', 'ad', 'kullanici_adi', 'operation']
+  const preferredFields = ['ad_soyad', 'siparis_no', 'batch_no', 'stok_adi', 'name_tr', 'ad', 'username', 'operation']
   const preferred = preferredFields.find(field => data[field] !== undefined && data[field] !== null)
   if (preferred) return formatValue(data[preferred], preferred, lookups)
   return 'İlgili kayıt'

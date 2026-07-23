@@ -15,6 +15,7 @@ import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/service
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
 import { useAuth } from '@/auth/AuthContext'
+import { recordSessionAction } from '@/lib/deviceSession'
 
 /* ========== Tipler ========== */
 
@@ -243,7 +244,7 @@ export default function PozGirisPage() {
   // Realtime kanal
   useEffect(() => {
     const ch = supabase
-      .channel('uretim-istasyonlar')
+      .channel('uretim-istasyonlar', { config: { private: true } })
       .on('broadcast', { event: 'cam_tamire_gonderildi' }, ({ payload }) => {
         const p = payload as TamirOlayPayload
         if (!p.cam_kodu || (p.batch_no && p.batch_no !== seciliBatchRef.current?.batch_no)) return
@@ -734,6 +735,7 @@ export default function PozGirisPage() {
     })
 
     setSonTarananCam({ ...cam, taranan_adet: tekrar ? cam.taranan_adet : yeniTarananadet })
+    if (!tekrar) recordSessionAction('production_scan')
     setAktifMusteri(`${cam.musteri}||${cam.nihai_musteri}`)
 
     // Tüm camlar yıkandı mı kontrol (her tarama 1 adet sayar)

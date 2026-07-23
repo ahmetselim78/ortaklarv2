@@ -20,17 +20,17 @@ Güvenli kanaldan aşağıdaki Edge Secrets değerlerini tanımlayın:
 
 ### Yerel OCR geliştirme ortamı
 
-OCR anahtarı frontend'deki `VITE_*` değişkenlerinden okunmaz. Yerel Edge Runtime için git tarafından yok sayılan `supabase/.env.local` dosyasını oluşturun:
+OCR anahtarı frontend'deki `VITE_*` değişkenlerinden okunmaz. Yerel Edge Runtime için git tarafından yok sayılan `supabase/functions/.env.local` dosyasını oluşturun:
 
 ```dotenv
 MISTRAL_API_KEY=<mistral-anahtari>
-ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.14:5173
 ```
 
 Ardından fonksiyonları bu dosyayla başlatın:
 
 ```sh
-supabase functions serve --env-file supabase/.env.local
+supabase functions serve --env-file supabase/functions/.env.local
 ```
 
 Uzak Supabase projesinde aynı değerler Edge Secrets olarak tanımlanmalı ve fonksiyon yeniden dağıtılmalıdır. Anahtarı `.env.local` içindeki `VITE_MISTRAL_API_KEY` adıyla tarayıcı bundle'ına vermeyin; daha önce bu adla kullanılan anahtarı Mistral tarafında döndürün.

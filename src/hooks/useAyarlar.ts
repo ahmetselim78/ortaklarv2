@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 import { etiketAyarlariBirlestir, VARSAYILAN_ETIKET_AYARLARI } from '@/types/ayarlar'
+import { recordSessionAction } from '@/lib/deviceSession'
 
 const ANAHTAR = 'etiket_ayarlari'
 
@@ -91,6 +92,7 @@ export function useAyarlar(): UseAyarlarReturn {
       if (error) throw error
 
       setEtiketAyarlari(normalizeEdilmis)
+      recordSessionAction('settings_label_save')
       return true
     } catch (e) {
       setHata(e instanceof Error ? e.message : 'Ayarlar kaydedilemedi')

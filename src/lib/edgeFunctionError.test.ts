@@ -23,6 +23,12 @@ describe('functionErrorMessage', () => {
       .resolves.toBe('Mistral OCR servisi zaman aşımına uğradı (HTTP 504). Lütfen yeniden deneyin.')
   })
 
+  it('düz metin 404 yanıtını JSON ayrıştırma hatasına dönüştürmez', async () => {
+    const error = { context: new Response('Function not found', { status: 404 }) }
+    await expect(functionErrorMessage(error, { serviceName: 'Cihaz oturumu servisi' }))
+      .resolves.toBe('Cihaz oturumu servisi isteği başarısız oldu (HTTP 404).')
+  })
+
   it('response içermeyen standart hatayı döndürür', async () => {
     await expect(functionErrorMessage(new Error('Bağlantı kesildi'))).resolves.toBe('Bağlantı kesildi')
   })

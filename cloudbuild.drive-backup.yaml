@@ -1,0 +1,35 @@
+substitutions:
+  _REGION: europe-west1
+  _REPOSITORY: ortaklar-drive-backup
+  _IMAGE: drive-backup
+  _TAG: manual
+
+steps:
+  - id: verify-auth-storage-diff
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        test -s supabase/auth_storage_diff.sql
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=ops/drive-backup/Dockerfile
+      - --build-arg=GIT_COMMIT=$COMMIT_SHA
+      - "--tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_TAG}"
+      - .
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_TAG}"
+
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_TAG}"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+serviceAccount: projects/$PROJECT_ID/serviceAccounts/ortaklar-drive-builder@$PROJECT_ID.iam.gserviceaccount.com

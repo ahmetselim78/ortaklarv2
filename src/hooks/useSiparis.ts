@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { generateSiparisNo } from '@/lib/idGenerator'
 import { tekilSiparisDetayRows } from '@/lib/siparisDetay'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
+import { recordSessionAction } from '@/lib/deviceSession'
 import type { Siparis, SiparisDetay, CamFormSatiri, SiparisDurum } from '@/types/siparis'
 
 /* ===== Durum geçiş matrisi ===== */
@@ -195,6 +196,7 @@ export function useSiparis() {
     }
 
     await Promise.all([getir(), durumSayilariniYenile()])
+    recordSessionAction('order_create')
     return { id: siparisId, siparis_no: siparis.siparis_no as string, teslim_tarihi: siparis.teslim_tarihi as string | null }
   }
 
@@ -211,6 +213,7 @@ export function useSiparis() {
     if (durum === 'tamamlandi') updatePayload.tamamlandi_tarihi = new Date().toISOString()
     const { error } = await supabase.from('siparisler').update(updatePayload).eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('order_status_update')
     await Promise.all([getir(), durumSayilariniYenile()])
   }
 
@@ -222,6 +225,7 @@ export function useSiparis() {
       notlar: form.notlar,
     }).eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('order_update')
     await getir()
   }
 
@@ -229,6 +233,7 @@ export function useSiparis() {
     // siparis_detaylari CASCADE ile otomatik silinir
     const { error } = await supabase.from('siparisler').delete().eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('order_delete')
     await Promise.all([getir(), durumSayilariniYenile()])
   }
 

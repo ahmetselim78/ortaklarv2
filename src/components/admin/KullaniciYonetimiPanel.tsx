@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthContext'
 import PersonelYonetimiPanel from '@/components/ayarlar/PersonelYonetimiPanel'
 import { useEscape } from '@/hooks/useEscape'
 import { functionErrorMessage } from '@/lib/edgeFunctionError'
+import { recordSessionAction } from '@/lib/deviceSession'
 import { supabase } from '@/lib/supabase'
 import { isValidPassword, PASSWORD_POLICY_MESSAGE } from '@/lib/passwordPolicy'
 
@@ -166,6 +167,7 @@ export default function KullaniciYonetimiPanel() {
       return false
     }
     await load()
+    recordSessionAction('admin_user_manage')
     setSuccess(successMessage)
     setPending(null)
     return true

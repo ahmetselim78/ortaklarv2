@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
@@ -26,6 +26,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
+
+  useEffect(() => {
+    const sessionNotice = window.sessionStorage.getItem('ortaklar.auth.notice')
+    if (!sessionNotice) return
+    window.sessionStorage.removeItem('ortaklar.auth.notice')
+    queueMicrotask(() => setNotice({ type: 'error', message: sessionNotice }))
+  }, [])
 
   if (session) return <Navigate to="/" replace />
 

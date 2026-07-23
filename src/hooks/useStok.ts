@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { generateStokKod } from '@/lib/idGenerator'
+import { recordSessionAction } from '@/lib/deviceSession'
 import type { Stok, YeniStok } from '@/types/stok'
 
 export function useStok() {
@@ -36,18 +37,21 @@ export function useStok() {
     const kod = form.kod?.trim() || await generateStokKod()
     const { error } = await supabase.from('stok').insert({ ...form, kod })
     if (error) throw new Error(error.message)
+    recordSessionAction('inventory_create')
     await getir()
   }
 
   const guncelle = async (id: string, form: Partial<YeniStok>) => {
     const { error } = await supabase.from('stok').update(form).eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('inventory_update')
     await getir()
   }
 
   const sil = async (id: string) => {
     const { error } = await supabase.from('stok').delete().eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('inventory_delete')
     await getir()
   }
 

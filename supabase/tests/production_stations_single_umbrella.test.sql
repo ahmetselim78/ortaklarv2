@@ -1,6 +1,7 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
+UPDATE public.device_session_settings SET enforcement_mode = 'observe';
 SELECT plan(6);
 
 SELECT is(

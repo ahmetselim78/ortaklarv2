@@ -1,6 +1,8 @@
 import { Component, type ReactNode } from 'react'
-import { AlertTriangle, RotateCcw } from 'lucide-react'
+import { AlertTriangle, LoaderCircle, LogOut, RotateCcw } from 'lucide-react'
+import { endCurrentDeviceSession } from '@/lib/deviceSession'
 import { reportError } from '@/lib/errorReporter'
+import { supabase } from '@/lib/supabase'
 
 interface Props {
   children: ReactNode
@@ -8,14 +10,26 @@ interface Props {
 
 interface State {
   hata: Error | null
+  cikisYapiliyor: boolean
 }
 
 /** Yakalanmayan render hatalarında beyaz ekran yerine bilgi + yenile butonu gösterir. */
 export default class ErrorBoundary extends Component<Props, State> {
-  state: State = { hata: null }
+  state: State = { hata: null, cikisYapiliyor: false }
 
-  static getDerivedStateFromError(hata: Error): State {
+  static getDerivedStateFromError(hata: Error): Partial<State> {
     return { hata }
+  }
+
+  private oturumuKapat = async () => {
+    this.setState({ cikisYapiliyor: true })
+    try {
+      try { await endCurrentDeviceSession() } catch { /* yerel çıkış engellenmez */ }
+      await supabase.removeAllChannels()
+      await supabase.auth.signOut({ scope: 'local' })
+    } finally {
+      window.location.replace('/giris')
+    }
   }
 
   componentDidCatch(hata: Error, info: { componentStack?: string | null }) {
@@ -43,13 +57,28 @@ export default class ErrorBoundary extends Component<Props, State> {
             Sayfayı yenileyerek devam edebilirsiniz. Sorun devam ederse yöneticinize bildirin.
           </p>
           <p className="mb-5 rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-600">Hata güvenli biçimde merkezi sisteme bildirildi.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <RotateCcw size={14} />
-            Sayfayı Yenile
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              disabled={this.state.cikisYapiliyor}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RotateCcw size={14} />
+              Sayfayı Yenile
+            </button>
+            <button
+              type="button"
+              onClick={() => void this.oturumuKapat()}
+              disabled={this.state.cikisYapiliyor}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {this.state.cikisYapiliyor
+                ? <LoaderCircle size={14} className="animate-spin" />
+                : <LogOut size={14} />}
+              {this.state.cikisYapiliyor ? 'Çıkış Yapılıyor...' : 'Oturumu Kapat'}
+            </button>
+          </div>
         </div>
       </div>
     )

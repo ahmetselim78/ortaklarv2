@@ -78,3 +78,17 @@ export function tarihEtiketTr(t: string): string {
     weekday: 'short',
   })
 }
+
+/** İstanbul saatine göre günün selamlaması */
+export function gunlukSelamlama(d = new Date()): string {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: TR_TIMEZONE,
+    hour: 'numeric',
+    hour12: false,
+  }).format(d))
+
+  if (hour >= 5 && hour < 12) return 'Günaydın'
+  if (hour >= 12 && hour < 18) return 'Tünaydın'
+  if (hour >= 18 && hour < 22) return 'İyi akşamlar'
+  return 'İyi geceler'
+}

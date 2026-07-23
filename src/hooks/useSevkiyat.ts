@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { recordSessionAction } from '@/lib/deviceSession'
 
 export interface Arac {
   id: string
@@ -39,4 +40,5 @@ export async function sevkiyatKaydet(siparis_id: string, arac_id: string, tarih:
     .update({ teslimat_tipi: 'sevkiyat', teslim_tarihi: tarih })
     .eq('id', siparis_id)
   if (siparisError) throw new Error(siparisError.message)
+  recordSessionAction('shipping_plan_save')
 }

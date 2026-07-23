@@ -16,6 +16,8 @@ Bu değişiklikler tek final güvenlik kapısına bağlıdır; production'a tek 
 | 8 | `053_legacy_security_cleanup.sql`, `054_account_lockout_guards.sql` | Tam Auth eşleme/rol kapısı, parola kolonu ve geniş grant taraması; kendi/son yönetici kilitlenme testleri | İleri düzeltme veya izole restore; plaintext kolon geri açılmaz |
 | 9 | `055_role_management_operations.sql`, `056_production_stations_rbac.sql`, `057_production_stations_single_umbrella.sql` | Atomik rol matrisi, üretim istasyonu modül izinleri ve dört istasyon ekranı smoke testi | İleri düzeltme; rol/izin geçmişi korunur |
 | 10 | `058_error_resolution_report.sql`, `059_ai_error_export_workflow.sql`, `060_fix_ai_error_export_function.sql` | AI hata dışa aktarma/inceleme/çözüm raporu doğrulaması, AAL2 ve toplu işlem sınırları | İstemci iş akışı kapatılabilir; hata kayıtları silinmez |
+| 11a | `062_device_session_schema.sql`, `063_device_session_operations.sql`, cihaz oturumu Edge/frontend | En az 7 gün observation; kayıt kapsamı, çoklu sekmede tek heartbeat, terminal kayıtların reddi | Frontend geri alınır; kayıtsız oturumlar geçici kabul edilir, terminal kayıtlar açılmaz |
+| 11b | `064_device_session_enforcement.sql`, private Realtime ve 900 saniye JWT | İki cihaz Auth sözleşme testi, eski kayıtsız oturumda tek yeniden giriş, Realtime iptal penceresi | Enforcement observe olur; private kanal public yapılmaz, gerekirse broadcast kapatılır |
 
 `049`–`052` dosya numaraları migration bağımlılığına göre sıralıdır; operasyonel aşama sırası yukarıdaki yayın paketleriyle korunur. `053`, aktif her personelde doğrulanmış Auth eşlemesi ve rol yoksa bilinçli olarak hata verir. `054`, final pakette hemen ardından uygulanır; kendi hesabını/son aktif yöneticiyi pasifleştirme veya düşürme ile yönetici temel iznini kaldırmayı veritabanında engeller.
 
@@ -32,12 +34,22 @@ Bu değişiklikler tek final güvenlik kapısına bağlıdır; production'a tek 
 
 ```sh
 npm test -- --run
+npm run lint
 npm run build
 npm run test:security
 supabase test db
 ```
 
-Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işaretlenir ve erişilebilir CI/izole Supabase ortamında çalıştırılmadan aşama kapanmaz. pgTAP dosyaları `supabase/tests/rls_negative.test.sql`, `supabase/tests/audit_rollback.test.sql`, `supabase/tests/account_lockout_guards.test.sql`, üretim istasyonu testleri ve `supabase/tests/error_resolution_workflow.test.sql` altındadır.
+Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işaretlenir ve erişilebilir CI/izole Supabase ortamında çalıştırılmadan aşama kapanmaz. pgTAP dosyaları `supabase/tests/rls_negative.test.sql`, `supabase/tests/audit_rollback.test.sql`, `supabase/tests/account_lockout_guards.test.sql`, `supabase/tests/device_session_security.test.sql`, üretim istasyonu testleri ve `supabase/tests/error_resolution_workflow.test.sql` altındadır.
+
+## Cihaz oturumu yayın kapısı
+
+- `064`, `063` ile aynı production değişiklik paketinde uygulanmaz. `063` sonrası en az yedi tam gün observation verisi incelenir.
+- Observation sırasında kayıtsız oturum geçici kabul edilir; `ended`, `revoked`, `replaced` ve `auth_missing` kayıtlar her durumda reddedilir.
+- `064` öncesinde aynı kullanıcı iki gerçek istemcide açılır. Hedef access token ile RLS SELECT ve korumalı RPC reddedilmeli, hedef refresh token yenilenememeli, diğer cihaz yenilenmeye devam etmelidir.
+- Auth servisleri yeniden başlatıldıktan sonra hedef iptal edilmiş, diğer cihaz açık kalmalıdır. Test Supabase Auth yükseltmelerinin öncesinde ve sonrasında tekrarlanır.
+- Auth session silme sözleşmesi doğrulanamazsa uygulama kaydı `revoked` kalır ve `revocation_enabled=false` circuit breaker yeni yönetici iptallerini durdurur. Sorun giderilmeden tüm kullanıcıyı çıkarmaya geri düşülmez.
+- Hosted projedeki JWT expiry de yerel `config.toml` ile birlikte 900 saniye yapılır. Private `uretim-istasyonlar` broadcast kanalı hiçbir rollback'te public yapılmaz.
 
 ## Yerel kabul kaydı — 17 Temmuz 2026
 

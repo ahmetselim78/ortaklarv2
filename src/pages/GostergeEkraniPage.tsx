@@ -136,7 +136,7 @@ export default function GostergeEkraniPage() {
 
   useEffect(() => {
     const channel = supabase
-      .channel('uretim-istasyonlar')
+      .channel('uretim-istasyonlar', { config: { private: true } })
       .on('broadcast', { event: 'batch_secildi' }, ({ payload }) => {
         setUretimBilgisi({ ...BOS_URETIM_BILGISI, batchNo: payload.batch_no ?? '' })
         setSonOlculer([])

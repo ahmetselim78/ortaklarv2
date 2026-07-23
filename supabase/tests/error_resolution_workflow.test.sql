@@ -1,6 +1,7 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
+UPDATE public.device_session_settings SET enforcement_mode = 'observe';
 SELECT plan(19);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { functionErrorMessage } from '@/lib/edgeFunctionError'
 import { supabase } from '@/lib/supabase'
-import { bugunTarih } from '@/lib/tarih'
+import { bugunTarih, gunlukSelamlama } from '@/lib/tarih'
 
 interface OverviewUser {
   auth_user_id: string
@@ -176,9 +176,13 @@ export default function AdminOverview() {
         <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
-              <span className="h-2 w-2 rounded-full bg-indigo-600" /> Operasyon merkezi
+              <span className="relative flex h-2 w-2" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75 motion-reduce:animate-none" />
+                <span className="relative inline-flex h-2 w-2 animate-pulse rounded-full bg-indigo-600 motion-reduce:animate-none" />
+              </span>
+              Operasyon merkezi
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Günaydın, sistem özeti hazır.</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{gunlukSelamlama()}, sistem özeti hazır.</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Üretim girişlerini, kullanıcı durumunu ve sistem sağlığını tek bakışta kontrol edin.</p>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">

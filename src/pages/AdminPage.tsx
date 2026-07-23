@@ -7,7 +7,7 @@ import {
   User, Truck, Factory, FileDown, Trash2, StickyNote, X,
   Printer, Users, Target, MessageSquare, Send,
   Pencil, Check,
-  ScrollText, Bug, UserCog, KeyRound, PanelLeftClose, PanelLeftOpen,
+  ScrollText, Bug, UserCog, KeyRound, PanelLeftClose, PanelLeftOpen, CloudUpload, Monitor,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bugunTarih, formatSaatTr, formatTarihTr, tarihEkleTr } from '@/lib/tarih'
@@ -25,6 +25,8 @@ import HataKayitlariPanel from '@/components/admin/HataKayitlariPanel'
 import RolYonetimiPanel from '@/components/admin/RolYonetimiPanel'
 import KullaniciYonetimiPanel from '@/components/admin/KullaniciYonetimiPanel'
 import AdminOverview from '@/components/admin/AdminOverview'
+import DriveYedeklemePanel from '@/components/admin/DriveYedeklemePanel'
+import CihazOturumlariPanel from '@/components/admin/CihazOturumlariPanel'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 // ── Ayar görünürlük anahtarı ──────────────────────────────────────────────────
@@ -1305,6 +1307,7 @@ const ADMIN_NAV_GROUPS: Array<{ label?: string; items: Array<{ to: string; label
     items: [
       { to: '/admin/kullanicilar', label: 'Kullanıcılar', icon: UserCog },
       { to: '/admin/roller', label: 'Roller ve Yetkiler', icon: KeyRound },
+      { to: '/admin/oturumlar', label: 'Cihaz Oturumları', icon: Monitor },
     ],
   },
   {
@@ -1317,6 +1320,7 @@ const ADMIN_NAV_GROUPS: Array<{ label?: string; items: Array<{ to: string; label
   {
     label: 'Sistem',
     items: [
+      { to: '/admin/yedekleme', label: 'Google Drive Yedekleri', icon: CloudUpload },
       { to: '/admin/veri-yonetimi', label: 'Veri Yönetimi', icon: Database },
       { to: '/admin/islem-kayitlari', label: 'İşlem Kayıtları', icon: ScrollText },
       { to: '/admin/hatalar', label: 'Merkezi Hatalar', icon: Bug },
@@ -1377,8 +1381,10 @@ export default function AdminPage() {
   else if (section === 'ayarlar' && (!detail || ayarKategorisiMi(detail))) content = <AyarlarYonetimiTab kategori={ayarKategorisiMi(detail) ? detail : null} />
   else if (section === 'uretim-giris' && !detail) content = <UretimGirisiTab />
   else if (section === 'veri-yonetimi' && !detail) content = <VeriYonetimiPanel />
+  else if (section === 'yedekleme' && !detail) content = <DriveYedeklemePanel />
   else if (section === 'kullanicilar' && !detail) content = <KullaniciYonetimiPanel />
   else if (section === 'roller' && !detail) content = <RolYonetimiPanel />
+  else if (section === 'oturumlar' && !detail) content = <CihazOturumlariPanel />
   else if (section === 'islem-kayitlari' && !detail) content = <AuditKayitlariPanel />
   else if (section === 'hatalar' && !detail) content = <HataKayitlariPanel />
   else if (section === 'audit' && !detail) content = <Navigate to="/admin/islem-kayitlari" replace />

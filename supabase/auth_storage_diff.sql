@@ -1,0 +1,2 @@
+-- 2026-07-23: Production auth/storage schemas match the local Supabase baseline.
+-- No additional schema statements are required for restore.

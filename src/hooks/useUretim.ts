@@ -4,6 +4,7 @@ import { generateBatchNo } from '@/lib/idGenerator'
 import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { batchYikamaOzetiHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
+import { recordSessionAction } from '@/lib/deviceSession'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
 
 /* ===== Durum geçiş matrisi ===== */
@@ -222,6 +223,7 @@ export function useUretim() {
     await recalculateUretimEmriDurumu(uretimEmriId)
 
     await getir()
+    recordSessionAction('production_batch_create')
     return uretimEmriId
   }
 
@@ -244,6 +246,7 @@ export function useUretim() {
     }
     const { error } = await supabase.from('uretim_emirleri').update({ durum }).eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('production_batch_status')
     await getir()
   }
 
@@ -274,6 +277,7 @@ export function useUretim() {
     }
 
     await getir()
+    recordSessionAction('production_batch_delete')
   }
 
   const iptalEt = async (id: string) => {
@@ -318,6 +322,7 @@ export function useUretim() {
     }
 
     await getir()
+    recordSessionAction('production_batch_cancel')
   }
 
   return { emirler, yukleniyor, hata, yeniBatch, durumGuncelle, sil, iptalEt, yenile: getir }
@@ -366,6 +371,7 @@ export async function batcheCamEkle(uretimEmriId: string, siparisBatchId: string
     sira_no,
   })
   if (error) throw new Error(error.message)
+  recordSessionAction('production_batch_item_add')
 }
 
 /** Batch'ten cam çıkarır */
@@ -375,4 +381,5 @@ export async function batchtenCamCikar(uretimEmriDetayId: string) {
     .delete()
     .eq('id', uretimEmriDetayId)
   if (error) throw new Error(error.message)
+  recordSessionAction('production_batch_item_remove')
 }

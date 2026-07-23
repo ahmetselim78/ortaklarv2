@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'npm:@supabase/supabase-js@2.103.3'
 
-const configuredOrigins = (Deno.env.get('ALLOWED_ORIGINS') ?? 'http://127.0.0.1:5173,http://localhost:5173')
+const configuredOrigins = (Deno.env.get('ALLOWED_ORIGINS') ?? 'http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.14:5173')
   .split(',').map(v => v.trim()).filter(Boolean)
 
 function assertAllowedOrigin(req: Request) {
@@ -59,6 +59,26 @@ export async function requirePermission(req: Request, module: string, action: st
     if (aalError || aal2 !== true) throw new ResponseError(403, 'AAL2 doğrulaması gerekli')
   }
   return { client, user: userData.user, authorization }
+}
+
+// Oturum kaydı henüz oluşturulmadan çağrılan cihaz bootstrap akışları RBAC
+// yardımcısına bağımlı olamaz. Bu yardımcı yalnız JWT/Auth oturumunu doğrular;
+// uygulama kullanıcısı ve session_id bağı servis RPC'sinde ayrıca doğrulanır.
+export async function requireAuthenticated(req: Request) {
+  assertAllowedOrigin(req)
+  const authorization = req.headers.get('authorization')
+  if (!authorization?.startsWith('Bearer ')) throw new ResponseError(401, 'Geçerli kullanıcı JWT’si gerekli')
+  const url = Deno.env.get('SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  if (!url || !anonKey) throw new ResponseError(500, 'Supabase Edge yapılandırması eksik')
+  const client = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } })
+  const token = authorization.slice('Bearer '.length)
+  const { data, error } = await client.auth.getUser(token)
+  if (error?.code === 'session_not_found') {
+    throw new ResponseError(401, 'SESSION_NOT_FOUND')
+  }
+  if (error || !data.user) throw new ResponseError(401, 'JWT doğrulanamadı')
+  return { client, user: data.user, authorization, token }
 }
 
 export function requireServiceSecret(req: Request, header: string, envName: string) {

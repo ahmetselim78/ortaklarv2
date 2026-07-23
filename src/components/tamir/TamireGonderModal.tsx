@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { recordSessionAction } from '@/lib/deviceSession'
 import { useEscape } from '@/hooks/useEscape'
 import { AlertTriangle, X, Wrench } from 'lucide-react'
 import type { TamirKaynak, TamirSorun } from '@/types/tamir'
@@ -141,6 +142,8 @@ export default function TamireGonderModal({ cam, kaynak, onClose, onSuccess }: P
       setHata('Kayıt oluşturulamadı: ' + error.message)
       return
     }
+
+    recordSessionAction('repair_send')
 
     // Bu cam daha önce "yikandi" olarak işaretlenmiş olabilir (tarama sonrası tamire gönderiliyor) —
     // artık bekleyen bir tamir kaydı olduğu için sipariş/batch durumu yeniden hesaplanmalı

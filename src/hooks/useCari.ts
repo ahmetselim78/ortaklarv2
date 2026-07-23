@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { generateCariKod } from '@/lib/idGenerator'
+import { recordSessionAction } from '@/lib/deviceSession'
 import type { Cari, YeniCari } from '@/types/cari'
 
 export function useCari() {
@@ -27,18 +28,21 @@ export function useCari() {
     const kod = await generateCariKod()
     const { error } = await supabase.from('cari').insert({ ...form, kod })
     if (error) throw new Error(error.message)
+    recordSessionAction('cari_create')
     await getir()
   }
 
   const guncelle = async (id: string, form: Partial<YeniCari>) => {
     const { error } = await supabase.from('cari').update(form).eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('cari_update')
     await getir()
   }
 
   const sil = async (id: string) => {
     const { error } = await supabase.from('cari').delete().eq('id', id)
     if (error) throw new Error(error.message)
+    recordSessionAction('cari_delete')
     await getir()
   }
 

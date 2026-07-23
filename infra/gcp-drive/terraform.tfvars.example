@@ -1,0 +1,6 @@
+project_id          = "ana-uygulama-ortakalrcam"
+region              = "europe-west1"
+supabase_project_ref = "hbvoppzekvdcihrnyayo"
+supabase_pooler_host = "aws-0-eu-west-1.pooler.supabase.com"
+backup_image        = "europe-west1-docker.pkg.dev/ana-uygulama-ortakalrcam/ortaklar-drive-backup/drive-backup:REPLACE_TAG"
+age_recipient       = "age1REPLACE_WITH_PUBLIC_RECIPIENT"

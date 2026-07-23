@@ -12,6 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Python yerel derleme/test çıktıları
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+ops/drive-backup/oauth-token.local.json
+ops/drive-backup/google-oauth-client.local.json
+ops/drive-backup/google-web-oauth-client.local.json
+ops/drive-backup/trigger-secret.local.txt
+ops/drive-backup/supabase-access-token.local.txt
+ops/drive-backup/age-identity.local.txt
+ops/drive-backup/age-recipient.local.txt
+
 # Terraform çalışma/state dosyaları ve gerçek değişken değerleri
 **/.terraform/*
 *.tfstate

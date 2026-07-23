@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { bugununVardiyaSablonlariniUygula } from '@/lib/saatlikVardiyaAuto'
+import { recordSessionAction } from '@/lib/deviceSession'
 import type {
   GunlukUretimSatiri,
   HrPersonel,
@@ -256,6 +257,7 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
       if (error) {
         setHata(error.message)
       } else {
+        recordSessionAction('hourly_count_increment')
         const yeniAdet = typeof data === 'number' ? data : hedefSatir.gerceklesen_adet + 1
         setSatirlar(prev =>
           prev.map(s =>
@@ -286,6 +288,7 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
       if (error) {
         setHata(error.message)
       } else {
+        recordSessionAction('hourly_fire_increment')
         const yeniAdet = typeof data === 'number' ? data : hedefSatir.fire_adet + 1
         setSatirlar(prev =>
           prev.map(s =>
@@ -314,6 +317,7 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
       .eq('id', id)
 
     if (!error) {
+      recordSessionAction('hourly_action_note')
       setSatirlar(prev =>
         prev.map(s =>
           s.id === id ? { ...s, aksiyon_notu: not.trim() || null } : s,
@@ -330,6 +334,7 @@ export function useSaatlikUretim(): UseSaatlikUretimReturn {
       .eq('id', id)
 
     if (!error) {
+      recordSessionAction('hourly_npt_update')
       setSatirlar(prev =>
         prev.map(s => (s.id === id ? { ...s, npt_orani: deger } : s)),
       )
