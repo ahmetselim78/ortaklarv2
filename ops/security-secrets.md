@@ -24,7 +24,7 @@ OCR anahtarı frontend'deki `VITE_*` değişkenlerinden okunmaz. Yerel Edge Runt
 
 ```dotenv
 MISTRAL_API_KEY=<mistral-anahtari>
-ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.14:5173
+ALLOWED_ORIGINS=https://glassflow-production-281837608848.europe-west10.run.app,http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.14:5173
 ```
 
 Ardından fonksiyonları bu dosyayla başlatın:

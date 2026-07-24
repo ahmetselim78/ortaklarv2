@@ -134,5 +134,5 @@ export function isTerminalSessionError(message: string) {
 }
 
 export function isDeviceSessionServiceUnavailable(message: string) {
-  return /HTTP 404|Failed to send a request|FunctionsRelayError/i.test(message)
+  return /HTTP 404|Failed to send a request|Failed to fetch|NetworkError|ERR_NETWORK_CHANGED|ERR_NAME_NOT_RESOLVED|FunctionsRelayError/i.test(message)
 }

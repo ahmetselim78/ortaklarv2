@@ -1,8 +1,17 @@
 // @ts-nocheck
 import { createClient } from 'npm:@supabase/supabase-js@2.103.3'
 
-const configuredOrigins = (Deno.env.get('ALLOWED_ORIGINS') ?? 'http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.14:5173')
-  .split(',').map(v => v.trim()).filter(Boolean)
+const defaultOrigins = [
+  'https://glassflow-production-281837608848.europe-west10.run.app',
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+  'http://192.168.1.14:5173',
+]
+
+const configuredOrigins = [...new Set([
+  ...defaultOrigins,
+  ...(Deno.env.get('ALLOWED_ORIGINS') ?? '').split(','),
+].map(v => v.trim()).filter(Boolean))]
 
 function assertAllowedOrigin(req: Request) {
   const origin = req.headers.get('origin')

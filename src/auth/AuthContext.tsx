@@ -104,31 +104,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setCurrentSession])
 
   const loadAccess = useCallback(async (activeSession?: Session | null) => {
-    const current = activeSession === undefined ? (await supabase.auth.getSession()).data.session : activeSession
-    setCurrentSession(current)
-    if (!current) {
-      setAccess(null)
-      setError(null)
-      setLoading(false)
-      return
-    }
-
-    const { data, error: rpcError } = await supabase.rpc('my_access_context')
-    if (rpcError) {
-      if (isTerminalSessionError(rpcError.message)) {
-        await clearLocalSession(rpcError.message)
+    try {
+      const current = activeSession === undefined ? (await supabase.auth.getSession()).data.session : activeSession
+      setCurrentSession(current)
+      if (!current) {
+        setAccess(null)
+        setError(null)
+        setLoading(false)
         return
       }
-      setAccess(null)
-      setError(rpcError.message)
-    } else if (!data) {
-      setAccess(null)
-      setError('Bu Auth hesabı aktif bir OrtaklarV2 kullanıcısına bağlı değil.')
-    } else {
-      setAccess(data as AccessContextResponse)
-      setError(null)
+
+      const { data, error: rpcError } = await supabase.rpc('my_access_context')
+      if (rpcError) {
+        if (isTerminalSessionError(rpcError.message)) {
+          await clearLocalSession(rpcError.message)
+          return
+        }
+        setAccess(null)
+        setError(rpcError.message)
+      } else if (!data) {
+        setAccess(null)
+        setError('Bu Auth hesabı aktif bir OrtaklarV2 kullanıcısına bağlı değil.')
+      } else {
+        setAccess(data as AccessContextResponse)
+        setError(null)
+      }
+    } catch {
+      setError('Ağ bağlantısı geçici olarak kesildi. Bağlantı gelince otomatik olarak yeniden denenecek.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [clearLocalSession, setCurrentSession])
 
   const registerAndLoad = useCallback(async (nextSession: Session, event: DeviceSessionEvent) => {
@@ -148,8 +153,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await loadAccess(nextSession)
     } catch (registerError) {
       const message = registerError instanceof Error ? registerError.message : 'Cihaz oturumu kaydedilemedi'
-      if (import.meta.env.DEV && isDeviceSessionServiceUnavailable(message)) {
-        await loadAccess(nextSession)
+      if (isDeviceSessionServiceUnavailable(message)) {
+        setCurrentSession(nextSession)
+        setError('Ağ bağlantısı geçici olarak kesildi. Bağlantı gelince otomatik olarak yeniden denenecek.')
+        setLoading(false)
         return
       }
       if (isTerminalSessionError(message)) {
@@ -181,11 +188,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let disposed = false
     queueMicrotask(() => {
-      void supabase.auth.getSession().then(({ data }) => {
-        if (disposed) return
-        if (data.session) void registerAndLoad(data.session, 'initial_session')
-        else void loadAccess(null)
-      })
+      void supabase.auth.getSession()
+        .then(({ data }) => {
+          if (disposed) return
+          if (data.session) void registerAndLoad(data.session, 'initial_session')
+          else void loadAccess(null)
+        })
+        .catch(() => {
+          if (disposed) return
+          setError('Ağ bağlantısı geçici olarak kesildi. Bağlantı gelince otomatik olarak yeniden denenecek.')
+          setLoading(false)
+        })
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
