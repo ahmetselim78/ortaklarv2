@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Sun, Moon, Eye, EyeOff, Factory, LogOut, Plus, Trash2,
   AlertCircle, CheckCircle2, Loader2, ChevronRight, UserCheck, Truck, Users,
@@ -6,6 +6,7 @@ import {
   FileText, LockKeyhole, Pencil, ShieldCheck,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/auth/AuthContext'
 import { bugunGoster, bugunTarih, formatSaatTr, tarihEtiketTr, trSaatStr } from '@/lib/tarih'
 import type { HrPersonel } from '@/types/saatlikUretim'
 import { recordSessionAction } from '@/lib/deviceSession'
@@ -278,7 +279,7 @@ function operatorAuthCard(dk: boolean, extra = '') {
   return `min-w-0 rounded-[1.75rem] border p-5 shadow-[0_35px_100px_-30px_rgba(0,0,0,0.65)] backdrop-blur-xl sm:p-8 lg:rounded-[2rem] lg:p-10 ${dk ? 'border-white/10 bg-slate-900/95 text-white' : 'border-white/60 bg-white/95 text-slate-950'} ${extra}`
 }
 
-function GirisEkrani({
+export function GirisEkrani({
   sonKullanici,
   tema,
   onGiris,
@@ -1493,15 +1494,16 @@ function SonKayitlarEkrani({
 type Ekran = 'form' | 'ozet' | 'son_kayitlar'
 
 export default function OperatorGirisPage() {
+  const { access, signOut } = useAuth()
   const [tema, setTema] = useState<Tema>(() => {
     const kayitli = localStorage.getItem(LS_TEMA) as Tema | null
     return kayitli === 'light' ? 'light' : 'dark'
   })
-  const [sonKullanici, setSonKullanici] = useState<SonKullanici | null>(null)
   const [aktifPersonel, setAktifPersonel] = useState<HrPersonel | null>(null)
   const [ekran, setEkran] = useState<Ekran>('form')
   const [raporData, setRaporData] = useState<RaporData | null>(null)
-  const [ilkYukleniyor, setIlkYukleniyor] = useState(false)
+  const [ilkYukleniyor, setIlkYukleniyor] = useState(true)
+  const [personelHatasi, setPersonelHatasi] = useState<string | null>(null)
 
   function temaDegistir() {
     setTema(prev => {
@@ -1511,7 +1513,7 @@ export default function OperatorGirisPage() {
     })
   }
 
-  async function girisYap(p: HrPersonel) {
+  const girisYap = useCallback(async (p: HrPersonel) => {
     setIlkYukleniyor(true)
 
     try {
@@ -1570,37 +1572,63 @@ export default function OperatorGirisPage() {
         setRaporData(null)
         setEkran('form')
       }
-      const sk: SonKullanici = { id: p.id, ad_soyad: p.ad_soyad, foto_url: p.foto_url ?? null, rol: p.rol }
-      setSonKullanici(sk)
       setAktifPersonel(p)
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : 'Çizelge verileri yüklenemedi.')
     } finally {
       setIlkYukleniyor(false)
     }
-  }
+  }, [])
 
   async function cikisYap() {
-    const { error } = await supabase.auth.signOut({ scope: 'local' })
-    if (error) throw error
+    await signOut()
     setAktifPersonel(null)
-    setSonKullanici(null)
     setEkran('form')
     setRaporData(null)
     window.location.replace('/giris')
   }
 
-  if (!aktifPersonel) {
-    return (
-      <GirisEkrani
-        sonKullanici={sonKullanici}
-        tema={tema}
-        onGiris={girisYap}
-        onHesapDegistir={cikisYap}
-        onTemaDegistir={temaDegistir}
-      />
-    )
-  }
+  useEffect(() => {
+    let iptalEdildi = false
+
+    async function bagliPersoneliYukle() {
+      const personelId = access?.user.personel_id
+      setAktifPersonel(null)
+      setRaporData(null)
+      setEkran('form')
+      setPersonelHatasi(null)
+      setIlkYukleniyor(true)
+
+      if (!personelId) {
+        setPersonelHatasi('Bu giriş hesabına bir personel kaydı atanmamış. Üretim girişi için yöneticinizden hesabınızı aktif bir personel kaydıyla eşleştirmesini isteyin.')
+        setIlkYukleniyor(false)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('hr_personel')
+          .select('id, ad_soyad, foto_url, rol, is_aktif, olusturma, uretim_yetkileri_sinirli')
+          .eq('id', personelId)
+          .eq('is_aktif', true)
+          .maybeSingle()
+
+        if (error) throw error
+        if (!data) {
+          throw new Error('Hesabınıza bağlı personel kaydı bulunamadı veya personel kaydı pasif.')
+        }
+        if (!iptalEdildi) await girisYap(data as HrPersonel)
+      } catch (err) {
+        if (!iptalEdildi) {
+          setPersonelHatasi(err instanceof Error ? err.message : 'Personel bilgileriniz yüklenemedi.')
+          setIlkYukleniyor(false)
+        }
+      }
+    }
+
+    void bagliPersoneliYukle()
+    return () => { iptalEdildi = true }
+  }, [access?.user.personel_id, girisYap])
 
   if (ilkYukleniyor) {
     const dk = tema === 'dark'
@@ -1610,6 +1638,36 @@ export default function OperatorGirisPage() {
         <div className="flex-1 flex items-center justify-center gap-2">
           <Loader2 size={20} className={`animate-spin ${dk ? 'text-gray-500' : 'text-gray-400'}`} />
           <span className={`text-sm ${txtMuted(dk)}`}>Kontrol ediliyor…</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (!aktifPersonel) {
+    const dk = tema === 'dark'
+    return (
+      <div className={`min-h-screen flex flex-col ${pageBg(dk)}`}>
+        <PageHeader tema={tema} onTemaDegistir={temaDegistir} />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className={`w-full max-w-lg rounded-2xl border p-6 text-center shadow-sm ${dk ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
+            <div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-2xl ${dk ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-600'}`}>
+              <AlertCircle size={24} />
+            </div>
+            <h1 className={`mt-4 text-lg font-bold ${txtPrimary(dk)}`}>Personel bağlantısı gerekli</h1>
+            <p className={`mt-2 text-sm leading-6 ${txtSub(dk)}`}>
+              {personelHatasi ?? 'Personel bilgileriniz yüklenemedi.'}
+            </p>
+            <p className={`mt-3 text-xs ${txtMuted(dk)}`}>
+              Oturum: {access?.user.display_name || access?.user.username || 'Giriş hesabı'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void cikisYap()}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-gray-950 transition-colors hover:bg-amber-400"
+            >
+              <LogOut size={15} /> Başka hesapla giriş yap
+            </button>
+          </div>
         </div>
       </div>
     )

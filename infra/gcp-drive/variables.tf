@@ -1,5 +1,9 @@
 variable "project_id" {
   type = string
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id))
+    error_message = "project_id geçerli bir Google Cloud proje kimliği olmalıdır."
+  }
 }
 
 variable "region" {
@@ -14,10 +18,18 @@ variable "backup_image" {
 
 variable "supabase_project_ref" {
   type = string
+  validation {
+    condition     = can(regex("^[a-z0-9]{20}$", var.supabase_project_ref))
+    error_message = "supabase_project_ref 20 karakterlik proje ref'i olmalıdır."
+  }
 }
 
 variable "supabase_pooler_host" {
   type = string
+  validation {
+    condition     = can(regex("^[a-z0-9.-]+\\.supabase\\.com$", var.supabase_pooler_host))
+    error_message = "supabase_pooler_host Supabase pooler sunucusu olmalıdır."
+  }
 }
 
 variable "time_zone" {
@@ -47,7 +59,6 @@ variable "age_recipient" {
 variable "secret_ids" {
   description = "Secret değerleri Terraform'a verilmez; yalnız Secret Manager adlarıdır."
   type = object({
-    prod_db_url             = string
     drive_client_id         = string
     drive_client_secret     = string
     drive_refresh_token     = string
@@ -57,7 +68,6 @@ variable "secret_ids" {
     supabase_access_token   = string
   })
   default = {
-    prod_db_url             = "ortaklar-drive-prod-db-url"
     drive_client_id         = "ortaklar-drive-client-id"
     drive_client_secret     = "ortaklar-drive-client-secret"
     drive_refresh_token     = "ortaklar-drive-refresh-token"

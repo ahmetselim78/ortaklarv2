@@ -32,7 +32,7 @@ export default function AppLayout() {
   }, [closeMobileMenu, mobileOpen])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-dvh min-h-dvh overflow-hidden bg-slate-50">
       <button
         type="button"
         aria-label="Navigasyon menüsünü kapat"
@@ -74,7 +74,7 @@ export default function AppLayout() {
 
         <main
           data-app-scroll-container
-          className={`app-scroll-area min-h-0 flex-1 touch-pan-y overscroll-y-contain ${mobileOpen ? 'overflow-hidden' : 'overflow-auto'}`}
+          className={`app-scroll-area min-h-0 min-w-0 flex-1 touch-auto overscroll-y-contain ${mobileOpen ? 'overflow-hidden' : 'overflow-auto'}`}
         >
           <Outlet />
         </main>

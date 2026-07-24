@@ -1,41 +1,64 @@
 # Google Drive şifreli yedekleme
 
-Bu dizin, eski `ops/backup` GCS yönteminden bağımsızdır. Eski yöntem ilk başarılı Drive yedeği ve geri yükleme testi tamamlanana kadar silinmez.
+Bu dizin OrtaklarV2'nin tek yedekleme ve geri-yükleme akışıdır. Supabase
+veritabanı yedeği Cloud Run Job içinde hazırlanır, `age` public key ile
+şifrelenir ve yalnız uygulamanın oluşturduğu dosyalara erişebilen Google Drive
+`drive.file` kapsamıyla yüklenir. Private age anahtarı Google Cloud'a verilmez.
 
 ## Davranış
 
-- Her gün saat 02:00'de (`Europe/Istanbul`) tam Supabase yedeği oluşturur.
-- Arşivi Google Drive'a çıkmadan önce `age` public key ile şifreler. Cloud Run'da private key bulunmaz.
-- `Yedekler/Günlük Yedekler` içinde doğrulanmış son 7 dosyayı tutar.
-- Her ayın ilk başarılı yedeğini `Yedekler/Aylık Yedekler` içine kopyalar ve son 12 ayı tutar.
-- Boyut, MD5 ve yerel SHA-256 değeri doğrulanmadan saklama temizliği yapmaz.
-- Aynı anda ikinci bir otomatik/manüel çalışma başlatmaz.
-- Yönetim panelindeki manuel düğme AAL2/TOTP ve `admin.manage` yetkisi ister; işlem audit tablosuna yazılır.
+- Her gece saat 02:00'de (`Europe/Istanbul`) tam mantıksal yedek oluşturur.
+- `public` şema ve verisini, migration geçmişini, Auth/Storage verisini,
+  Auth/Storage kullanıcı değişikliklerini, migration dosyalarını ve tablo
+  özetini paketler.
+- Drive'da `Yedekler/Günlük Yedekler` altında doğrulanmış son 7 dosyayı tutar.
+- Her ayın ilk başarılı yedeğini `Yedekler/Aylık Yedekler` içine kopyalar ve
+  son 12 ayı tutar.
+- Boyut, Drive MD5 ve manifest SHA-256 değerleri doğrulanmadan retention
+  temizliği yapmaz.
+- Aynı anda ikinci otomatik veya manuel çalışma başlatmaz.
+- Yönetim panelindeki manuel işlem ve hesap değişikliği AAL2/TOTP ile
+  `admin.manage` izni ister ve audit kaydı oluşturur.
 
-Drive API için yalnız `drive.file` kapsamı kullanılır. Uygulama yalnız kendisinin oluşturduğu dosya ve klasörleri yönetebilir.
+Supabase Storage içindeki binary objeler veritabanı yedeğine dahil değildir;
+yalnız Storage metadata'sı yedeklenir. Bu projede uygulama tarafından kullanılan
+bir Storage bucket'ı bulunmuyor. İleride eklenirse obje aktarımı ayrıca
+uygulanmalıdır.
 
-## Bir defalık kurulum
+## Sıfırdan kurulum
 
-1. Supabase migration'ını ve Edge Function'ı yayınlayın:
+Gereken yerel araçlar: Node.js, Terraform, Google Cloud CLI, Supabase CLI ve
+`age`.
 
-   ```text
-   supabase db push
-   supabase functions deploy drive-backup-admin --no-verify-jwt
-   ```
+1. Google Cloud projesinde OAuth consent screen'i hazırlayın ve Google Drive API
+   kapsamı olarak yalnız `drive.file` seçin. İlk bağlantı için **Desktop app**
+   OAuth istemcisinin indirilen JSON'unu, Git tarafından yok sayılan
+   `ops/drive-backup/google-oauth-client.local.json` konumuna koyun.
 
-2. İlk yerel yetkilendirme için Google Cloud projesinde OAuth consent screen ve **Desktop app** OAuth istemcisi oluşturun. Desktop istemcilerin loopback yönlendirmesi otomatik desteklenir. Sonra yerelde:
+2. Yerel OAuth tokenını alın ve Drive klasörlerini doğrulayın:
 
    ```powershell
-   $env:GOOGLE_DRIVE_CLIENT_ID='...'
-   $env:GOOGLE_DRIVE_CLIENT_SECRET='...'
-   node scripts/google-drive-backup-auth.mjs
+   npm run backup:drive:auth
+   npm run backup:drive:check
    ```
 
-   Yönetim panelindeki **Google hesabını değiştir** düğmesi için ayrıca **Web application** OAuth istemcisi oluşturun. Cloud Run `trigger_url` çıktısının sonuna `/oauth/callback` ekleyip yetkili yönlendirme URI'si olarak kaydedin. Web istemcisinin client ID/secret değerlerini `ortaklar-drive-web-client-id` ve `ortaklar-drive-web-client-secret` secret'larına yazın. Düğmeden yeni hesap seçildiğinde servis, web istemci çiftini ve o istemciye ait refresh token'ı yedekleme secret'larına yeni sürüm olarak aktarır.
+   İkinci komut bağlantıyı doğrular; klasörleri yoksa oluşturur ve mevcut
+   doğrulanmış günlük/aylık yedek sayılarını gösterir.
 
-3. Offline private anahtarı güvenli bir bilgisayarda üretin. `age-keygen` çıktısındaki `AGE-SECRET-KEY-...` satırını çevrimdışı/parola kasasında saklayın; gizli olmayan `age1...` public recipient değerini Terraform `age_recipient` değişkenine koyun.
+3. Offline private anahtarı güvenli bir bilgisayarda üretin:
 
-4. `infra/gcp-drive/terraform.tfvars.example` dosyasını gerçek `.tfvars` dosyasına kopyalayın. Önce API, secret, builder hesabı ve Artifact Registry kaynaklarını oluşturun:
+   ```text
+   age-keygen -o ops/drive-backup/age-identity.local.txt
+   age-keygen -y ops/drive-backup/age-identity.local.txt > ops/drive-backup/age-recipient.local.txt
+   ```
+
+   `AGE-SECRET-KEY-...` private anahtarını parola kasasında ikinci bir kopyayla
+   saklayın. Google Cloud'a yalnız `age1...` public recipient verilir.
+
+4. `infra/gcp-drive/terraform.tfvars.example` dosyasını
+   `infra/gcp-drive/terraform.tfvars` olarak kopyalayıp gerçek proje, Supabase
+   pooler ve public age recipient değerleriyle doldurun. API'leri, Secret
+   Manager kaplarını, servis hesaplarını ve Artifact Registry'yi oluşturun:
 
    ```text
    terraform -chdir=infra/gcp-drive init
@@ -44,56 +67,92 @@ Drive API için yalnız `drive.file` kapsamı kullanılır. Uygulama yalnız ken
      -target=google_secret_manager_secret.drive_backup \
      -target=google_artifact_registry_repository.drive_backup \
      -target=google_service_account.builder \
-     -target=google_project_iam_member.builder_roles \
-     -target=google_secret_manager_secret_iam_member.builder_supabase_token
+     -target=google_project_iam_member.builder_roles
    ```
 
-   Secret version değerlerini `gcloud secrets versions add ... --data-file=-` ile ekleyin. Ardından imajı üretin ve `backup_image` değerini bu etikete ayarlayıp Terraform'u tam uygulayın:
-
-   ```text
-   gcloud builds submit --config cloudbuild.drive-backup.yaml \
-     --substitutions _TAG=ilk-kurulum .
-   terraform -chdir=infra/gcp-drive apply
-   ```
-
-   Secret adları:
+5. Aşağıdaki Secret Manager kaplarına ilk sürümleri ekleyin:
 
    - `ortaklar-drive-client-id`
    - `ortaklar-drive-client-secret`
    - `ortaklar-drive-refresh-token`
    - `ortaklar-drive-web-client-id`
    - `ortaklar-drive-web-client-secret`
-   - `ortaklar-drive-trigger-secret` (en az 32 bayt rastgele değer)
-   - `ortaklar-supabase-access-token` (kısa ömürlü yedekleme bağlantısı üretmek için)
+   - `ortaklar-drive-trigger-secret` — en az 32 rastgele bayt
+   - `ortaklar-supabase-access-token`
 
-   `ortaklar-drive-prod-db-url` eski tasarımdan kalan boş Secret Manager kabıdır;
-   yeni iş tarafından kullanılmaz ve kalıcı veritabanı parolası tutulmaz.
+   İlk üç değer `oauth-token.local.json` içindedir. Yönetim panelinden Google
+   hesabı değiştirme için ayrıca bir **Web application** OAuth istemcisi
+   oluşturun. Yetkili redirect URI, Terraform `trigger_url` çıktısının sonuna
+   `/oauth/callback` eklenmiş halidir.
 
-5. Terraform `trigger_url` çıktısını ve aynı trigger secret değerini Supabase Edge secrets olarak girin:
+6. Sürümlü Auth/Storage farkını doğrulayıp imajı yayınlayın. Yedek Job'u
+   ayrıca public işlevlere bağlı Auth/Storage tetikleyicilerini her çalışma
+   anında production veritabanından arşive ekler. Cloud Build hiçbir runtime
+   sırrına erişmez:
 
    ```text
+   gcloud builds submit --config cloudbuild.drive-backup.yaml \
+     --substitutions _TAG=ilk-kurulum,_GIT_COMMIT=GIT_SHA .
+   ```
+
+   Üretilen immutable imaj etiketini `backup_image` değişkenine yazıp tam
+   Terraform apply çalıştırın:
+
+   ```text
+   terraform -chdir=infra/gcp-drive apply
+   ```
+
+7. Supabase migration ve Edge Function'ı yayınlayın:
+
+   ```text
+   supabase db push
+   supabase functions deploy drive-backup-admin --no-verify-jwt
    supabase secrets set DRIVE_BACKUP_TRIGGER_URL=https://... DRIVE_BACKUP_TRIGGER_SECRET=...
    ```
 
-## İlk kabul testi
+   URL, Terraform `trigger_url` çıktısıdır. Trigger secret, Google Secret
+   Manager'a yazılan değerle birebir aynı olmalıdır.
 
-1. Yönetim > Google Drive Yedekleri > **Şimdi yedek al** ile çalıştırın.
-2. Panelde durumun `Başarılı` olduğunu, Drive'daki dosya boyutunu ve `.age` uzantısını kontrol edin.
-3. Dosyayı ayrı bir bilgisayara indirin ve yalnız çevrimdışı private key ile açın:
+## Kabul testi
+
+1. `npm run backup:drive:check` ile bağlantıyı doğrulayın.
+2. Yönetim > Google Drive Yedekleri > **Şimdi yedek al** ile işi başlatın.
+3. Panelde durumun `Başarılı` olduğunu ve Drive'daki dosyanın `.tar.gz.age`
+   uzantılı olduğunu doğrulayın.
+4. Dosyayı ayrı ve güvenli bir bilgisayara indirin. Arşivi yazmadan yalnız
+   doğrulamak için:
 
    ```text
-   age --decrypt -i private-key.txt -o backup.tar.gz backup-....tar.gz.age
-   tar -xzf backup.tar.gz
-   sha256sum -c <(jq -r '.files[] | "\(.sha256)  \(.name)"' manifest.json)
+   python ops/drive-backup/restore.py backup-....tar.gz.age \
+     --identity ops/drive-backup/age-identity.local.txt
    ```
 
-4. Arşivi production olmayan izole bir Supabase/PostgreSQL ortamına geri yükleyip temel tablo sayımlarını, Auth girişini ve Storage metadata'sını doğrulayın.
-5. Bu test başarılı olmadan `ops/backup`, `infra/gcp` ve `cloudbuild.ops.yaml` kaldırılmaz.
+5. Bileşenleri incelemek için boş ve yeni bir dizin verin:
 
-## Otomatik çalışma ve hesap değiştirme
+   ```text
+   python ops/drive-backup/restore.py backup-....tar.gz.age \
+     --identity ops/drive-backup/age-identity.local.txt \
+     --extract-to C:\guvenli\ortaklar-restore
+   ```
 
-- Cloud Scheduler her gece saat 02:00'de (`Europe/Istanbul`) yedek Job'unu çalıştırır; kullanıcının bilgisayarının açık olması gerekmez.
-- Yönetim > Google Drive Yedekleri paneli otomasyonun aktif veya kurulum bekliyor olduğunu gösterir.
-- **Google hesabını değiştir** işlemi AAL2/TOTP ve `admin.manage` izni ister. Yeni hesap Google'ın kendi izin ekranında seçilir; refresh token tarayıcıya veya veritabanına dönmez.
+6. Production olmayan, boş ve izole bir Supabase projesine gerçek restore
+   testi uygulayın. Araç kaynak proje ref'ini hedef olarak kabul etmez ve üçlü
+   açık onay olmadan veritabanına yazmaz:
 
-Not: Repo şu anda Supabase Storage'da uygulama dosyası kullanımını göstermiyor. İleride bucket objeleri kullanılmaya başlanırsa binary objeler için ayrıca Storage API indirme/yükleme adımı eklenmelidir; mevcut yedek Storage veritabanı metadata'sını kapsar.
+   ```text
+   $env:RESTORE_DB_URL="postgresql://postgres.HEDEF_REF:...@...:5432/postgres"
+   python ops/drive-backup/restore.py backup-....tar.gz.age \
+     --identity ops/drive-backup/age-identity.local.txt \
+     --target-project-ref HEDEF_REF \
+     --confirm-restore
+   ```
+
+7. Temel tablo sayılarını, Auth girişini, RLS negatif testini ve Storage
+   metadata'sını doğrulayın. Ölçülen RTO en fazla 4 saat olmalıdır.
+
+## Hesap değiştirme
+
+Yönetim panelindeki **Google hesabını değiştir** işlemi yeni OAuth istemci
+çiftini ve refresh tokenı Secret Manager'a birlikte yeni sürümler olarak yazar.
+Token tarayıcıya veya veritabanına dönmez. Hesap değişikliğinden sonra manuel
+bir yedek ve yukarıdaki doğrulama/restore kabul testi tekrar edilmelidir.

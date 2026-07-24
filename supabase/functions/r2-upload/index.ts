@@ -12,21 +12,44 @@ Deno.serve(async (req) => {
     if (!workerUrl || !workerSecret) throw new ResponseError(500, 'Dosya yükleme servisi yapılandırılmamış')
     const form = await req.formData()
     const file = form.get('file')
-    const category = String(form.get('category') ?? 'personel')
+    const category = String(form.get('category') ?? form.get('kategori') ?? 'personel')
     if (!['personel', 'etiket-zemin'].includes(category)) throw new ResponseError(400, 'Geçersiz dosya kategorisi')
     if (!(file instanceof File)) throw new ResponseError(400, 'Dosya alanı eksik')
     if (!file.type.startsWith('image/')) throw new ResponseError(415, 'Yalnızca görsel dosyaları kabul edilir')
     if (file.size > 5 * 1024 * 1024) throw new ResponseError(413, 'Dosya 5 MB sınırını aşıyor')
 
+    const upstreamForm = new FormData()
+    upstreamForm.append('file', file, file.name)
+    // Yeni Worker `category`, güvenlik geçişinden önceki Worker `kategori` bekler.
+    upstreamForm.append('category', category)
+    upstreamForm.append('kategori', category)
     const upstream = await fetch(workerUrl, {
       method: 'POST',
-      headers: { 'X-Internal-Upload-Secret': workerSecret },
-      body: form,
+      headers: {
+        'X-Internal-Upload-Secret': workerSecret,
+        'X-Upload-Secret': workerSecret,
+      },
+      body: upstreamForm,
       signal: AbortSignal.timeout(30_000),
     })
-    if (!upstream.ok) throw new ResponseError(502, 'Dosya depolama servisi isteği tamamlayamadı')
-    const result = await upstream.json()
+    if (!upstream.ok) {
+      console.error('R2 upload upstream error', { status: upstream.status })
+      if (upstream.status === 401 || upstream.status === 403) {
+        throw new ResponseError(502, 'Dosya depolama servisi kimlik doğrulaması başarısız')
+      }
+      if (upstream.status === 404) {
+        throw new ResponseError(502, 'Dosya depolama servisi adresi geçersiz')
+      }
+      throw new ResponseError(502, `Dosya depolama servisi isteği tamamlayamadı (HTTP ${upstream.status})`)
+    }
+    let result
+    try {
+      result = await upstream.json()
+    } catch {
+      throw new ResponseError(502, 'Dosya depolama servisi geçersiz yanıt döndürdü')
+    }
     if (typeof result?.url !== 'string' || !result.url.startsWith('https://')) throw new ResponseError(502, 'Geçersiz dosya URL’si')
+    if (typeof result?.key !== 'string' || !result.key) throw new ResponseError(502, 'Geçersiz dosya anahtarı')
     return json(req, { url: result.url, key: result.key })
   } catch (error) {
     return errorResponse(req, error)

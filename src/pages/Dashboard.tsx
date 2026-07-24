@@ -448,7 +448,7 @@ export default function Dashboard() {
   =================================================================== */
   if (yukleniyor) {
     return (
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="mx-auto max-w-7xl space-y-4 p-3 sm:space-y-6 sm:p-6">
         <div className="flex items-center justify-between">
           <div>
             <Skeleton className="h-8 w-40 mb-2" />
@@ -492,10 +492,10 @@ export default function Dashboard() {
   const monthGrid = buildMonthGrid()
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-semibold text-gray-800">Dashboard</h1>
+    <div className="mx-auto max-w-7xl p-3 sm:p-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
+          <h1 className="text-xl font-semibold text-gray-800 sm:text-2xl">Dashboard</h1>
           <button
             onClick={() => setKartlarAcik(v => !v)}
             className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors group"
@@ -564,10 +564,10 @@ export default function Dashboard() {
       </div>
 
       {/* ── Takvim + Yıkamada ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
 
         {/* === Takvim (2/3 width) === */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 relative">
+        <div className="relative min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white lg:col-span-2">
 
           {/* Drag nav zones — sol/sağ kenara sürükleyince ay/hafta geçişi */}
           {dragSiparis && (
@@ -604,33 +604,38 @@ export default function Dashboard() {
           )}
 
           {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex flex-col gap-2 border-b border-gray-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <div className="flex items-center gap-2">
               <CalendarDays size={15} className="text-gray-400" />
               <h2 className="text-sm font-semibold text-gray-700">Teslim Takvimi</h2>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 items-center justify-between gap-1 sm:justify-end sm:gap-1.5">
               <button
+                type="button"
+                aria-label="Önceki ay"
                 onClick={() => { const d = new Date(currentMonth); d.setMonth(d.getMonth() - 1); setCurrentMonth(d) }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100"
               >
-                <ChevronLeft size={15} />
+                <ChevronLeft size={18} />
               </button>
-              <span className="text-sm font-medium text-gray-700 min-w-[130px] text-center">
+              <span className="min-w-0 flex-1 text-center text-sm font-medium text-gray-700 sm:min-w-[130px] sm:flex-none">
                 {toTurkishMonthName(currentMonth.getMonth())} {currentMonth.getFullYear()}
               </span>
               <button
+                type="button"
+                aria-label="Sonraki ay"
                 onClick={() => { const d = new Date(currentMonth); d.setMonth(d.getMonth() + 1); setCurrentMonth(d) }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100"
               >
-                <ChevronRight size={15} />
+                <ChevronRight size={18} />
               </button>
               <button
+                type="button"
                 onClick={() => {
                   const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0)
                   setCurrentMonth(d); setSelectedDate(today)
                 }}
-                className="px-2.5 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
+                className="h-10 shrink-0 rounded-lg bg-blue-50 px-3 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100"
               >
                 Bugün
               </button>
@@ -638,7 +643,7 @@ export default function Dashboard() {
           </div>
 
           {/* ── Monthly grid ── */}
-          <div className="p-2">
+          <div className="p-1 sm:p-2">
               {/* Day headers */}
               <div className="grid grid-cols-7 border-b border-gray-100 mb-0">
                 {HAFTA_GUNLERI.map(g => (
@@ -653,7 +658,7 @@ export default function Dashboard() {
               >
                 {monthGrid.map((day, idx) => {
                   if (!day) return (
-                    <div key={`pad-${idx}`} className="min-h-[110px] bg-gray-50/40" />
+                    <div key={`pad-${idx}`} className="min-h-[72px] bg-gray-50/40 sm:min-h-[110px]" />
                   )
                   const dateStr = toDateStr(day)
                   const sipList = siparisMap.get(dateStr) ?? []
@@ -679,7 +684,7 @@ export default function Dashboard() {
                         if (dragSiparis) teslimTarihiGuncelle(dragSiparis, dateStr)
                         setDragSiparis(null)
                       }}
-                      className={`relative min-h-[110px] p-1.5 cursor-pointer transition-colors ${
+                      className={`relative min-h-[72px] cursor-pointer p-1 transition-colors sm:min-h-[110px] sm:p-1.5 ${
                         isDragOver
                           ? 'bg-blue-50 ring-2 ring-inset ring-blue-400'
                           : isSelected
@@ -722,9 +727,9 @@ export default function Dashboard() {
                               onClick={e => { e.stopPropagation(); takvimSiparisAc(s.id) }}
                             >
                               <span className="font-bold truncate">{s.siparis_no}</span>
-                              <span className="truncate text-[10px] opacity-75">{s.musteri}</span>
+                              <span className="hidden truncate text-[10px] opacity-75 sm:block">{s.musteri}</span>
                               {s.alt_musteri && (
-                                <span className="truncate text-[10px] opacity-55">› {s.alt_musteri}</span>
+                                <span className="hidden truncate text-[10px] opacity-55 sm:block">› {s.alt_musteri}</span>
                               )}
                             </div>
                             {/* Hover popover - son 2 satırda yukarı, diğerlerinde aşağı açılır; sürükleme sırasında gizle */}

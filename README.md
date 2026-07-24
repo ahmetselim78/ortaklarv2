@@ -69,10 +69,11 @@ almadan çalışır. Anonimleştirilmiş otomatik test fixture'ları
 ## Proje yapısı
 
 - `src/`: sayfalar, bileşenler, hook'lar ve ortak iş kuralları
-- `supabase/migrations/`: sıralı PostgreSQL migration'ları (`001`–`060`)
+- `supabase/migrations/`: sıralı PostgreSQL migration'ları (`001`–`065`)
 - `supabase/functions/`: Edge Function'lar
 - `supabase/tests/`: pgTAP veritabanı testleri
-- `ops/` ve `infra/`: yedekleme, geri yükleme ve GCP operasyonları
+- `ops/drive-backup/`: şifreli Google Drive yedekleme, doğrulama ve geri yükleme
+- `infra/gcp-drive/`: Drive yedek Job'u, tetikleyici servis ve Scheduler altyapısı
 - `yazici-kopru/`: yerel Windows/Node HTTP → USB/TCP yazıcı köprüsü
 - `Info/OrtaklarV2_Architecture.md`: ayrıntılı ve güncel mimari bağlam
 
@@ -85,7 +86,7 @@ almadan çalışır. Anonimleştirilmiş otomatik test fixture'ları
 - Üretim güvenlik yayını için `SECURITY_ROLLOUT.md` izlenir.
 
 Dağıtım, Cloud Build üzerinden container imajı oluşturup Cloud Run'a gönderir.
-Operasyonel dağıtım ayrıntıları `cloudbuild.yaml`, `cloudbuild.ops.yaml`,
-`infra/gcp/` ve `ops/backup/` altında bulunur. Yeni Google Drive yedekleme
-akışı ise eski yönteme dokunmadan `cloudbuild.drive-backup.yaml`,
-`infra/gcp-drive/` ve `ops/drive-backup/` altında hazırlanmıştır.
+Uygulama dağıtımı `cloudbuild.yaml`; Google Drive yedekleme imajı ve altyapısı
+`cloudbuild.drive-backup.yaml`, `infra/gcp-drive/` ve `ops/drive-backup/`
+altındadır. Sıfırdan kurulum ve gerçek restore kabul testi
+`ops/drive-backup/README.md` içinde belgelenmiştir.

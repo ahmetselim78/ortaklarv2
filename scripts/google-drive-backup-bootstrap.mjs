@@ -74,7 +74,28 @@ const root = await ensureFolder('Yedekler')
 const daily = await ensureFolder('Günlük Yedekler', root.id)
 const monthly = await ensureFolder('Aylık Yedekler', root.id)
 
+const managedBackups = async (parentId, backupType) => {
+  const query = [
+    `'${escapeQuery(parentId)}' in parents`,
+    'trashed = false',
+    "appProperties has { key='managed_by' and value='ortaklarv2' }",
+    `appProperties has { key='backup_type' and value='${backupType}' }`,
+  ].join(' and ')
+  const params = new URLSearchParams({
+    q: query,
+    orderBy: 'createdTime desc',
+    fields: 'files(id,name,size,createdTime,md5Checksum,appProperties)',
+    pageSize: '1000',
+  })
+  return (await driveRequest(`files?${params}`)).files ?? []
+}
+
+const dailyBackups = await managedBackups(daily.id, 'daily')
+const monthlyBackups = await managedBackups(monthly.id, 'monthly')
+
 console.log('Google Drive bağlantısı doğrulandı.')
 console.log(`Yedekler: ${root.created ? 'oluşturuldu' : 'mevcuttu'}`)
 console.log(`Günlük Yedekler: ${daily.created ? 'oluşturuldu' : 'mevcuttu'}`)
 console.log(`Aylık Yedekler: ${monthly.created ? 'oluşturuldu' : 'mevcuttu'}`)
+console.log(`Doğrulanmış günlük yedek: ${dailyBackups.length}${dailyBackups[0] ? ` (son: ${dailyBackups[0].name})` : ''}`)
+console.log(`Doğrulanmış aylık yedek: ${monthlyBackups.length}${monthlyBackups[0] ? ` (son: ${monthlyBackups[0].name})` : ''}`)

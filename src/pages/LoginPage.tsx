@@ -67,12 +67,12 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative h-dvh max-h-dvh overflow-hidden bg-[#07111f] text-slate-950">
+    <main className="relative min-h-dvh overflow-x-hidden overflow-y-auto bg-[#07111f] text-slate-950">
       <div aria-hidden="true" className="auth-glow absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full bg-blue-500/20 blur-3xl" />
       <div aria-hidden="true" className="auth-glow auth-delay-2 absolute -bottom-52 right-[-8rem] h-[38rem] w-[38rem] rounded-full bg-cyan-400/10 blur-3xl" />
       <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_90%)]" />
 
-      <div className="relative mx-auto grid h-full min-h-0 w-full max-w-7xl min-w-0 content-center items-start gap-4 px-4 py-4 sm:gap-6 sm:px-8 sm:py-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:gap-16 lg:px-12 lg:py-8">
+      <div className="relative mx-auto grid min-h-dvh w-full max-w-7xl min-w-0 content-center items-start gap-4 px-4 py-4 sm:gap-6 sm:px-8 sm:py-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:gap-16 lg:px-12 lg:py-8">
         <section className="auth-enter mx-auto min-w-0 w-full max-w-lg text-white lg:mx-0">
           <div className="flex items-center gap-3 lg:mb-12">
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-500 shadow-lg shadow-blue-500/25">
@@ -143,7 +143,7 @@ export default function LoginPage() {
                     inputMode="email"
                     required
                     placeholder="ornek@sirket.com"
-                    className="h-14 min-w-0 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                    className="h-14 min-w-0 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-base text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 sm:text-sm"
                   />
                 </div>
               </div>
@@ -163,7 +163,7 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     required
                     placeholder="Parolanızı girin"
-                    className="h-14 min-w-0 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-12 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                    className="h-14 min-w-0 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-12 text-base text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 sm:text-sm"
                   />
                   <button
                     type="button"

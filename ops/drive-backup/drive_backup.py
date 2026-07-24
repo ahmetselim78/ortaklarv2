@@ -304,6 +304,41 @@ def wait_for_database(db_url: str) -> None:
     raise RuntimeError("Supabase gecici veritabani baglantisi hazir olmadi")
 
 
+def write_managed_customizations(db_url: str, destination: Path) -> None:
+    """Append user triggers attached to Supabase-managed Auth/Storage tables."""
+    trigger_sql = run([
+        "psql", db_url, "-X", "-At", "-c",
+        """
+        SELECT format(
+          'DROP TRIGGER IF EXISTS %I ON %I.%I;%s%s;',
+          trigger_name, table_schema, table_name, E'\\n', definition
+        )
+        FROM (
+          SELECT
+            trigger.tgname AS trigger_name,
+            table_namespace.nspname AS table_schema,
+            table_class.relname AS table_name,
+            pg_get_triggerdef(trigger.oid, true) AS definition
+          FROM pg_trigger AS trigger
+          JOIN pg_class AS table_class ON table_class.oid = trigger.tgrelid
+          JOIN pg_namespace AS table_namespace ON table_namespace.oid = table_class.relnamespace
+          JOIN pg_proc AS function_proc ON function_proc.oid = trigger.tgfoid
+          JOIN pg_namespace AS function_namespace ON function_namespace.oid = function_proc.pronamespace
+          WHERE NOT trigger.tgisinternal
+            AND table_namespace.nspname IN ('auth', 'storage')
+            AND function_namespace.nspname = 'public'
+          ORDER BY table_namespace.nspname, table_class.relname, trigger.tgname
+        ) AS user_trigger;
+        """,
+    ], capture=True)
+    with destination.open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n\n-- Runtime snapshot: public işlevlerine bağlı Auth/Storage tetikleyicileri.\n"
+        )
+        handle.write(trigger_sql)
+        handle.write("\n")
+
+
 def build_archive(workdir: Path, project_ref: str) -> Path:
     """Build a complete export with pg_dump and a short-lived Supabase login."""
     project_root = Path(os.environ.get("SUPABASE_WORKDIR", "/workspace"))
@@ -321,15 +356,20 @@ def build_archive(workdir: Path, project_ref: str) -> Path:
         "-- Application grants and policies are included in schema.sql.\n",
         encoding="utf-8",
     )
-    run(["pg_dump", db_url, "--schema-only", *common, f"--file={workdir / 'schema.sql'}"])
-    run(["pg_dump", db_url, "--data-only", *common, *exclusions,
+    # Supabase-managed schemas must not be recreated on a hosted restore target.
+    # Application DDL lives in public; Auth and Storage data are exported
+    # separately below and their user-owned DDL is supplied by the build-time
+    # auth_storage_diff.sql.
+    run(["pg_dump", db_url, "--schema-only", "--schema=public", *common,
+         f"--file={workdir / 'schema.sql'}"])
+    run(["pg_dump", db_url, "--data-only", "--schema=public", *common, *exclusions,
          f"--file={workdir / 'data.sql'}"])
     run(["pg_dump", db_url, "--data-only", *common, "--schema=supabase_migrations",
          f"--file={workdir / 'migration_history.sql'}"])
-    run(["pg_dump", db_url, "--schema-only", *common, "--schema=auth", "--schema=storage",
-         f"--file={workdir / 'managed_schema.sql'}"])
-    run(["pg_dump", db_url, "--data-only", *common, "--schema=auth", "--schema=storage",
-         *exclusions, f"--file={workdir / 'managed_data.sql'}"])
+    run(["pg_dump", db_url, "--format=custom", "--data-only", "--schema=auth", *common,
+         f"--file={workdir / 'auth.dump'}"])
+    run(["pg_dump", db_url, "--format=custom", "--data-only", "--schema=storage", *common,
+         *exclusions, f"--file={workdir / 'storage.dump'}"])
 
     stats = run([
         "psql", db_url, "-X", "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c",
@@ -349,6 +389,7 @@ def build_archive(workdir: Path, project_ref: str) -> Path:
     if not diff.is_file():
         raise RuntimeError("Supabase Auth/Storage restore diff is missing")
     shutil.copy2(diff, workdir / diff.name)
+    write_managed_customizations(db_url, workdir / diff.name)
     shutil.copytree(source / "migrations", workdir / "migrations")
     with tarfile.open(workdir / "migrations.tar.gz", "w:gz") as archive:
         archive.add(workdir / "migrations", arcname="migrations")
@@ -358,14 +399,14 @@ def build_archive(workdir: Path, project_ref: str) -> Path:
         "schema.sql",
         "data.sql",
         "migration_history.sql",
-        "managed_schema.sql",
-        "managed_data.sql",
+        "auth.dump",
+        "storage.dump",
         "auth_storage_diff.sql",
         "migrations.tar.gz",
         "table_summary.json",
     ]
     manifest = {
-        "format_version": "3",
+        "format_version": "4",
         "project_ref": project_ref,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "temporary_login_ttl_seconds": ttl_seconds,

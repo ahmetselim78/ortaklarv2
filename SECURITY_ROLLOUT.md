@@ -6,12 +6,12 @@ Bu değişiklikler tek final güvenlik kapısına bağlıdır; production'a tek 
 
 | Aşama | Uygulama | Doğrulama | Geri dönüş sınırı |
 |---|---|---|---|
-| 1 | `infra/gcp`, `ops/backup`, `cloudbuild.ops.yaml` | 7 günlük backup/verify, manuel ve Scheduler restore, Auth canary, RPO/RTO, Monitoring alarmı | Scheduler durdurulur/önceki imaj revision'ı; Bucket Lock geri alınmaz |
+| 1 | `infra/gcp-drive`, `ops/drive-backup`, `cloudbuild.drive-backup.yaml` | 7 günlük/12 aylık Drive yedeği, age bütünlük kontrolü, izole manuel restore, Auth canary ve RPO/RTO | Scheduler durdurulur/önceki imaj revision'ı; şifreli Drive dosyaları silinmez |
 | 2 | `046_auth_identity_bridge.sql`, `051_auth_session_helpers.sql`, Auth ekranları ve geçiş scriptleri | Hesap bazlı gerçek giriş/reset, cihaz iptali, admin TOTP/AAL2 | Taşınmamış hesapta kontrollü geçiş; taşınmış hesap legacy parolaya döndürülmez |
 | 3 | `047_rbac_core.sql`, kullanıcı/rol admin panelleri | Rol matrisi, mevcut oturumda en geç 30 saniye içinde yetki değişimi | UI enforcement geri alınabilir; rol verileri korunur |
 | 4 | `048_rls_rpc_hardening.sql` | pgTAP negatif paket ve iş akışı smoke testleri | Yalnız etkilenen modül bakım modu; geniş politika geri yüklenmez |
 | 5 | `052_admin_user_and_secret_security.sql`, güvenli Edge Function'lar, R2 Worker | Bundle sır taraması, JWT/izin/CORS/cron testleri, anahtar rotasyonu | Önceki güvenli Edge revision; sırlar frontend'e dönmez |
-| 6 | `049_append_only_audit.sql`, audit paneli/arşiv Job'u | Audit failure rollback, filtre, şifreleme geri okuma/hash testi | Etkilenen modül bakım modu; auditsiz işlem yok |
+| 6 | `049_append_only_audit.sql`, audit paneli ve şifreli Drive veritabanı yedeği | Audit failure rollback, filtre, yedek şifreleme geri okuma/hash testi | Etkilenen modül bakım modu; auditsiz işlem yok |
 | 7 | `050_central_error_tracking.sql`, istemci/Edge/Job hata aktarımı | Altı kaynak, dedup, rate-limit, hassas veri temizleme | İstemci aktarımı kapatılabilir; Monitoring korunur |
 | 8 | `053_legacy_security_cleanup.sql`, `054_account_lockout_guards.sql` | Tam Auth eşleme/rol kapısı, parola kolonu ve geniş grant taraması; kendi/son yönetici kilitlenme testleri | İleri düzeltme veya izole restore; plaintext kolon geri açılmaz |
 | 9 | `055_role_management_operations.sql`, `056_production_stations_rbac.sql`, `057_production_stations_single_umbrella.sql` | Atomik rol matrisi, üretim istasyonu modül izinleri ve dört istasyon ekranı smoke testi | İleri düzeltme; rol/izin geçmişi korunur |
@@ -58,7 +58,7 @@ Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işa
 - Vitest 160/160, production build, statik güvenlik taraması ve değiştirilen `admin-users` Edge Function Deno kontrolü başarılı.
 - Build yalnız mevcut büyük bundle uyarısını üretir; kabulü engelleyen TypeScript/Vite hatası yoktur.
 - Reset sonrasında yerel test yöneticisi bootstrap edildi; ilk girişte parola değişimi ve yeni TOTP kaydı kullanıcı tarafından tamamlanmalıdır.
-- Bu kayıt yalnız yerel kabulü kapatır. GCP dağıtımı, gerçek backup/verify/restore, Auth canary, RPO/RTO, alarm, yedi günlük gözlem ve Bucket Lock onayı hâlâ dış production kapılarıdır.
+- Bu kayıt yalnız yerel kabulü kapatır. GCP dağıtımı, gerçek Drive backup/verify/restore, Auth canary, RPO/RTO, alarm ve yedi günlük gözlem hâlâ dış production kapılarıdır.
 
 ## Çalışma ağacı doğrulaması — 23 Temmuz 2026
 
@@ -80,7 +80,7 @@ Yerel Docker/Supabase yoksa `supabase test db` sonucu kabul edilemez olarak işa
 ## Nihai yayın kapısı
 
 - Son tam yedek ve bütünlük doğrulaması 24 saat içinde; son aylık gerçek restore/Auth canary başarılı; ölçülen RTO en fazla 4 saat.
-- Günlük 30 gün ve aylık 365 gün retention doğrulanmış; Bucket Lock yalnız iki kişi kontrolü ve açık onayla uygulanmış.
+- Son 7 günlük ve 12 aylık şifreli Drive dosyası retention'ı doğrulanmış; offline age private anahtarının ikinci kopyası parola kasasında sınanmış.
 - Aktif kullanıcıların tamamı Auth + tek DB rolünde; yönetici AAL2 kullanıyor; cihazlar ayrı ve iptal edilebilir.
 - `security_release_gate` görünümündeki üç değer `true`.
 - Anon/geniş RLS ve açık RPC yok; Edge JWT/servis kimliği ve üretim origin allowlist'i doğrulanmış.

@@ -75,12 +75,6 @@ resource "google_project_iam_member" "builder_roles" {
   member  = "serviceAccount:${google_service_account.builder.email}"
 }
 
-resource "google_secret_manager_secret_iam_member" "builder_supabase_token" {
-  secret_id = google_secret_manager_secret.drive_backup[var.secret_ids.supabase_access_token].id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.builder.email}"
-}
-
 resource "google_secret_manager_secret_iam_member" "backup_secrets" {
   for_each  = local.backup_secret_ids
   secret_id = google_secret_manager_secret.drive_backup[each.value].id

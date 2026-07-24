@@ -3,6 +3,7 @@ substitutions:
   _REPOSITORY: ortaklar-drive-backup
   _IMAGE: drive-backup
   _TAG: manual
+  _GIT_COMMIT: local
 
 steps:
   - id: verify-auth-storage-diff
@@ -17,7 +18,7 @@ steps:
     args:
       - build
       - --file=ops/drive-backup/Dockerfile
-      - --build-arg=GIT_COMMIT=$COMMIT_SHA
+      - "--build-arg=GIT_COMMIT=${_GIT_COMMIT}"
       - "--tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:${_TAG}"
       - .
   - id: push

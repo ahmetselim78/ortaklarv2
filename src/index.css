@@ -125,8 +125,17 @@ input[type=number] {
   box-sizing: border-box;
 }
 
+html {
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: clip;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -134,10 +143,27 @@ body {
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
+#root {
+  min-height: 100dvh;
+}
+
 /* Uygulama içeriğini tek ve dokunmatik cihazlarda akıcı bir kaydırma yüzeyinde tut. */
 .app-scroll-area {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: auto;
+}
+
+/*
+ * iOS Safari, 16px'ten küçük form alanlarına odaklanınca sayfayı otomatik
+ * yakınlaştırır. Kullanıcının mevcut yakınlaştırma seviyesini kısıtlamadan,
+ * mobil form kontrollerini 16px tutarak bu davranışı önle.
+ */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* Yan menünün koyu yüzeyle bütünleşen, dikkat çekmeyen kaydırma çubuğu. */
