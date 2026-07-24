@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  AlertTriangle, Laptop, Loader2, LogOut, Pencil, RefreshCw, Search,
+  AlertTriangle, ChevronDown, Laptop, Loader2, LogOut, Pencil, RefreshCw, Search,
   ShieldCheck, Smartphone, Tablet, Users, Wifi, WifiOff,
 } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
@@ -138,6 +138,41 @@ export default function CihazOturumlariPanel() {
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const activeCount = useMemo(() => rows.filter(row => row.status === 'active' && row.auth_active).length, [rows])
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(() => new Set())
+
+  const userGroups = useMemo(() => {
+    const byUser = new Map<string, DeviceSessionRow[]>()
+    for (const row of rows) {
+      const existing = byUser.get(row.auth_user_id)
+      if (existing) existing.push(row)
+      else byUser.set(row.auth_user_id, [row])
+    }
+    return [...byUser.entries()].map(([authUserId, sessions]) => {
+      const sorted = [...sessions].sort((a, b) => new Date(b.last_seen_at).getTime() - new Date(a.last_seen_at).getTime())
+      const primary = sorted[0]
+      const activeSessions = sorted.filter(session => session.status === 'active' && session.auth_active)
+      return {
+        authUserId,
+        sessions: sorted,
+        primary,
+        activeCount: activeSessions.length,
+        recentlySeen: sorted.some(session => session.recently_seen),
+        lastSeenAt: primary?.last_seen_at ?? null,
+      }
+    }).sort((a, b) => {
+      if (a.activeCount !== b.activeCount) return b.activeCount - a.activeCount
+      return new Date(b.lastSeenAt ?? 0).getTime() - new Date(a.lastSeenAt ?? 0).getTime()
+    })
+  }, [rows])
+
+  function toggleUser(authUserId: string) {
+    setExpandedUsers(current => {
+      const next = new Set(current)
+      if (next.has(authUserId)) next.delete(authUserId)
+      else next.add(authUserId)
+      return next
+    })
+  }
 
   async function revoke(row: DeviceSessionRow) {
     const name = row.custom_display_name ?? row.auto_display_name
@@ -218,21 +253,101 @@ export default function CihazOturumlariPanel() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         {loading ? <div className="grid min-h-52 place-items-center text-slate-500"><Loader2 className="animate-spin" /></div>
-          : rows.length === 0 ? <div className="grid min-h-52 place-items-center text-sm text-slate-500">Filtreye uygun oturum bulunamadı.</div>
-            : <div className="overflow-x-auto"><table className="min-w-[1100px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Kullanıcı / cihaz</th><th className="px-4 py-3">Durum</th><th className="px-4 py-3">Giriş / süre</th><th className="px-4 py-3">Son işlem</th><th className="px-4 py-3">Son görülme</th><th className="px-4 py-3 text-right">İşlemler</th></tr></thead><tbody className="divide-y divide-slate-100">
-              {rows.map(row => {
-                const technicallyActive = row.status === 'active' && row.auth_active
-                const self = row.auth_user_id === access?.user.auth_user_id
-                return <tr key={row.id} className="align-top hover:bg-slate-50/70">
-                  <td className="px-4 py-4"><div className="font-semibold text-slate-900">{row.user_display_name}</div><div className="text-xs text-slate-500">{row.role_name ?? 'Rol yok'} · {row.account_type}</div><div className="mt-2 flex items-center gap-2 text-slate-700"><DeviceIcon type={row.device_type} /><span className="font-medium">{row.custom_display_name ?? row.auto_display_name}</span></div><div className="ml-6 text-xs text-slate-400">{row.os_family} · {row.browser_family}</div></td>
-                  <td className="px-4 py-4">{technicallyActive ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700"><Wifi size={13} /> Auth açık</span> : <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600"><WifiOff size={13} /> Pasif</span>}<div className="mt-2 text-xs text-slate-500">{reasonLabel(row.termination_reason)}</div>{row.status === 'revoked' && !row.auth_revocation_confirmed_at && <div className="mt-1 text-xs font-medium text-amber-700">Auth iptali bekliyor · {row.auth_revocation_attempt_count} deneme</div>}</td>
-                  <td className="px-4 py-4"><div>{formatDate(row.signed_in_at)}</div><div className="mt-1 text-xs text-slate-500">{formatDuration(row.signed_in_at, technicallyActive ? null : row.ended_at)}</div></td>
-                  <td className="px-4 py-4"><div>{formatDate(row.last_action_at)}</div><div className="mt-1 text-xs text-slate-400">{row.last_action_type ?? 'Anlamlı işlem yok'}</div></td>
-                  <td className="px-4 py-4"><div>{formatDate(row.last_seen_at)}</div><div className={`mt-1 text-xs font-medium ${row.recently_seen ? 'text-emerald-600' : 'text-slate-400'}`}>{row.recently_seen ? 'Yakın zamanda görüldü' : 'Yakın değil'}</div></td>
-                  <td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" title="Cihaz adını değiştir" onClick={() => void rename(row)} disabled={!canManage || busyId != null} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:opacity-40"><Pencil size={15} /></button>{technicallyActive && <button type="button" title="Bu cihazdan çıkış yap" onClick={() => void revoke(row)} disabled={!canManage || self || busyId != null} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-40">{busyId === row.id ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />}</button>} {technicallyActive && <button type="button" title={self ? 'Diğer cihazlardan çıkış yap' : 'Tüm cihazlardan çıkış yap'} onClick={() => void revokeAll(row)} disabled={!canManage || busyId != null} className="rounded-lg border border-amber-200 p-2 text-amber-700 hover:bg-amber-50 disabled:opacity-40">{busyId === `all:${row.auth_user_id}` ? <Loader2 size={15} className="animate-spin" /> : <Users size={15} />}</button>}</div></td>
-                </tr>
-              })}
-            </tbody></table></div>}
+          : userGroups.length === 0 ? <div className="grid min-h-52 place-items-center text-sm text-slate-500">Filtreye uygun oturum bulunamadı.</div>
+            : (
+              <div className="divide-y divide-slate-100">
+                {userGroups.map(group => {
+                  const { primary, sessions, authUserId } = group
+                  const expanded = expandedUsers.has(authUserId)
+                  const self = authUserId === access?.user.auth_user_id
+                  const hasActive = group.activeCount > 0
+                  return (
+                    <article key={authUserId} className="bg-white">
+                      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <button
+                          type="button"
+                          onClick={() => toggleUser(authUserId)}
+                          aria-expanded={expanded}
+                          className="flex min-w-0 flex-1 items-start gap-3 rounded-xl p-1 text-left outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        >
+                          <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border ${hasActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                            <Users size={17} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="truncate text-sm font-bold text-slate-900">{primary.user_display_name}</span>
+                              {primary.username && <span className="text-xs text-slate-400">@{primary.username}</span>}
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${hasActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                {hasActive ? <><Wifi size={11} /> {group.activeCount} açık</> : <><WifiOff size={11} /> Pasif</>}
+                              </span>
+                            </span>
+                            <span className="mt-1 block text-xs text-slate-500">
+                              {primary.role_name ?? 'Rol yok'} · {primary.account_type} · {sessions.length} cihaz
+                              {group.recentlySeen ? ' · Yakın zamanda görüldü' : ''}
+                            </span>
+                            <span className="mt-1 block text-[11px] text-slate-400">
+                              Son görülme {formatDate(group.lastSeenAt)}
+                            </span>
+                          </span>
+                          <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                        </button>
+                        {hasActive && (
+                          <button
+                            type="button"
+                            title={self ? 'Diğer cihazlardan çıkış yap' : 'Tüm cihazlardan çıkış yap'}
+                            onClick={() => void revokeAll(primary)}
+                            disabled={!canManage || busyId != null}
+                            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-40"
+                          >
+                            {busyId === `all:${authUserId}` ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
+                            Tümünden çıkış
+                          </button>
+                        )}
+                      </div>
+
+                      {expanded && (
+                        <div className="space-y-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+                          {sessions.map(row => {
+                            const technicallyActive = row.status === 'active' && row.auth_active
+                            const deviceSelf = row.auth_user_id === access?.user.auth_user_id
+                            return (
+                              <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2 text-slate-800">
+                                      <DeviceIcon type={row.device_type} />
+                                      <span className="font-semibold">{row.custom_display_name ?? row.auto_display_name}</span>
+                                      {technicallyActive
+                                        ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"><Wifi size={11} /> Auth açık</span>
+                                        : <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600"><WifiOff size={11} /> Pasif</span>}
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-400">{row.os_family} · {row.browser_family}</p>
+                                    <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+                                      <div><span className="font-semibold text-slate-500">Giriş</span><div>{formatDate(row.signed_in_at)}</div><div className="text-slate-400">{formatDuration(row.signed_in_at, technicallyActive ? null : row.ended_at)}</div></div>
+                                      <div><span className="font-semibold text-slate-500">Son işlem</span><div>{formatDate(row.last_action_at)}</div><div className="text-slate-400">{row.last_action_type ?? 'Anlamlı işlem yok'}</div></div>
+                                      <div><span className="font-semibold text-slate-500">Son görülme</span><div>{formatDate(row.last_seen_at)}</div><div className={row.recently_seen ? 'font-medium text-emerald-600' : 'text-slate-400'}>{row.recently_seen ? 'Yakın zamanda görüldü' : 'Yakın değil'}</div></div>
+                                      <div><span className="font-semibold text-slate-500">Durum notu</span><div>{reasonLabel(row.termination_reason)}</div>{row.status === 'revoked' && !row.auth_revocation_confirmed_at && <div className="font-medium text-amber-700">Auth iptali bekliyor · {row.auth_revocation_attempt_count} deneme</div>}</div>
+                                    </div>
+                                  </div>
+                                  <div className="flex shrink-0 gap-2">
+                                    <button type="button" title="Cihaz adını değiştir" onClick={() => void rename(row)} disabled={!canManage || busyId != null} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:opacity-40"><Pencil size={15} /></button>
+                                    {technicallyActive && (
+                                      <button type="button" title="Bu cihazdan çıkış yap" onClick={() => void revoke(row)} disabled={!canManage || deviceSelf || busyId != null} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-40">
+                                        {busyId === row.id ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-500"><span>Sayfa {page} / {pageCount}</span><div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Önceki</button><button type="button" disabled={page >= pageCount} onClick={() => setPage(value => Math.min(pageCount, value + 1))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Sonraki</button></div></div>
       </div>
     </div>
