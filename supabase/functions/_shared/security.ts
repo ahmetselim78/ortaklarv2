@@ -105,7 +105,10 @@ export class ResponseError extends Error {
 
 export async function errorResponse(req: Request, error: unknown): Promise<Response> {
   const status = error instanceof ResponseError ? error.status : 500
-  if (status === 401 || status === 403 || status >= 500) {
+  const expectedSessionDenial = error instanceof ResponseError
+    && status === 401
+    && /^(?:SESSION_REVOKED|SESSION_NOT_FOUND|SESSION_REQUIRED|LEGACY_SESSION_REAUTH_REQUIRED)$/.test(error.message)
+  if (!expectedSessionDenial && (status === 401 || status === 403 || status >= 500)) {
     try {
       const url = Deno.env.get('SUPABASE_URL')
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')

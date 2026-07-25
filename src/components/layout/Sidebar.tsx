@@ -7,7 +7,6 @@ import {
   ExternalLink,
   Factory,
   GaugeCircle,
-  Layers,
   LayoutDashboard,
   Package,
   PanelLeftClose,
@@ -199,12 +198,14 @@ export default function Sidebar({ collapsed, mobileOpen, onCollapsedChange, onMo
       >
         <div className={cn('relative flex h-[72px] shrink-0 items-center border-b border-slate-800/80 px-4', collapsed && 'xl:justify-center xl:px-0')}>
           <div className={cn('flex min-w-0 items-center gap-3', collapsed && 'xl:justify-center')}>
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)]">
-              <Layers size={20} strokeWidth={2.2} />
-            </div>
+            <img
+              src="/glassflow-logo.png"
+              alt="GlassFlow"
+              className="h-10 w-10 shrink-0 object-contain"
+            />
             <div className={cn('min-w-0', collapsed && 'xl:sr-only')}>
-              <h2 className="truncate text-[14px] font-bold leading-tight tracking-[0.01em] text-slate-50">Cam Yönetim</h2>
-              <p className="mt-1 truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">Üretim Paneli</p>
+              <h2 className="truncate text-[14px] font-bold leading-tight tracking-[0.01em] text-slate-50">GlassFlow</h2>
+              <p className="mt-1 truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">MES &amp; ERP SYSTEM</p>
             </div>
           </div>
 

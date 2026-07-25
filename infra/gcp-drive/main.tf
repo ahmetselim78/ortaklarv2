@@ -2,6 +2,7 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "cloudscheduler.googleapis.com",
     "drive.googleapis.com",
     "iam.googleapis.com",
@@ -329,6 +330,7 @@ resource "google_service_account_iam_member" "scheduler_token_creator" {
 
 resource "google_cloud_scheduler_job" "daily_backup" {
   name      = "ortaklar-drive-nightly-backup"
+  region    = var.scheduler_region
   schedule  = var.schedule
   time_zone = var.time_zone
   http_target {

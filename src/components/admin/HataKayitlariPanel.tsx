@@ -4,6 +4,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { supabase } from '@/lib/supabase'
 import { ERROR_RESOLUTION_REPORT_CONTRACT, parseErrorResolutionReport, type ErrorResolutionReport } from '@/lib/errorResolutionReport'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
+import { utf8JsonWithBom } from '@/lib/textEncoding'
 
 interface SystemError {
   id: string
@@ -69,7 +70,9 @@ function downloadErrorExport(rows: SystemError[]) {
     },
     errors: rows,
   }
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+  // BOM, özellikle Windows Not Defteri ve eski PowerShell sürümlerinin UTF-8'i
+  // ANSI olarak yorumlamasını önler. Replacer eski kayıtlardaki çift kodlamayı da onarır.
+  const blob = new Blob([utf8JsonWithBom(payload)], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

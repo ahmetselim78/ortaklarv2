@@ -8,7 +8,13 @@ variable "project_id" {
 
 variable "region" {
   type    = string
-  default = "europe-west1"
+  default = "europe-west10"
+}
+
+variable "scheduler_region" {
+  description = "Cloud Scheduler europe-west10'u desteklemediği için zamanlayıcının bölgesi."
+  type        = string
+  default     = "europe-west1"
 }
 
 variable "backup_image" {

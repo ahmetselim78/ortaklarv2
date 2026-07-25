@@ -1,5 +1,17 @@
 # Google Drive şifreli yedekleme
 
+## Hedef production ortamı
+
+- Google Cloud projesi: `glassflow-production`
+- Cloud Run/Artifact Registry bölgesi: `europe-west10`
+- Cloud Scheduler bölgesi: `europe-west1` (`europe-west10` Scheduler tarafından desteklenmiyor)
+- Supabase proje ref'i: `epvukkpotzicwphaiemu`
+
+Başka bir proje veya bölgeye ait yerel Terraform state'i bu dizinde yeniden
+kullanılmamalıdır. Ortam değişikliğinde `.terraform`, `terraform.tfstate`,
+`terraform.tfvars` ve eski OAuth tokenları temizlenip kurulum sıfırdan
+başlatılmalıdır.
+
 Bu dizin OrtaklarV2'nin tek yedekleme ve geri-yükleme akışıdır. Supabase
 veritabanı yedeği Cloud Run Job içinde hazırlanır, `age` public key ile
 şifrelenir ve yalnız uygulamanın oluşturduğu dosyalara erişebilen Google Drive

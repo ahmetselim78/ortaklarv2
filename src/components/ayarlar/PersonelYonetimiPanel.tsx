@@ -39,16 +39,34 @@ function PersonelAvatar({ foto_url, ad_soyad, boyut = 'md' }: {
   boyut?: 'sm' | 'md' | 'lg'
 }) {
   const [hatali, setHatali] = useState(false)
+  const [deneme, setDeneme] = useState(0)
+  const yenidenDenemeZamanlayicisi = useRef<number | null>(null)
   const boyutSinif = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-12 h-12 text-base' }[boyut]
   const initials = ad_soyad.split(' ').slice(0, 2).map(s => s[0]?.toUpperCase() ?? '').join('')
+
+  useEffect(() => () => {
+    if (yenidenDenemeZamanlayicisi.current !== null) {
+      window.clearTimeout(yenidenDenemeZamanlayicisi.current)
+    }
+  }, [])
+
+  const yuklemeHatasi = () => {
+    setHatali(true)
+    if (deneme >= 2) return
+    yenidenDenemeZamanlayicisi.current = window.setTimeout(() => {
+      setDeneme(mevcut => mevcut + 1)
+      setHatali(false)
+    }, 750 * (deneme + 1))
+  }
 
   if (foto_url && !hatali) {
     return (
       <img
+        key={`${foto_url}-${deneme}`}
         src={foto_url}
         alt={ad_soyad}
-        onError={() => setHatali(true)}
-        crossOrigin="anonymous"
+        onError={yuklemeHatasi}
+        onLoad={() => setHatali(false)}
         className={`${boyutSinif} rounded-full object-cover shrink-0 border border-gray-200`}
       />
     )
@@ -120,9 +138,9 @@ function FotoAlani({ deger, onDegisim, hata }: FotoAlanıProps) {
       {deger && (
         <div className="flex items-center gap-2 mb-2">
           <img
+            key={deger}
             src={deger}
             alt="Önizleme"
-            crossOrigin="anonymous"
             className="w-10 h-10 rounded-full object-cover border border-gray-200"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
           />
@@ -542,7 +560,12 @@ export default function PersonelYonetimiPanel() {
                     : 'bg-gray-50 border-gray-100 opacity-60'
                 }`}
               >
-                <PersonelAvatar foto_url={p.foto_url} ad_soyad={p.ad_soyad} boyut="md" />
+                <PersonelAvatar
+                  key={p.foto_url}
+                  foto_url={p.foto_url}
+                  ad_soyad={p.ad_soyad}
+                  boyut="md"
+                />
 
                 <div className="min-w-0">
                   <p className={`text-sm font-medium truncate ${p.is_aktif ? 'text-gray-800' : 'text-gray-500'}`}>

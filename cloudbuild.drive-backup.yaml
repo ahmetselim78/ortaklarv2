@@ -1,5 +1,5 @@
 substitutions:
-  _REGION: europe-west1
+  _REGION: europe-west10
   _REPOSITORY: ortaklar-drive-backup
   _IMAGE: drive-backup
   _TAG: manual
