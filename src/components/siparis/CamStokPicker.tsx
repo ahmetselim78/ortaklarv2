@@ -38,6 +38,8 @@ interface CamStokPickerProps {
   stoklar: Stok[]
   value: string
   onChange: (stokId: string) => void
+  /** Grup seçildiğinde üst bileşenin listeyi aynı kategoriyle filtrelemesini sağlar. */
+  onGroupChange?: (grup: string) => void
   /** Seçili stok varken Enter'a basıldığında picker dışındaki sonraki alana geçiş yapar. */
   onSelectedEnter?: () => void
   invalid?: boolean
@@ -68,6 +70,7 @@ export default function CamStokPicker({
   stoklar,
   value,
   onChange,
+  onGroupChange,
   onSelectedEnter,
   invalid,
   placeholder = 'Cam stoğu seçin...',
@@ -298,7 +301,7 @@ export default function CamStokPicker({
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             <button
               type="button"
-              onClick={() => { setGrupFiltresi(''); setAktifIdx(-1) }}
+              onClick={() => { setGrupFiltresi(''); onGroupChange?.(''); setAktifIdx(-1) }}
               className={cn(
                 'shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
                 !grupFiltresi
@@ -312,7 +315,12 @@ export default function CamStokPicker({
               <button
                 key={grup}
                 type="button"
-                onClick={() => { setGrupFiltresi(g => g === grup ? '' : grup); setAktifIdx(-1) }}
+                onClick={() => {
+                  const yeniGrup = grupFiltresi === grup ? '' : grup
+                  setGrupFiltresi(yeniGrup)
+                  onGroupChange?.(yeniGrup)
+                  setAktifIdx(-1)
+                }}
                 className={cn(
                   'shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors whitespace-nowrap',
                   grupFiltresi === grup

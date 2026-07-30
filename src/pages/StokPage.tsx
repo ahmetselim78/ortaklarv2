@@ -1,752 +1,544 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Plus, Package, AlertTriangle, RefreshCw } from 'lucide-react'
-import { useStok } from '@/hooks/useStok'
-import { useCari } from '@/hooks/useCari'
-import EmptyState from '@/components/ui/EmptyState'
-import StokListesi from '@/components/stok/StokListesi'
-import StokForm, { type StokFormOnDegerleri, type StokPayload } from '@/components/stok/StokForm'
-import CamStokPicker from '@/components/siparis/CamStokPicker'
-import CitaStokSelect from '@/components/siparis/CitaStokSelect'
-import { supabase } from '@/lib/supabase'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  detayStokReferansiGuncelle,
-  eskiStokReferanslariniMigrate,
-  eskiStokReferansSayisi,
-  pasifCitaReferanslariniMigrate,
-  pasifCitaReferansSayisi,
-  type MigrasyonKayit,
-} from '@/lib/stokMigrasyon'
-import { citaKodOnerisi, citaStokAdi, eksikCitaBoyutlari } from '@/lib/cam'
-import type { Stok, StokKategori } from '@/types/stok'
+  AlertCircle,
+  ArrowLeftRight,
+  Boxes,
+  CheckCircle2,
+  CircleOff,
+  Database,
+  LoaderCircle,
+  PackageCheck,
+  Plus,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
+import { useAuth } from '@/auth/AuthContext'
+import StokDetayPaneli from '@/components/stok/StokDetayPaneli'
+import StokForm, { type StokPayload } from '@/components/stok/StokForm'
+import StokHareketListesi from '@/components/stok/StokHareketListesi'
+import StokHareketModal from '@/components/stok/StokHareketModal'
+import StokListesi from '@/components/stok/StokListesi'
+import PageHeader from '@/components/ui/PageHeader'
+import { useStok } from '@/hooks/useStok'
+import { stokKataloguVeReceteleriKur } from '@/lib/stokBaslangicKurulumAkisi'
+import { ticariBugun } from '@/lib/ticariFormat'
+import { cn } from '@/lib/utils'
+import { standartUrunReceteleriniKurV3 } from '@/services/maliyetService'
+import {
+  stokBaslangicKataloguDurumunuGetir,
+  stokBaslangicKatalogunuKur,
+} from '@/services/stokService'
+import type {
+  StokBaslangicKatalogDurumu,
+  StokKatalogKaydi,
+  StokKategori,
+} from '@/types/stok'
 
-const SEKMELER: { key: StokKategori; label: string }[] = [
-  { key: 'cam', label: 'Cam Stokları' },
+const SEKMELER: Array<{ key: StokKategori; label: string }> = [
+  { key: 'cam', label: 'Cam' },
   { key: 'cita', label: 'Çıta' },
-  { key: 'yan_malzeme', label: 'Yan Malzemeler' },
+  { key: 'yan_malzeme', label: 'Yan Malzeme' },
 ]
 
-async function stokKullanimSayisi(stokId: string): Promise<{ stok: number; cita: number }> {
-  const [stokRes, citaRes] = await Promise.all([
-    supabase.from('siparis_detaylari').select('id', { count: 'exact', head: true }).eq('stok_id', stokId),
-    supabase.from('siparis_detaylari').select('id', { count: 'exact', head: true }).eq('cita_stok_id', stokId),
-  ])
-  return { stok: stokRes.count ?? 0, cita: citaRes.count ?? 0 }
+function OzetKarti({ baslik, deger, alt, icon, ton }: {
+  baslik: string
+  deger: number
+  alt: string
+  icon: React.ReactNode
+  ton: 'blue' | 'red' | 'amber' | 'emerald'
+}) {
+  const tonlar = {
+    blue: 'bg-blue-50 text-blue-700',
+    red: 'bg-red-50 text-red-700',
+    amber: 'bg-amber-50 text-amber-700',
+    emerald: 'bg-emerald-50 text-emerald-700',
+  }
+  return <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm shadow-slate-950/[0.02]"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-gray-500">{baslik}</p><p className="mt-2 text-2xl font-semibold text-gray-900">{deger}</p><p className="mt-1 text-xs text-gray-500">{alt}</p></div><span className={`rounded-lg p-2 ${tonlar[ton]}`}>{icon}</span></div></div>
 }
 
-export default function StokPage() {
-  const { stoklar, yukleniyor, hata, ekle, guncelle, sil } = useStok()
-  const { cariler } = useCari()
+function KatalogKurulumKarti({
+  durum,
+  yukleniyor,
+  kuruluyor,
+  olusturabilir,
+  mesaj,
+  receteTekrariGerekli,
+  onKur,
+  onReceteTekrar,
+}: {
+  durum: StokBaslangicKatalogDurumu | null
+  yukleniyor: boolean
+  kuruluyor: boolean
+  olusturabilir: boolean
+  mesaj: string | null
+  receteTekrariGerekli: boolean
+  onKur: () => void
+  onReceteTekrar: () => void
+}) {
+  if (yukleniyor && !durum) {
+    return (
+      <div className="mb-5 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-600">
+        <LoaderCircle size={18} className="animate-spin text-blue-600" />
+        Başlangıç stok kataloğu kontrol ediliyor…
+      </div>
+    )
+  }
+  if (!durum) return null
+
+  const temizKurulum = durum.mevcut === 0
+  const butonMetni = temizKurulum ? 'Başlangıç Stok Kataloğunu Kur' : 'Eksikleri Tamamla'
+  const kategoriEtiketleri: Record<StokKategori, string> = {
+    cam: 'Cam',
+    cita: 'Çıta',
+    yan_malzeme: 'Yan malzeme',
+  }
+
+  if (durum.kurulu) {
+    const cakismaVar = durum.cakisan > 0
+    const uyariVar = receteTekrariGerekli || cakismaVar
+    return (
+      <div className={cn(
+        'mb-5 rounded-xl border px-4 py-3',
+        uyariVar
+          ? 'border-amber-200 bg-amber-50'
+          : 'border-emerald-200 bg-emerald-50',
+      )}>
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3">
+            {uyariVar
+              ? <TriangleAlert size={20} className="mt-0.5 shrink-0 text-amber-600" />
+              : <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-600" />}
+            <div>
+              <p className={cn(
+                'text-sm font-semibold',
+                uyariVar ? 'text-amber-900' : 'text-emerald-900',
+              )}>
+                {receteTekrariGerekli
+                  ? 'Stok kataloğu hazır; maliyet reçeteleri bekliyor'
+                  : cakismaVar
+                    ? 'Stok kataloğu hazır; mevcut kart farklılıkları var'
+                    : 'Başlangıç stok kataloğu hazır'}
+              </p>
+              <p className={cn(
+                'mt-0.5 text-xs',
+                uyariVar ? 'text-amber-700' : 'text-emerald-700',
+              )}>
+                {durum.toplam} standart kartın tamamı mevcut. Kurulum işlemi mevcut kartları değiştirmez.
+              </p>
+              {cakismaVar && (
+                <p className="mt-1 text-xs font-medium text-amber-800">
+                  {durum.cakisan} mevcut kartın teknik tanımı standart şablondan farklı; kullanıcı kartları korundu.
+                </p>
+              )}
+              {mesaj && (
+                <p className={cn(
+                  'mt-1 text-xs font-medium',
+                  uyariVar ? 'text-amber-800' : 'text-emerald-800',
+                )}>
+                  {mesaj}
+                </p>
+              )}
+            </div>
+          </div>
+          {uyariVar && olusturabilir && (
+            <button
+              type="button"
+              onClick={onReceteTekrar}
+              disabled={kuruluyor}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {kuruluyor
+                ? <><LoaderCircle size={16} className="animate-spin" /> Reçeteler hazırlanıyor…</>
+                : <><PackageCheck size={16} /> Reçeteleri Yeniden Dene</>}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn(
+      'mb-5 rounded-2xl border p-5 shadow-sm',
+      temizKurulum ? 'border-blue-200 bg-blue-50' : 'border-amber-200 bg-amber-50',
+    )}>
+      <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
+        <div className="flex items-start gap-3">
+          <span className={cn(
+            'rounded-xl p-2.5',
+            temizKurulum ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700',
+          )}>
+            <Database size={21} />
+          </span>
+          <div>
+            <h2 className="text-base font-bold text-gray-900">
+              {temizKurulum ? 'Başlangıç stok kataloğunu kurun' : 'Başlangıç stok kataloğunda eksikler var'}
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
+              {temizKurulum
+                ? 'Standart cam, alüminyum çıta ve yan malzeme kartlarını tek işlemle oluşturun.'
+                : `${durum.eksik} standart kart eksik. Yalnızca eksik kartlar oluşturulacak; mevcut kartlar ve veriler korunacak.`}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SEKMELER.map(({ key }) => {
+                const ozet = durum.kategoriler[key]
+                return (
+                  <span key={key} className="rounded-full border border-white/80 bg-white/70 px-2.5 py-1 text-xs font-medium text-gray-700">
+                    {kategoriEtiketleri[key]}: {ozet.mevcut}/{ozet.toplam}
+                    {ozet.eksik > 0 && <span className="ml-1 text-amber-700">({ozet.eksik} eksik)</span>}
+                  </span>
+                )
+              })}
+            </div>
+            {!olusturabilir && (
+              <p className="mt-3 text-xs font-medium text-gray-600">
+                Kurulum için stok oluşturma yetkisi gereklidir.
+              </p>
+            )}
+          </div>
+        </div>
+        {olusturabilir && (
+          <button
+            type="button"
+            onClick={onKur}
+            disabled={kuruluyor || yukleniyor || durum.eksik === 0}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {kuruluyor
+              ? <><LoaderCircle size={17} className="animate-spin" /> Katalog hazırlanıyor…</>
+              : <><Database size={17} /> {butonMetni}</>}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function StokPage({ yonetimModu = false }: { yonetimModu?: boolean }) {
+  const {
+    stoklar,
+    hareketler,
+    tedarikciler,
+    ozet,
+    yukleniyor,
+    hata,
+    ekle,
+    guncelle,
+    sil,
+    aktiflikAyarla,
+    hareketKaydet,
+    operasyonAyarlariGuncelle,
+    yenile,
+  } = useStok({ yonetimVerileriniYukle: yonetimModu })
+  const { hasPermission } = useAuth()
+  const olusturabilir = yonetimModu && hasPermission('inventory', 'create')
+  const duzenleyebilir = yonetimModu && hasPermission('inventory', 'update')
+  const silebilir = yonetimModu && hasPermission('inventory', 'delete')
+
   const [aktifSekme, setAktifSekme] = useState<StokKategori>('cam')
   const [formAcik, setFormAcik] = useState(false)
-  const [duzenlenecek, setDuzenlenecek] = useState<Stok | null>(null)
-  const [formOnDegerler, setFormOnDegerler] = useState<StokFormOnDegerleri | null>(null)
-  const [silinecek, setSilinecek] = useState<Stok | null>(null)
+  const [duzenlenecek, setDuzenlenecek] = useState<StokKatalogKaydi | null>(null)
+  const [detayId, setDetayId] = useState<string | null>(null)
+  const [silinecek, setSilinecek] = useState<StokKatalogKaydi | null>(null)
+  const [hareketStokId, setHareketStokId] = useState<string | null | undefined>(undefined)
   const [siliniyor, setSiliniyor] = useState(false)
-  const [silHatasi, setSilHatasi] = useState<string | null>(null)
-  const [migrasyonModu, setMigrasyonModu] = useState(false)
-  const [migrasyonHedefId, setMigrasyonHedefId] = useState('')
-  const [migrasyonOnaylandi, setMigrasyonOnaylandi] = useState(false)
-  const [kullanimSayisi, setKullanimSayisi] = useState<{ stok: number; cita: number } | null>(null)
-  const [pasifOnay, setPasifOnay] = useState<Stok | null>(null)
-  const [migrasyonSayisi, setMigrasyonSayisi] = useState<number | null>(null)
-  const [citaMigrasyonSayisi, setCitaMigrasyonSayisi] = useState<number | null>(null)
-  const [migrasyonCalisiyor, setMigrasyonCalisiyor] = useState(false)
-  const [citaMigrasyonCalisiyor, setCitaMigrasyonCalisiyor] = useState(false)
-  const [eksikCitaEkleniyor, setEksikCitaEkleniyor] = useState(false)
-  const [migrasyonSonuc, setMigrasyonSonuc] = useState<string | null>(null)
-  const [citaMigrasyonSonuc, setCitaMigrasyonSonuc] = useState<string | null>(null)
-  const [eslesmeyenCamlar, setEslesmeyenCamlar] = useState<MigrasyonKayit[]>([])
-  const [eslesmeyenCitalar, setEslesmeyenCitalar] = useState<MigrasyonKayit[]>([])
-  const [manuelSecimler, setManuelSecimler] = useState<Record<string, string>>({})
-  const [manuelKaydediliyor, setManuelKaydediliyor] = useState<string | null>(null)
-  const [manuelHata, setManuelHata] = useState<string | null>(null)
+  const [islemHatasi, setIslemHatasi] = useState<string | null>(null)
+  const [katalogDurumu, setKatalogDurumu] = useState<StokBaslangicKatalogDurumu | null>(null)
+  const [katalogDurumuYukleniyor, setKatalogDurumuYukleniyor] = useState(true)
+  const [katalogKuruluyor, setKatalogKuruluyor] = useState(false)
+  const [katalogMesaji, setKatalogMesaji] = useState<string | null>(null)
+  const [receteTekrariGerekli, setReceteTekrariGerekli] = useState(false)
+  const katalogKurulumKilidi = useRef(false)
 
-  const aktifCamStoklar = useMemo(
-    () => stoklar.filter((s) => s.kategori === 'cam' && s.aktif !== false),
-    [stoklar],
-  )
+  const adetler = useMemo(() => Object.fromEntries(SEKMELER.map(({ key }) => [
+    key,
+    stoklar.filter((stok) => stok.kategori === key).length,
+  ])) as Record<StokKategori, number>, [stoklar])
+  const detay = detayId ? stoklar.find((stok) => stok.id === detayId) ?? null : null
+
+  const katalogDurumunuYenile = useCallback(async () => {
+    setKatalogDurumuYukleniyor(true)
+    try {
+      const durum = await stokBaslangicKataloguDurumunuGetir()
+      setKatalogDurumu(durum)
+    } catch (error) {
+      setIslemHatasi(error instanceof Error
+        ? error.message
+        : 'Başlangıç stok kataloğu durumu alınamadı.')
+    } finally {
+      setKatalogDurumuYukleniyor(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (aktifSekme === 'cam') {
-      eskiStokReferansSayisi()
-        .then(setMigrasyonSayisi)
-        .catch(() => setMigrasyonSayisi(null))
+    if (!yonetimModu) {
+      setKatalogDurumuYukleniyor(false)
       return
     }
-    if (aktifSekme === 'cita') {
-      pasifCitaReferansSayisi()
-        .then(setCitaMigrasyonSayisi)
-        .catch(() => setCitaMigrasyonSayisi(null))
-    }
-  }, [aktifSekme, stoklar])
+    void katalogDurumunuYenile()
+  }, [katalogDurumunuYenile, yonetimModu])
 
-  const handleDuzenle = (stok: Stok) => {
+  const formuKapat = () => {
+    setFormAcik(false)
+    setDuzenlenecek(null)
+  }
+
+  const handleKaydet = async (payload: StokPayload) => {
+    if (duzenlenecek) await guncelle(duzenlenecek.id, payload)
+    else await ekle(payload)
+    setAktifSekme(payload.kategori)
+  }
+
+  const handleDuzenle = (stok: StokKatalogKaydi) => {
+    if (stok.kullaniliyor) return
+    setDetayId(null)
     setDuzenlenecek(stok)
-    setFormOnDegerler(null)
     setFormAcik(true)
   }
 
-  const handleFormKapat = () => {
-    setFormAcik(false)
-    setDuzenlenecek(null)
-    setFormOnDegerler(null)
-  }
-
-  const handleKaydet = async (veri: StokPayload) => {
-    if (duzenlenecek) {
-      await guncelle(duzenlenecek.id, veri)
-    } else {
-      await ekle(veri)
+  const handleAktiflik = async (stok: StokKatalogKaydi, aktif: boolean) => {
+    setIslemHatasi(null)
+    try {
+      await aktiflikAyarla(stok.id, aktif)
+    } catch (error) {
+      setIslemHatasi(error instanceof Error ? error.message : 'Stok durumu değiştirilemedi.')
     }
   }
 
-  const handleSilKapat = () => {
-    setSilinecek(null)
-    setSilHatasi(null)
-    setMigrasyonModu(false)
-    setMigrasyonHedefId('')
-    setMigrasyonOnaylandi(false)
-    setKullanimSayisi(null)
-  }
-
-  const handlePasifleştir = async (stok: Stok) => {
-    const kullanim = await stokKullanimSayisi(stok.id)
-    if (kullanim.stok + kullanim.cita > 0) {
-      setPasifOnay(stok)
-      return
-    }
-    await guncelle(stok.id, { aktif: false })
-  }
-
-  const handlePasifOnayla = async () => {
-    if (!pasifOnay) return
-    await guncelle(pasifOnay.id, { aktif: false })
-    setPasifOnay(null)
-  }
-
-  const handleAktifleştir = async (stok: Stok) => {
-    await guncelle(stok.id, { aktif: true })
-  }
-
-  const handleReferansAktar = async (stok: Stok) => {
-    const kullanim = await stokKullanimSayisi(stok.id)
-    setKullanimSayisi(kullanim)
-    setSilinecek(stok)
-    setMigrasyonModu(true)
-  }
-
-  const handleSil = async (stok: Stok) => {
-    setSilHatasi(null)
-    const kullanim = await stokKullanimSayisi(stok.id)
-    if (kullanim.stok + kullanim.cita > 0) {
-      setKullanimSayisi(kullanim)
-      setSilinecek(stok)
-      setMigrasyonModu(true)
-      return
-    }
-    setSilinecek(stok)
-    setMigrasyonModu(false)
-  }
-
-  const handleSilOnayla = async () => {
-    if (!silinecek) return
+  const handleSil = async () => {
+    if (!silinecek || silinecek.kullaniliyor) return
     setSiliniyor(true)
-    setSilHatasi(null)
+    setIslemHatasi(null)
     try {
       await sil(silinecek.id)
-      handleSilKapat()
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : ''
-      if (msg.includes('siparis_detaylari')) {
-        const kullanim = await stokKullanimSayisi(silinecek.id)
-        setKullanimSayisi(kullanim)
-        setMigrasyonModu(true)
-      } else {
-        setSilHatasi(msg || 'Silme işlemi başarısız oldu.')
-      }
+      setSilinecek(null)
+      if (detayId === silinecek.id) setDetayId(null)
+    } catch (error) {
+      setIslemHatasi(error instanceof Error ? error.message : 'Stok kartı silinemedi.')
     } finally {
       setSiliniyor(false)
     }
   }
 
-  const handleMigrasyon = async () => {
-    if (!silinecek || !migrasyonHedefId) return
-    setSiliniyor(true)
-    setSilHatasi(null)
-    try {
-      if (kullanimSayisi?.stok) {
-        const { error } = await supabase
-          .from('siparis_detaylari')
-          .update({ stok_id: migrasyonHedefId })
-          .eq('stok_id', silinecek.id)
-        if (error) throw new Error(error.message)
-      }
-      if (kullanimSayisi?.cita) {
-        const { error } = await supabase
-          .from('siparis_detaylari')
-          .update({ cita_stok_id: migrasyonHedefId })
-          .eq('cita_stok_id', silinecek.id)
-        if (error) throw new Error(error.message)
-      }
-      await sil(silinecek.id)
-      handleSilKapat()
-    } catch (err: unknown) {
-      setSilHatasi(err instanceof Error ? err.message : 'Aktarım sırasında hata oluştu.')
-    } finally {
-      setSiliniyor(false)
-    }
-  }
+  const handleKatalogKur = async () => {
+    if (
+      katalogKurulumKilidi.current
+      || katalogKuruluyor
+      || !olusturabilir
+      || !katalogDurumu
+      || katalogDurumu.kurulu
+    ) return
 
-  const handleTopluMigrasyon = async () => {
-    setMigrasyonCalisiyor(true)
-    setMigrasyonSonuc(null)
-    setManuelHata(null)
+    const temizKurulum = katalogDurumu.mevcut === 0
+    const onaylandi = window.confirm(
+      temizKurulum
+        ? 'Standart cam, çıta ve yan malzeme kartları oluşturulsun mu? Mevcut verilere dokunulmayacak.'
+        : `${katalogDurumu.eksik} eksik standart stok kartı tamamlansın mı? Mevcut kartlar değiştirilmeyecek.`,
+    )
+    if (!onaylandi) return
+
+    katalogKurulumKilidi.current = true
+    setKatalogKuruluyor(true)
+    setKatalogMesaji(null)
+    setIslemHatasi(null)
     try {
-      const sonuc = await eskiStokReferanslariniMigrate()
-      setEslesmeyenCamlar(sonuc.eslesmeyen)
-      setManuelSecimler({})
-      setMigrasyonSonuc(
-        `${sonuc.guncellenen} kayıt güncellendi.` +
-        (sonuc.eslesmeyen.length > 0 ? ` ${sonuc.eslesmeyen.length} kayıt manuel müdahale gerektiriyor.` : '')
+      const { katalog: sonuc, recete: receteSonucu, receteHatasi } = await stokKataloguVeReceteleriKur(
+        () => stokBaslangicKatalogunuKur(),
+        () => standartUrunReceteleriniKurV3(
+          ticariBugun(),
+          undefined,
+          true,
+        ),
       )
-      const kalan = await eskiStokReferansSayisi()
-      setMigrasyonSayisi(kalan)
-    } catch (err: unknown) {
-      setMigrasyonSonuc(err instanceof Error ? err.message : 'Migrasyon başarısız')
-    } finally {
-      setMigrasyonCalisiyor(false)
-    }
-  }
-
-  const handleCitaMigrasyon = async () => {
-    setCitaMigrasyonCalisiyor(true)
-    setCitaMigrasyonSonuc(null)
-    setManuelHata(null)
-    try {
-      const sonuc = await pasifCitaReferanslariniMigrate()
-      setEslesmeyenCitalar(sonuc.eslesmeyen)
-      setManuelSecimler({})
-      setCitaMigrasyonSonuc(
-        `${sonuc.guncellenen} kayıt güncellendi.` +
-        (sonuc.eslesmeyen.length > 0 ? ` ${sonuc.eslesmeyen.length} kayıt manuel müdahale gerektiriyor.` : '')
-      )
-      const kalan = await pasifCitaReferansSayisi()
-      setCitaMigrasyonSayisi(kalan)
-    } catch (err: unknown) {
-      setCitaMigrasyonSonuc(err instanceof Error ? err.message : 'Migrasyon başarısız')
-    } finally {
-      setCitaMigrasyonCalisiyor(false)
-    }
-  }
-
-  const handleManuelEsle = async (
-    kayit: MigrasyonKayit,
-    alan: 'stok_id' | 'cita_stok_id',
-  ) => {
-    const hedefId = manuelSecimler[kayit.detay_id]
-    if (!hedefId) return
-    setManuelKaydediliyor(kayit.detay_id)
-    setManuelHata(null)
-    try {
-      await detayStokReferansiGuncelle(kayit.detay_id, alan, hedefId)
-      if (alan === 'stok_id') {
-        setEslesmeyenCamlar((prev) => prev.filter((k) => k.detay_id !== kayit.detay_id))
-        const kalan = await eskiStokReferansSayisi()
-        setMigrasyonSayisi(kalan)
+      setKatalogDurumu(sonuc)
+      if (receteHatasi || !receteSonucu) {
+        setReceteTekrariGerekli(true)
+        setKatalogMesaji(
+          `Stok kataloğu başarıyla hazırlandı${sonuc.eklenen > 0
+            ? `; ${sonuc.eklenen} eksik kart oluşturuldu`
+            : ''}. Standart maliyet reçeteleri tamamlanamadı; yeniden deneyin. ${receteHatasi?.message ?? ''}`.trim(),
+        )
       } else {
-        setEslesmeyenCitalar((prev) => prev.filter((k) => k.detay_id !== kayit.detay_id))
-        const kalan = await pasifCitaReferansSayisi()
-        setCitaMigrasyonSayisi(kalan)
+        setReceteTekrariGerekli(false)
+        setKatalogMesaji(
+          sonuc.eklenen > 0
+            ? `${sonuc.eklenen} eksik stok kartı oluşturuldu; ${receteSonucu.kurulanlar.length} standart maliyet reçetesi hazırlandı.`
+            : `Başlangıç stok kataloğu kontrol edildi; mevcut kartlar korundu. ${receteSonucu.kurulanlar.length} standart maliyet reçetesi hazırlandı.`,
+        )
       }
-      setManuelSecimler((prev) => {
-        const next = { ...prev }
-        delete next[kayit.detay_id]
-        return next
-      })
-    } catch (err: unknown) {
-      setManuelHata(err instanceof Error ? err.message : 'Manuel eşleştirme başarısız')
+    } catch (error) {
+      setIslemHatasi(
+        `Başlangıç stok kataloğu kurulamadı: ${
+          error instanceof Error ? error.message : 'Bilinmeyen hata'
+        }`,
+      )
     } finally {
-      setManuelKaydediliyor(null)
+      await Promise.allSettled([yenile(), katalogDurumunuYenile()])
+      katalogKurulumKilidi.current = false
+      setKatalogKuruluyor(false)
     }
   }
 
-  const handleEksikCitalariEkle = async () => {
-    const eksik = eksikCitaBoyutlari(stoklar)
-    if (eksik.length === 0) return
-    setEksikCitaEkleniyor(true)
+  const handleReceteKurulumTekrar = async () => {
+    if (
+      katalogKurulumKilidi.current
+      || katalogKuruluyor
+      || !olusturabilir
+      || !receteTekrariGerekli
+    ) return
+
+    katalogKurulumKilidi.current = true
+    setKatalogKuruluyor(true)
+    setIslemHatasi(null)
     try {
-      for (const mm of eksik) {
-        const onerilenKod = citaKodOnerisi(mm)
-        const kodVar = stoklar.some((s) => s.kod === onerilenKod)
-        await ekle({
-          kod: kodVar ? '' : onerilenKod,
-          ad: citaStokAdi(mm),
-          kategori: 'cita',
-          kalinlik_mm: mm,
-          birim: 'm',
-          grup: null,
-          katman_yapisi: null,
-          birim_fiyat: null,
-          tedarikci_id: null,
-          marka: null,
-          aktif: true,
-        })
-      }
+      const receteSonucu = await standartUrunReceteleriniKurV3(
+        ticariBugun(),
+        undefined,
+        true,
+      )
+      setReceteTekrariGerekli(false)
+      setKatalogMesaji(
+        `Stok kataloğu hazır; ${receteSonucu.kurulanlar.length} standart maliyet reçetesi hazırlandı.`,
+      )
+    } catch (error) {
+      setReceteTekrariGerekli(true)
+      setKatalogMesaji(
+        `Stok kataloğu hazır. Standart maliyet reçeteleri yine tamamlanamadı; yeniden deneyebilirsiniz. ${
+          error instanceof Error ? error.message : ''
+        }`.trim(),
+      )
     } finally {
-      setEksikCitaEkleniyor(false)
+      await Promise.allSettled([yenile(), katalogDurumunuYenile()])
+      katalogKurulumKilidi.current = false
+      setKatalogKuruluyor(false)
     }
   }
-
-  const kategoriStoklar = stoklar.filter((s) => s.kategori === aktifSekme)
-  const aktifSayisi = kategoriStoklar.filter((s) => s.aktif !== false).length
-  const pasifSayisi = kategoriStoklar.filter((s) => s.aktif === false).length
-  const stokAd = (stok: Stok | null | undefined) => stok?.ad ?? ''
-  const yeniStokEtiketi = aktifSekme === 'cam'
-    ? 'Yeni Cam Stoğu'
-    : aktifSekme === 'cita'
-      ? 'Yeni Çıta'
-      : 'Yeni Stok'
-  const eksikCitaBoyut = aktifSekme === 'cita' ? eksikCitaBoyutlari(stoklar) : []
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-800">Stok / Ürün Kataloğu</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {aktifSayisi} aktif
-            {pasifSayisi > 0 && <> · {pasifSayisi} pasif</>}
-          </p>
+    <div className="p-4 sm:p-6">
+      <PageHeader
+        baslik={yonetimModu ? 'Stok Yönetimi' : 'Stok Kataloğu'}
+        aciklama={yonetimModu
+          ? 'Stok kartlarını ve hareketlerini yönetin; silme ve aktiflik işlemlerini kontrollü biçimde uygulayın.'
+          : 'Cam, çıta ve yan malzeme stoklarını görüntüleyin.'}
+        icon={Boxes}
+        aksiyon={olusturabilir
+          ? <button type="button" onClick={() => { setDuzenlenecek(null); setFormAcik(true) }} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><Plus size={16} /> Yeni {SEKMELER.find((sekme) => sekme.key === aktifSekme)?.label}</button>
+          : undefined}
+      />
+
+      {(hata || islemHatasi) && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <span>{islemHatasi || hata}</span>
         </div>
-        <button
-          onClick={() => {
-            setDuzenlenecek(null)
-            setFormOnDegerler(null)
-            setFormAcik(true)
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={16} />
-          {yeniStokEtiketi}
-        </button>
+      )}
+
+      {yonetimModu && (
+        <KatalogKurulumKarti
+          durum={katalogDurumu}
+          yukleniyor={katalogDurumuYukleniyor}
+          kuruluyor={katalogKuruluyor}
+          olusturabilir={olusturabilir}
+          mesaj={katalogMesaji}
+          receteTekrariGerekli={receteTekrariGerekli}
+          onKur={() => void handleKatalogKur()}
+          onReceteTekrar={() => void handleReceteKurulumTekrar()}
+        />
+      )}
+
+      <div className={cn('mb-5 grid gap-3 sm:grid-cols-2', yonetimModu ? 'xl:grid-cols-4' : 'xl:grid-cols-3')}>
+        <OzetKarti baslik="Aktif stok kartı" deger={ozet.aktif_kart_sayisi} alt="Cam, çıta ve yan malzeme" icon={<PackageCheck size={19} />} ton="blue" />
+        <OzetKarti baslik="Kritik stok" deger={ozet.kritik_stok_sayisi} alt="Minimum seviyede veya altında" icon={<TriangleAlert size={19} />} ton={ozet.kritik_stok_sayisi > 0 ? 'red' : 'emerald'} />
+        <OzetKarti baslik="Stoksuz kart" deger={ozet.stoksuz_kart_sayisi} alt="Bakiyesi sıfır aktif kart" icon={<CircleOff size={19} />} ton={ozet.stoksuz_kart_sayisi > 0 ? 'amber' : 'emerald'} />
+        {yonetimModu && <OzetKarti baslik="Bugünkü hareket" deger={ozet.bugunku_hareket_sayisi} alt="Giriş ve çıkış toplamı" icon={<ArrowLeftRight size={19} />} ton="emerald" />}
       </div>
 
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {SEKMELER.map((s) => {
-          const kategoriKayitlar = stoklar.filter((x) => x.kategori === s.key)
-          const aktif = kategoriKayitlar.filter((x) => x.aktif !== false).length
-          const secili = aktifSekme === s.key
-          return (
+      <div className="mb-5 overflow-x-auto border-b border-gray-200">
+        <div className="flex min-w-max gap-1">
+          {SEKMELER.map((sekme) => (
             <button
-              key={s.key}
-              onClick={() => setAktifSekme(s.key)}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                secili
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+              key={sekme.key}
+              type="button"
+              onClick={() => { setAktifSekme(sekme.key); setIslemHatasi(null) }}
+              className={cn(
+                'border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                aktifSekme === sekme.key
+                  ? 'border-blue-600 text-blue-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-800',
+              )}
             >
-              {s.label}
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums ${
-                  secili ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {aktif}
+              {sekme.label}
+              <span className={cn(
+                'ml-2 rounded-full px-2 py-0.5 text-xs',
+                aktifSekme === sekme.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500',
+              )}>
+                {adetler[sekme.key]}
               </span>
             </button>
-          )
-        })}
+          ))}
+        </div>
       </div>
 
-      {hata && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-          {hata}
-        </div>
-      )}
+      <StokListesi
+        key={aktifSekme}
+        stoklar={stoklar}
+        yukleniyor={yukleniyor}
+        kategori={aktifSekme}
+        yonetimModu={yonetimModu}
+        duzenleyebilir={duzenleyebilir}
+        silebilir={silebilir}
+        durumDegistirebilir={duzenleyebilir}
+        onDetay={(stok) => setDetayId(stok.id)}
+        onDuzenle={handleDuzenle}
+        onSil={setSilinecek}
+        onPasiflestir={(stok) => void handleAktiflik(stok, false)}
+        onAktiflestir={(stok) => void handleAktiflik(stok, true)}
+        onHareket={(stok) => setHareketStokId(stok.id)}
+      />
 
-      {aktifSekme === 'cita' && eksikCitaBoyut.length > 0 && (
-        <div className="mb-4 p-4 rounded-xl border border-blue-200 bg-blue-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-blue-900">
-              Eksik standart çıta boyutları: {eksikCitaBoyut.map((mm) => `${mm}mm`).join(', ')}
-            </p>
-            <p className="text-xs text-blue-700 mt-0.5">
-              PDF içe aktarma ve sipariş eşleştirmesi için bu boyutların aktif stok kartı olması gerekir.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleEksikCitalariEkle}
-            disabled={eksikCitaEkleniyor}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 shrink-0"
-          >
-            <Plus size={14} />
-            {eksikCitaEkleniyor ? 'Ekleniyor...' : 'Eksik Boyutları Ekle'}
-          </button>
-        </div>
-      )}
+      {yonetimModu && <div className="mt-5"><StokHareketListesi hareketler={hareketler} limit={12} /></div>}
 
-      {aktifSekme === 'cita' && citaMigrasyonSayisi != null && citaMigrasyonSayisi > 0 && (
-        <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-amber-900">
-              {citaMigrasyonSayisi} sipariş satırı pasif çıta stok kartına referans veriyor
-            </p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Aynı mm değerine sahip aktif çıta kartlarına otomatik taşıyabilirsiniz.
-            </p>
-            {citaMigrasyonSonuc && (
-              <p className="text-xs text-amber-800 mt-1">{citaMigrasyonSonuc}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={handleCitaMigrasyon}
-            disabled={citaMigrasyonCalisiyor}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 shrink-0"
-          >
-            <RefreshCw size={14} className={citaMigrasyonCalisiyor ? 'animate-spin' : ''} />
-            {citaMigrasyonCalisiyor ? 'Aktarılıyor...' : 'Referansları Düzelt'}
-          </button>
-        </div>
-      )}
-
-      {aktifSekme === 'cam' && migrasyonSayisi != null && migrasyonSayisi > 0 && (
-        <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-amber-900">
-              {migrasyonSayisi} sipariş satırı eski/pasif cam stok kartına referans veriyor
-            </p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Kombinasyon kartlarına otomatik taşıyabilirsiniz.
-            </p>
-            {migrasyonSonuc && (
-              <p className="text-xs text-amber-800 mt-1">{migrasyonSonuc}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={handleTopluMigrasyon}
-            disabled={migrasyonCalisiyor}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 shrink-0"
-          >
-            <RefreshCw size={14} className={migrasyonCalisiyor ? 'animate-spin' : ''} />
-            {migrasyonCalisiyor ? 'Aktarılıyor...' : 'Referansları Düzelt'}
-          </button>
-        </div>
-      )}
-
-      {aktifSekme === 'cam' && eslesmeyenCamlar.length > 0 && (
-        <div className="mb-4 rounded-xl border border-orange-200 bg-white overflow-hidden">
-          <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
-            <p className="text-sm font-medium text-orange-900">
-              Manuel eşleştirme gereken cam satırları ({eslesmeyenCamlar.length})
-            </p>
-            <p className="text-xs text-orange-700 mt-0.5">
-              Otomatik eşleşmeyen satırlar için hedef kombinasyon kartını seçin.
-            </p>
-            {manuelHata && <p className="text-xs text-red-600 mt-1">{manuelHata}</p>}
-          </div>
-          <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
-            {eslesmeyenCamlar.map((kayit) => (
-              <div
-                key={kayit.detay_id}
-                className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-800">
-                    <span className="font-mono font-semibold">{kayit.eski_stok_kod || '—'}</span>
-                    <span className="text-gray-400 mx-1.5">·</span>
-                    {kayit.eski_stok_ad}
-                  </p>
-                  {kayit.katman_yapisi && (
-                    <p className="text-xs text-gray-500 mt-0.5">Katman: {kayit.katman_yapisi}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <CamStokPicker
-                    stoklar={aktifCamStoklar}
-                    value={manuelSecimler[kayit.detay_id] ?? ''}
-                    onChange={(id) =>
-                      setManuelSecimler((prev) => ({ ...prev, [kayit.detay_id]: id }))
-                    }
-                    placeholder="Hedef cam seçin..."
-                    className="min-w-[200px] max-w-[280px]"
-                  />
-                  <button
-                    type="button"
-                    disabled={!manuelSecimler[kayit.detay_id] || manuelKaydediliyor === kayit.detay_id}
-                    onClick={() => handleManuelEsle(kayit, 'stok_id')}
-                    className="px-3 py-2 text-xs font-medium rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
-                  >
-                    {manuelKaydediliyor === kayit.detay_id ? '...' : 'Aktar'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {aktifSekme === 'cita' && eslesmeyenCitalar.length > 0 && (
-        <div className="mb-4 rounded-xl border border-orange-200 bg-white overflow-hidden">
-          <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
-            <p className="text-sm font-medium text-orange-900">
-              Manuel eşleştirme gereken çıta satırları ({eslesmeyenCitalar.length})
-            </p>
-            <p className="text-xs text-orange-700 mt-0.5">
-              Aynı mm değerine sahip aktif çıta kartı bulunamayan satırlar.
-            </p>
-            {manuelHata && <p className="text-xs text-red-600 mt-1">{manuelHata}</p>}
-          </div>
-          <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
-            {eslesmeyenCitalar.map((kayit) => (
-              <div
-                key={kayit.detay_id}
-                className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-800">
-                    <span className="font-mono font-semibold">{kayit.eski_stok_kod || '—'}</span>
-                    <span className="text-gray-400 mx-1.5">·</span>
-                    {kayit.eski_stok_ad}
-                  </p>
-                  {kayit.katman_yapisi && (
-                    <p className="text-xs text-gray-500 mt-0.5">{kayit.katman_yapisi}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <CitaStokSelect
-                    stoklar={stoklar}
-                    value={manuelSecimler[kayit.detay_id] ?? ''}
-                    onChange={(id) =>
-                      setManuelSecimler((prev) => ({ ...prev, [kayit.detay_id]: id }))
-                    }
-                    placeholder="Hedef çıta"
-                    className="min-w-[160px] py-1.5"
-                  />
-                  <button
-                    type="button"
-                    disabled={!manuelSecimler[kayit.detay_id] || manuelKaydediliyor === kayit.detay_id}
-                    onClick={() => handleManuelEsle(kayit, 'cita_stok_id')}
-                    className="px-3 py-2 text-xs font-medium rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
-                  >
-                    {manuelKaydediliyor === kayit.detay_id ? '...' : 'Aktar'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!yukleniyor && stoklar.length === 0 && !hata ? (
-        <EmptyState
-          icon={Package}
-          baslik="Henüz stok kaydı yok"
-          aciklama="Cam stokları, çıta ve yan malzemelerinizi ekleyerek katalogları oluşturun."
-          aksiyon={
-            <button
-              onClick={() => setFormAcik(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus size={16} />
-              {yeniStokEtiketi}
-            </button>
-          }
-        />
-      ) : (
-        <StokListesi
-          stoklar={stoklar}
-          kategori={aktifSekme}
-          yukleniyor={yukleniyor}
-          onDuzenle={handleDuzenle}
-          onSil={handleSil}
-          onPasifleştir={handlePasifleştir}
-          onAktifleştir={handleAktifleştir}
-          onReferansAktar={handleReferansAktar}
-        />
-      )}
-
-      {formAcik && (
+      {yonetimModu && formAcik && (
         <StokForm
           duzenlenecek={duzenlenecek}
-          cariler={cariler}
           defaultKategori={aktifSekme}
-          onDegerler={formOnDegerler}
           onKaydet={handleKaydet}
-          onKapat={handleFormKapat}
+          onKapat={formuKapat}
         />
       )}
 
-      {pasifOnay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Pasifleştirilsin mi?</h3>
-            <p className="text-sm text-gray-500 mb-5">
-              <span className="font-medium text-gray-700">{stokAd(pasifOnay)}</span> önceki siparişlerde
-              kullanılıyor. Pasifleştirildiğinde yeni siparişlerde görünmez; mevcut kayıtlar korunur.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setPasifOnay(null)}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-              >
-                İptal
-              </button>
-              <button
-                onClick={handlePasifOnayla}
-                className="px-4 py-2 text-sm rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-700"
-              >
-                Pasifleştir
-              </button>
-            </div>
-          </div>
-        </div>
+      {detay && <StokDetayPaneli key={detay.id} stok={detay} hareketler={hareketler} yonetimModu={yonetimModu} duzenleyebilir={duzenleyebilir} onHareket={() => setHareketStokId(detay.id)} onOperasyonKaydet={(minimum, yer) => operasyonAyarlariGuncelle(detay.id, minimum, yer)} onKapat={() => setDetayId(null)} />}
+
+      {yonetimModu && hareketStokId !== undefined && (
+        <StokHareketModal
+          stoklar={stoklar}
+          tedarikciler={tedarikciler}
+          baslangicStokId={hareketStokId}
+          onKaydet={hareketKaydet}
+          onKapat={() => setHareketStokId(undefined)}
+        />
       )}
 
-      {silinecek && !migrasyonModu && (
+      {yonetimModu && silinecek && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Stok Silinsin mi?</h3>
-            <p className="text-sm text-gray-500 mb-5">
-              <span className="font-medium text-gray-700">{stokAd(silinecek)}</span> adlı stok
-              kalıcı olarak silinecek. Bu işlem geri alınamaz.
-            </p>
-            {silHatasi && (
-              <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {silHatasi}
-              </p>
-            )}
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={handleSilKapat}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-              >
-                İptal
-              </button>
-              <button
-                onClick={handleSilOnayla}
-                disabled={siliniyor}
-                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
-              >
-                {siliniyor ? 'Kontrol ediliyor...' : 'Sil'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {silinecek && migrasyonModu && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
-                <AlertTriangle size={18} className="text-amber-600" />
-              </div>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-red-100 p-2 text-red-600"><Trash2 size={18} /></div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-800">Stok Kullanımda</h3>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  <span className="font-medium text-gray-700">{stokAd(silinecek)}</span> adlı stok
-                  önceki siparişlerde kullanılıyor
-                  {kullanimSayisi && (
-                    <>
-                      {' '}({kullanimSayisi.stok + kullanimSayisi.cita} kayıt
-                      {kullanimSayisi.stok > 0 && kullanimSayisi.cita > 0
-                        ? `: ${kullanimSayisi.stok} cam, ${kullanimSayisi.cita} çıta`
-                        : kullanimSayisi.cita > 0
-                          ? ', çıta referansı'
-                          : ''}
-                      )
-                    </>
-                  )}.
-                  Silmek için referansları başka bir stoğa aktarmanız veya pasifleştirmeniz önerilir.
+                <h2 className="text-lg font-bold text-gray-900">Stok kartı silinsin mi?</h2>
+                <p className="mt-2 text-sm leading-5 text-gray-600">
+                  <strong>{silinecek.kod} — {silinecek.ad}</strong> kalıcı olarak silinecek.
+                  Bu işlem yalnız kullanılmamış kartlarda ve AAL2 doğrulamasıyla yapılabilir.
                 </p>
               </div>
             </div>
-
-            <div className="mb-4 flex gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  await guncelle(silinecek.id, { aktif: false })
-                  handleSilKapat()
-                }}
-                className="flex-1 px-3 py-2 text-sm rounded-lg border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-              >
-                Pasifleştir (önerilen)
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" disabled={siliniyor} onClick={() => setSilinecek(null)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                Vazgeç
               </button>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Aktarılacak Stok
-              </label>
-              <select
-                value={migrasyonHedefId}
-                onChange={(e) => { setMigrasyonHedefId(e.target.value); setMigrasyonOnaylandi(false) }}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="">Stok seçin...</option>
-                {stoklar
-                  .filter((s) => {
-                    if (s.id === silinecek.id || s.kategori !== silinecek.kategori || s.aktif === false) {
-                      return false
-                    }
-                    if (silinecek.kategori === 'cita' && silinecek.kalinlik_mm != null) {
-                      return Math.round(s.kalinlik_mm ?? 0) === Math.round(silinecek.kalinlik_mm)
-                    }
-                    return true
-                  })
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.kod} — {stokAd(s)}
-                      {s.kategori === 'cita' && s.kalinlik_mm != null ? ` (${s.kalinlik_mm} mm)` : ''}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {migrasyonHedefId && !migrasyonOnaylandi && (
-              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-sm text-amber-800">
-                  Tüm referanslar{' '}
-                  <span className="font-semibold">
-                    {stokAd(stoklar.find((s) => s.id === migrasyonHedefId))}
-                  </span>{' '}
-                  stoğuna aktarılacak ve{' '}
-                  <span className="font-semibold">{stokAd(silinecek)}</span> silinecek.
-                  Bu işlem <span className="font-semibold">geri alınamaz</span>. Emin misiniz?
-                </p>
-                <button
-                  onClick={() => setMigrasyonOnaylandi(true)}
-                  className="mt-3 px-4 py-1.5 text-sm rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-700"
-                >
-                  Evet, Eminim
-                </button>
-              </div>
-            )}
-
-            {silHatasi && (
-              <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {silHatasi}
-              </p>
-            )}
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={handleSilKapat}
-                className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-              >
-                İptal
-              </button>
-              <button
-                onClick={handleMigrasyon}
-                disabled={!migrasyonHedefId || !migrasyonOnaylandi || siliniyor}
-                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {siliniyor ? 'Aktarılıyor...' : 'Aktar ve Sil'}
+              <button type="button" disabled={siliniyor} onClick={() => void handleSil()} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {siliniyor ? 'Siliniyor…' : 'Kalıcı Olarak Sil'}
               </button>
             </div>
           </div>

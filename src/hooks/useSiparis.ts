@@ -4,7 +4,20 @@ import { generateSiparisNo } from '@/lib/idGenerator'
 import { tekilSiparisDetayRows } from '@/lib/siparisDetay'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { recordSessionAction } from '@/lib/deviceSession'
-import type { Siparis, SiparisDetay, CamFormSatiri, SiparisDurum } from '@/types/siparis'
+import {
+  fiyatliSiparisIptal,
+  fiyatliSiparisGuncelle,
+  fiyatliSiparisOlustur,
+  fiyatOnizle,
+  yeniIdempotencyAnahtari,
+  siparisRevizyonBelgesineDonustur,
+  siparisRevizyonHazirliginiGetir,
+  siparisTicariBelgesineDonustur,
+  ticariModDurumunuGetir,
+  TicariRpcError,
+} from '@/services/ticariService'
+import type { Siparis, SiparisDetay, SiparisDurum, YeniSiparisForm } from '@/types/siparis'
+import type { FiyatOnizlemesi, TicariMod } from '@/types/ticari'
 
 /* ===== Durum geçiş matrisi ===== */
 const GECERLI_GECISLER: Record<SiparisDurum, SiparisDurum[]> = {
@@ -24,18 +37,6 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size))
   }
   return chunks
-}
-
-interface YeniSiparisForm {
-  cari_id: string
-  tarih: string
-  teslim_tarihi?: string
-  notlar?: string
-  alt_musteri?: string
-  harici_siparis_no?: string
-  teslimat_tipi?: string
-  kaynak?: 'pdf' | 'manuel'
-  camlar: CamFormSatiri[]
 }
 
 /** Büyük siparişlerde (300+ satır) parçalı ekleme ilerlemesi. */
@@ -75,8 +76,30 @@ export function useSiparis() {
   const [yukleniyor, setYukleniyor] = useState(true)
   const [hata, setHata] = useState<string | null>(null)
   const [ekleIlerleme, setEkleIlerleme] = useState<EkleIlerleme | null>(null)
+  const [ticariMod, setTicariMod] = useState<TicariMod | null>(null)
+  const [ticariModYukleniyor, setTicariModYukleniyor] = useState(true)
+  const [ticariModHata, setTicariModHata] = useState<string | null>(null)
   // Mutasyon sonrası (ekle/sil/durumGuncelle) aynı filtre+sayfa ile yeniden çekmek için.
   const sonFiltreRef = useRef<SiparisFiltre>(VARSAYILAN_FILTRE)
+  const onizlemeIdempotencyRef = useRef<Map<string, string>>(new Map())
+
+  const ticariModuYenile = useCallback(async () => {
+    setTicariModYukleniyor(true)
+    try {
+      const durum = await ticariModDurumunuGetir()
+      if (!durum) throw new Error('Ticari mod durumu bulunamadı.')
+      setTicariMod(durum.mod)
+      setTicariModHata(null)
+      return durum.mod
+    } catch (e) {
+      const mesaj = e instanceof Error ? e.message : 'Ticari mod okunamadı.'
+      setTicariMod(null)
+      setTicariModHata(mesaj)
+      throw new Error(`Ticari mod doğrulanamadığı için sipariş işlemi güvenli biçimde durduruldu: ${mesaj}`)
+    } finally {
+      setTicariModYukleniyor(false)
+    }
+  }, [])
 
   // Liste artık sunucu tarafında filtrelenip sayfalanıyor (bkz. plan Aşama 3.2) —
   // büyük sipariş sayısında tüm tabloyu çekmek yerine sadece görünen sayfa alınır.
@@ -96,7 +119,7 @@ export function useSiparis() {
 
     let query = supabase
       .from('siparisler')
-      .select('*, cari(ad, kod), siparis_detaylari(adet), sevkiyat_planlari(id, tarih)', { count: 'exact' })
+      .select('*, cari(ad, kod), siparis_detaylari(adet), sevkiyat_planlari(id, tarih), aktif_fiyat_revizyon:siparis_fiyat_revizyonlari!siparisler_aktif_fiyat_revizyon_fk(genel_toplam, para_birimi)', { count: 'exact' })
       .order('created_at', { ascending: false })
 
     if (filtre.tamirdeIds) query = query.in('id', filtre.tamirdeIds)
@@ -134,7 +157,20 @@ export function useSiparis() {
   // yaşadığı için ilk yükleme de dahil tüm çağrılar page'in effect'inden gelir.
   useEffect(() => { durumSayilariniYenile() }, [durumSayilariniYenile])
 
-  const ekle = async (form: YeniSiparisForm) => {
+  useEffect(() => {
+    void ticariModuYenile().catch(() => undefined)
+    const kanal = supabase
+      .channel('ticari-mod-siparis')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ticari_modul_durumu' },
+        () => { void ticariModuYenile().catch(() => undefined) },
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(kanal) }
+  }, [ticariModuYenile])
+
+  const legacySiparisEkle = async (form: YeniSiparisForm) => {
     // 1. Sipariş numarası üret
     const siparis_no = await generateSiparisNo()
 
@@ -200,9 +236,98 @@ export function useSiparis() {
     return { id: siparisId, siparis_no: siparis.siparis_no as string, teslim_tarihi: siparis.teslim_tarihi as string | null }
   }
 
+  const fiyatOnizlemesiOlustur = async (form: YeniSiparisForm): Promise<FiyatOnizlemesi> => {
+    const mod = await ticariModuYenile()
+    if (mod === 'bakim') {
+      throw new TicariRpcError('FEATURE_MODE_ISLEME_KAPALI')
+    }
+    if (mod !== 'aktif') {
+      throw new Error('Kesin fiyat önizlemesi yalnız ticari mod aktifken sipariş kaydı için kullanılır.')
+    }
+    return fiyatOnizle(siparisTicariBelgesineDonustur(form))
+  }
+
+  const ekle = async (form: YeniSiparisForm, onizleme?: FiyatOnizlemesi | null) => {
+    const mod = await ticariModuYenile()
+    if (mod === 'bakim') {
+      throw new TicariRpcError('FEATURE_MODE_ISLEME_KAPALI')
+    }
+    if (mod === 'hazirlik' || mod === 'golge') {
+      return legacySiparisEkle(form)
+    }
+    if (!onizleme) {
+      throw new Error('Aktif ticari modda sipariş, kullanıcı tarafından onaylanmış kesin fiyat önizlemesi olmadan kaydedilemez.')
+    }
+    if (!onizleme.sonuc.gecerli) {
+      throw new Error('Hatalı fiyat önizlemesiyle sipariş kaydedilemez.')
+    }
+
+    const belge = siparisTicariBelgesineDonustur(form)
+    const idempotencyKey = onizlemeIdempotencyRef.current.get(onizleme.onizleme_id)
+      ?? yeniIdempotencyAnahtari()
+    onizlemeIdempotencyRef.current.set(onizleme.onizleme_id, idempotencyKey)
+    const sonuc = await fiyatliSiparisOlustur(belge, onizleme, idempotencyKey)
+    onizlemeIdempotencyRef.current.delete(onizleme.onizleme_id)
+    await Promise.all([getir(), durumSayilariniYenile()])
+    recordSessionAction('order_create')
+    return {
+      id: String(sonuc.siparis_id),
+      siparis_no: String(sonuc.siparis_no),
+      teslim_tarihi: form.teslim_tarihi || null,
+    }
+  }
+
+  const fiyatRevizyonOnizlemesiOlustur = async (
+    siparis: Siparis,
+    form: YeniSiparisForm,
+  ): Promise<FiyatOnizlemesi> => {
+    const mod = await ticariModuYenile()
+    if (mod !== 'aktif') throw new TicariRpcError('FEATURE_MODE_ISLEME_KAPALI')
+    if (!Number.isInteger(siparis.revision_no)) {
+      throw new TicariRpcError('REVISION_CONFLICT')
+    }
+    return fiyatOnizle(siparisRevizyonBelgesineDonustur(form, siparis))
+  }
+
+  const fiyatRevizyonuKaydet = async (
+    siparis: Siparis,
+    revizyonTuru: 'teknik' | 'ticari',
+    form: YeniSiparisForm,
+    onizleme?: FiyatOnizlemesi | null,
+  ) => {
+    const mod = await ticariModuYenile()
+    if (mod !== 'aktif') throw new TicariRpcError('FEATURE_MODE_ISLEME_KAPALI')
+    if (!Number.isInteger(siparis.revision_no)) {
+      throw new TicariRpcError('REVISION_CONFLICT')
+    }
+    if (!onizleme?.sonuc.gecerli) {
+      throw new Error('Fiyat revizyonu, incelenmiş geçerli kesin önizleme olmadan kaydedilemez.')
+    }
+
+    const belge = siparisRevizyonBelgesineDonustur(form, siparis)
+    const idempotencyKey = onizlemeIdempotencyRef.current.get(onizleme.onizleme_id)
+      ?? yeniIdempotencyAnahtari()
+    onizlemeIdempotencyRef.current.set(onizleme.onizleme_id, idempotencyKey)
+    const sonuc = await fiyatliSiparisGuncelle(
+      siparis.id,
+      siparis.revision_no as number,
+      revizyonTuru,
+      belge,
+      onizleme,
+      idempotencyKey,
+    )
+    onizlemeIdempotencyRef.current.delete(onizleme.onizleme_id)
+    recordSessionAction('order_update')
+    await Promise.all([getir(), durumSayilariniYenile()])
+    return sonuc
+  }
+
   const durumGuncelle = async (id: string, durum: SiparisDurum) => {
     // Durum geçiş kontrolü
     const mevcut = siparisler.find(s => s.id === id)
+    if (durum === 'iptal' && mevcut?.fiyatlandirildi) {
+      throw new Error('Fiyatlandırılmış siparişler yalnız finansal etkisini dengeleyen iptal işlemiyle iptal edilebilir.')
+    }
     if (mevcut) {
       const gecerli = GECERLI_GECISLER[mevcut.durum]
       if (!gecerli.includes(durum)) {
@@ -214,6 +339,36 @@ export function useSiparis() {
     const { error } = await supabase.from('siparisler').update(updatePayload).eq('id', id)
     if (error) throw new Error(error.message)
     recordSessionAction('order_status_update')
+    await Promise.all([getir(), durumSayilariniYenile()])
+  }
+
+  const iptal = async (siparis: Siparis, gerekce: string, idempotencyKey?: string) => {
+    if (!siparis.fiyatlandirildi) {
+      await durumGuncelle(siparis.id, 'iptal')
+      return
+    }
+
+    let revisionNo = siparis.revision_no
+    if (!Number.isInteger(revisionNo)) {
+      const { data, error } = await supabase
+        .from('siparisler')
+        .select('revision_no, fiyatlandirildi')
+        .eq('id', siparis.id)
+        .single()
+      if (error) throw new Error(error.message)
+      if (!data?.fiyatlandirildi || !Number.isInteger(data.revision_no)) {
+        throw new Error('Siparişin güncel fiyat revizyonu doğrulanamadı.')
+      }
+      revisionNo = data.revision_no as number
+    }
+
+    await fiyatliSiparisIptal(
+      siparis.id,
+      revisionNo as number,
+      gerekce,
+      idempotencyKey || yeniIdempotencyAnahtari(),
+    )
+    recordSessionAction('order_cancel')
     await Promise.all([getir(), durumSayilariniYenile()])
   }
 
@@ -230,6 +385,20 @@ export function useSiparis() {
   }
 
   const sil = async (id: string) => {
+    const listed = siparisler.find((siparis) => siparis.id === id)
+    let fiyatlandirildi = listed?.fiyatlandirildi
+    if (fiyatlandirildi == null) {
+      const { data, error: kontrolHatasi } = await supabase
+        .from('siparisler')
+        .select('fiyatlandirildi')
+        .eq('id', id)
+        .single()
+      if (kontrolHatasi) throw new Error(kontrolHatasi.message)
+      fiyatlandirildi = data?.fiyatlandirildi === true
+    }
+    if (fiyatlandirildi) {
+      throw new TicariRpcError('FIYATLI_SIPARIS_SILINEMEZ')
+    }
     // siparis_detaylari CASCADE ile otomatik silinir
     const { error } = await supabase.from('siparisler').delete().eq('id', id)
     if (error) throw new Error(error.message)
@@ -246,9 +415,18 @@ export function useSiparis() {
     ekle,
     guncelle,
     durumGuncelle,
+    iptal,
     sil,
     yenile: getir,
     ekleIlerleme,
+    fiyatOnizlemesiOlustur,
+    fiyatRevizyonOnizlemesiOlustur,
+    fiyatRevizyonuKaydet,
+    siparisRevizyonHazirliginiGetir,
+    ticariMod,
+    ticariModYukleniyor,
+    ticariModHata,
+    ticariModuYenile,
   }
 }
 
@@ -261,6 +439,7 @@ export async function getSiparisDetaylari(siparisId: string): Promise<SiparisDet
         .from('siparis_detaylari')
         .select('*, stok:stok!stok_id(kod, ad, grup, kalinlik_mm, katman_yapisi, birim_fiyat), cita_stok:stok!cita_stok_id(ad, kalinlik_mm)', { count: 'exact' })
         .eq('siparis_id', siparisId)
+        .eq('aktif', true)
         // İki seviyeli sıralama: önce created_at, sonra cam_kodu (tie-break).
         // PDF import gibi toplu insert'lerde aynı created_at'e sahip satırlar olabilir;
         // tek kolonlu order'da Postgres deterministik sıra garanti etmez ve update

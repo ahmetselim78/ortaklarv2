@@ -7,6 +7,18 @@ Türkçe cam üretim uygulamasıdır.
 Web arayüzü React, TypeScript, Vite ve Tailwind CSS; veri, kimlik, gerçek
 zamanlı iletişim ve zamanlanmış işler Supabase üzerinde çalışır.
 
+`069`–`084` ticari modül paketi; tarihçeli satış fiyatları, sürümlü maliyet ve
+reçeteler, PostgreSQL kanonik hesap motoru, hash kontrollü sipariş
+fiyatlandırması, para birimi bazlı append-only cari hesap, bağımsız teklifler,
+gölge çalışma ve readiness kapısını içerir. Yönetim ekranları Excel toplu
+aktarımını, sürüm karşılaştırmayı ve ayrıntılı eksik kayıt raporlarını destekler.
+
+İlk kullanım için `/fiyatlandirma` ekranı sade maliyet akışına ayrılmıştır:
+tedarikçi bazlı cam/çıta/sarf alış fiyatları, satın alma vadesinin güncel yıllık
+faizle etkisi, panelden tanımlanan tüketim katsayıları ve ürün bazında otomatik
+maliyet dökümü. Cam ve çıtada kullanıcıdan kod veya genel kayıt adı istenmez;
+geçerlilik bitişi tutulmaz, yeni başlangıç tarihli kayıt öncekinin yerini alır.
+
 ## Gereksinimler
 
 - Node.js 22 veya uyumlu güncel LTS sürümü
@@ -69,9 +81,10 @@ almadan çalışır. Anonimleştirilmiş otomatik test fixture'ları
 ## Proje yapısı
 
 - `src/`: sayfalar, bileşenler, hook'lar ve ortak iş kuralları
-- `supabase/migrations/`: sıralı PostgreSQL migration'ları (`001`–`065`)
+- `supabase/migrations/`: sıralı PostgreSQL migration'ları (`001`–`084`)
 - `supabase/functions/`: Edge Function'lar
 - `supabase/tests/`: pgTAP veritabanı testleri
+- [docs/ticari-modul-runbook.md](docs/ticari-modul-runbook.md): ticari modül kurulum, rollout ve operasyon runbook'u
 - `ops/drive-backup/`: şifreli Google Drive yedekleme, doğrulama ve geri yükleme
 - `infra/gcp-drive/`: Drive yedek Job'u, tetikleyici servis ve Scheduler altyapısı
 - `yazici-kopru/`: yerel Windows/Node HTTP → USB/TCP yazıcı köprüsü

@@ -4,16 +4,21 @@ import { X, Upload, FileText, AlertTriangle, CheckCircle2, ChevronRight, Chevron
 import { parsePDF, cariEslestir, stokEslestir, citaEslestir } from '@/lib/pdfParser'
 import type { PDFParseResult, PDFCamSatir } from '@/lib/pdfParser'
 import type { Stok } from '@/types/stok'
-import type { CamFormSatiri } from '@/types/siparis'
+import type { CamFormSatiri, YeniSiparisForm } from '@/types/siparis'
 import type { EkleIlerleme } from '@/hooks/useSiparis'
+import type { FiyatHesapSonucu, FiyatOnizlemesi, TicariMod } from '@/types/ticari'
+import FiyatGrupOzeti from '@/components/ticari/FiyatGrupOzeti'
+import { pdfM2Kontrolu } from '@/lib/pdfImportKontrol'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { TicariRpcError } from '@/services/ticariService'
+import { stokKartiOlustur } from '@/services/stokService'
 import CamStokPicker from '@/components/siparis/CamStokPicker'
 import { getDocument } from 'pdfjs-dist'
-import { generateCariKod, generateStokKod } from '@/lib/idGenerator'
+import { generateCariKod } from '@/lib/idGenerator'
+import { ticariBugun } from '@/lib/ticariFormat'
 import {
   cozumleOcrCam,
-  citaKodOnerisi,
   citaStokAdi,
   getStokGosterimAciklamasi,
   normalizeKatmanYapisi,
@@ -159,17 +164,18 @@ function pdfImportAciklama(s: PDFCamSatir, stok: Stok | null | undefined): strin
 interface Props {
   cariler: { id: string; ad: string; kod: string }[]
   stoklar: Stok[]
-  onIceAktar: (form: {
-    cari_id: string
-    tarih: string
-    teslim_tarihi?: string
-    alt_musteri?: string
-    notlar?: string
-    harici_siparis_no?: string
-    teslimat_tipi?: string
-    kaynak?: 'pdf' | 'manuel'
-    camlar: CamFormSatiri[]
-  }) => Promise<{ id: string; siparis_no: string; teslim_tarihi: string | null }>
+  belgeTuru?: 'siparis' | 'teklif'
+  onIceAktar: (
+    form: YeniSiparisForm,
+    onizleme?: FiyatOnizlemesi | null,
+  ) => Promise<{
+    id: string
+    siparis_no?: string
+    teklif_no?: string
+    teslim_tarihi?: string | null
+  }>
+  onFiyatOnizle?: (form: YeniSiparisForm) => Promise<FiyatOnizlemesi>
+  ticariMod?: TicariMod | null
   onStokYenile?: () => Promise<void> | void
   onKapat: () => void
   /** Büyük siparişlerde (300+ satır) parçalı ekleme ilerlemesi (opsiyonel gösterge). */
@@ -178,7 +184,17 @@ interface Props {
 
 type Adim = 'yukleme' | 'eslestirme' | 'onizleme' | 'sevkiyat'
 
-export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYenile, onKapat, ekleIlerleme }: Props) {
+export default function PDFImportModal({
+  cariler,
+  stoklar,
+  belgeTuru = 'siparis',
+  onIceAktar,
+  onFiyatOnizle,
+  ticariMod,
+  onStokYenile,
+  onKapat,
+  ekleIlerleme,
+}: Props) {
   useEscape(onKapat)
   const [adim, setAdim] = useState<Adim>('yukleme')
   const [yukleniyor, setYukleniyor] = useState(false)
@@ -216,12 +232,21 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
 
   // Import
   const [iceAktariliyor, setIceAktariliyor] = useState(false)
+  const [fiyatOnizleme, setFiyatOnizleme] = useState<FiyatOnizlemesi | null>(null)
+  const [fiyatCakismasi, setFiyatCakismasi] = useState<{
+    onceki: FiyatHesapSonucu
+    yeni: FiyatHesapSonucu
+    degisenKaynaklar: string[]
+  } | null>(null)
+  const [m2UyumsuzluguOnaylandi, setM2UyumsuzluguOnaylandi] = useState(false)
 
   // Adım 4: Sevkiyat state — sadece teslimat tipi (araç yok)
   const [savedSiparis, setSavedSiparis] = useState<{ id: string; siparis_no: string } | null>(null)
   const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat'>('teslim_alacak')
   const [sevkiyatTeslimTarihi, setSevkiyatTeslimTarihi] = useState('')
+  const [ticariGerekce, setTicariGerekce] = useState('')
   const [sevkiyatKaydediliyor, setSevkiyatKaydediliyor] = useState(false)
+  const teklifModu = belgeTuru === 'teklif'
 
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -261,6 +286,16 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
   }, [citaSecimler, localStoklar, parseResult, satirStokSecimler, secilenCariId])
 
   const eslesmeGecerli = eslesmeEksikleri.length === 0
+  const m2Kontrolu = useMemo(
+    () => pdfM2Kontrolu(parseResult?.satirlar ?? [], parseResult?.header?.toplamMetrekare),
+    [parseResult],
+  )
+
+  useEffect(() => {
+    setM2UyumsuzluguOnaylandi(false)
+    setFiyatOnizleme(null)
+    setFiyatCakismasi(null)
+  }, [parseResult, secilenCariId, satirStokSecimler, citaSecimler])
 
   const onizlemeyeGec = () => {
     if (!eslesmeGecerli) {
@@ -268,6 +303,11 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
       return
     }
     setHata(null)
+    setFiyatOnizleme(null)
+    setFiyatCakismasi(null)
+    if (!sevkiyatTeslimTarihi && parseResult?.header?.sevkTarihi) {
+      setSevkiyatTeslimTarihi(parseResult.header.sevkTarihi.split('.').reverse().join('-'))
+    }
     setAdim('onizleme')
   }
 
@@ -402,6 +442,10 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
       setHata(eslesmeEksikleri.join(' '))
       return
     }
+    if (m2Kontrolu.uyumsuz && !m2UyumsuzluguOnaylandi) {
+      setHata('Tolerans dışındaki m² farkını açıkça onaylamadan kayıt tamamlanamaz.')
+      return
+    }
     setIceAktariliyor(true)
     setHata(null)
 
@@ -409,10 +453,13 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
       const header = parseResult.header!
       const tarih = header.sipTarihi
         ? header.sipTarihi.split('.').reverse().join('-') // dd.mm.yyyy → yyyy-mm-dd
-        : new Date().toISOString().split('T')[0]
+        : ticariBugun()
       const teslimTarihi = header.sevkTarihi
         ? header.sevkTarihi.split('.').reverse().join('-')
         : undefined
+      if (!teklifModu && ticariMod === 'aktif' && teslimatTipi === 'sevkiyat' && !(sevkiyatTeslimTarihi || teslimTarihi)) {
+        throw new Error('Sevkiyat için teslim tarihi gereklidir.')
+      }
 
       const camlar: CamFormSatiri[] = parseResult.satirlar.map((s) => {
         const stokId = satirStokSecimler[satirAnahtari(s)]?.stokId ?? ''
@@ -430,21 +477,64 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
         }
       })
 
-      const result = await onIceAktar({
+      const form: YeniSiparisForm = {
         cari_id: secilenCariId,
         tarih,
-        teslim_tarihi: teslimTarihi,
+        teslim_tarihi: !teklifModu && ticariMod === 'aktif'
+          ? (sevkiyatTeslimTarihi || teslimTarihi)
+          : teklifModu ? undefined : teslimTarihi,
         alt_musteri: header.cariUnvan || undefined,
         harici_siparis_no: header.siparisNo || undefined,
         notlar: undefined,
-        teslimat_tipi: 'teslim_alacak',
+        teslimat_tipi: !teklifModu && ticariMod === 'aktif' ? teslimatTipi : 'teslim_alacak',
         kaynak: 'pdf',
+        ticari_mudahale_gerekcesi: ticariGerekce || undefined,
+        dusuk_marj_gerekcesi: ticariGerekce || undefined,
         camlar,
-      })
-      setSavedSiparis({ id: result.id, siparis_no: result.siparis_no })
-      setSevkiyatTeslimTarihi(result.teslim_tarihi ?? teslimTarihi ?? '')
-      setAdim('sevkiyat')
+      }
+
+      if (ticariMod === 'aktif' && !fiyatOnizleme) {
+        if (!onFiyatOnizle) throw new Error('Kesin fiyat önizleme servisi kullanılamıyor.')
+        setFiyatCakismasi(null)
+        const onizleme = await onFiyatOnizle(form)
+        setFiyatOnizleme(onizleme)
+        if (!onizleme.sonuc.gecerli) {
+          setHata('Kesin fiyatlandırmada kayıt engelleyen eksikler var. Eksik fiyat, maliyet, reçete, KDV veya kur kayıtlarını tamamlayın.')
+        }
+        return
+      }
+      if (ticariMod === 'aktif' && !fiyatOnizleme?.sonuc.gecerli) {
+        throw new Error(`Geçerli kesin fiyat önizlemesi olmadan ${teklifModu ? 'teklif' : 'sipariş'} kaydedilemez.`)
+      }
+
+      const result = await onIceAktar(form, fiyatOnizleme)
+      if (teklifModu) {
+        onKapat()
+      } else {
+        setSavedSiparis({ id: result.id, siparis_no: result.siparis_no ?? '' })
+        setSevkiyatTeslimTarihi(result.teslim_tarihi ?? teslimTarihi ?? '')
+        if (ticariMod === 'aktif') onKapat()
+        else setAdim('sevkiyat')
+      }
     } catch (err: any) {
+      if (
+        err instanceof TicariRpcError
+        && err.kod === 'FIYAT_ONIZLEME_CAKISMASI'
+        && fiyatOnizleme
+        && err.detay?.yeni_sonuc
+        && typeof err.detay.yeni_sonuc === 'object'
+      ) {
+        setFiyatCakismasi({
+          onceki: fiyatOnizleme.sonuc,
+          yeni: err.detay.yeni_sonuc as unknown as FiyatHesapSonucu,
+          degisenKaynaklar: Array.isArray(err.detay.degisen_kaynaklar)
+            ? err.detay.degisen_kaynaklar.map(String)
+            : [],
+        })
+      }
+      if (/FIYAT_ONIZLEME|önizleme|Fiyatlandırma verileri/i.test(err?.message ?? '')) {
+        setFiyatOnizleme(null)
+      }
       setHata(`İçe aktarma başarısız: ${err.message ?? 'Bilinmeyen hata'}`)
     } finally {
       setIceAktariliyor(false)
@@ -482,23 +572,18 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
     setYeniCitaKaydediliyor(mm)
     setHata(null)
     try {
-      const onerilenKod = citaKodOnerisi(mm)
-      const kodVar = localStoklar.some((s) => s.kod === onerilenKod)
-      const kod = kodVar ? await generateStokKod() : onerilenKod
-      const { data, error } = await supabase
-        .from('stok')
-        .insert({
-          kod,
-          ad: citaStokAdi(mm),
-          kategori: 'cita',
-          kalinlik_mm: mm,
-          birim: 'm',
-          aktif: true,
-        })
-        .select()
-        .single()
-      if (error) throw new Error(error.message)
-      const yeniStok = data as Stok
+      const yeniStok = await stokKartiOlustur({
+        kod: '',
+        ad: citaStokAdi(mm),
+        kategori: 'cita',
+        grup: null,
+        katman_yapisi: null,
+        kalinlik_mm: mm,
+        birim: 'm',
+        marka: null,
+        minimum_miktar: 0,
+        stok_yeri: null,
+      })
       setLocalStoklar((prev) => [yeniStok, ...prev])
       setCitaSecimler((prev) => ({ ...prev, [mm]: yeniStok.id }))
       await onStokYenile?.()
@@ -517,24 +602,19 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
     const katmanYapisi = normalizeKatmanYapisi(katman) || cozumleOcrCam(ad).katman_yapisi
     setYeniStokKaydediliyor(true)
     try {
-      const kod = await generateStokKod()
       const adKatmansiz = stripKatmanYapisi(ad.trim()) || normalizeCamAilesiAd(ad.trim()) || ad.trim()
-      const { data, error } = await supabase
-        .from('stok')
-        .insert({
-          kod,
-          ad: adKatmansiz,
-          grup: grup.trim().toLocaleUpperCase('tr-TR') || null,
-          katman_yapisi: katmanYapisi || null,
-          kalinlik_mm: null,
-          kategori: 'cam',
-          birim: 'm2',
-          aktif: true,
-        })
-        .select()
-        .single()
-      if (error) throw new Error(error.message)
-      const yeniStok = data as Stok
+      const yeniStok = await stokKartiOlustur({
+        kod: '',
+        ad: adKatmansiz,
+        grup: grup.trim().toLocaleUpperCase('tr-TR') || 'DİĞER',
+        katman_yapisi: katmanYapisi || null,
+        kalinlik_mm: null,
+        kategori: 'cam',
+        birim: 'm2',
+        marka: null,
+        minimum_miktar: 0,
+        stok_yeri: null,
+      })
       setLocalStoklar((prev) => [yeniStok, ...prev])
       setSatirStokSecimler((prev) => ({ ...prev, [gKey]: { stokId: yeniStok.id, skor: 1 } }))
       setYeniStokModal(null)
@@ -552,7 +632,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
     { key: 'yukleme', label: 'PDF Yükle' },
     { key: 'eslestirme', label: 'Eşleştirme' },
     { key: 'onizleme', label: 'Önizleme' },
-    { key: 'sevkiyat', label: 'Sevkiyat' },
+    ...(!teklifModu ? [{ key: 'sevkiyat' as const, label: 'Sevkiyat' }] : []),
   ]
 
   return (
@@ -568,7 +648,9 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
         {/* Başlık */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">PDF'den Sipariş İçe Aktar</h2>
+            <h2 className="text-lg font-semibold text-gray-800">
+              PDF&apos;den {teklifModu ? 'Bağımsız Teklif' : 'Sipariş'} İçe Aktar
+            </h2>
             <div className="flex items-center gap-4 mt-2">
               {adimlar.map((a, i) => (
                 <div key={a.key} className="flex items-center gap-2">
@@ -967,14 +1049,10 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
 
           {/* ===== ADIM 3: ÖNİZLEME ===== */}
           {adim === 'onizleme' && parseResult && (() => {
-            const hesaplananM2 = parseResult.satirlar.reduce(
-              (sum, s) => sum + (s.genislik_mm * s.yukseklik_mm * s.adet) / 1_000_000,
-              0
-            )
-            const pdfM2 = parseResult.header?.toplamMetrekare ?? null
-            const fark = pdfM2 !== null ? Math.abs(hesaplananM2 - pdfM2) : null
-            const tolerans = pdfM2 ? Math.max(0.5, pdfM2 * 0.005) : 0.5
-            const eslesme = fark !== null ? fark <= tolerans : null
+            const hesaplananM2 = m2Kontrolu.hesaplanan
+            const pdfM2 = m2Kontrolu.pdf
+            const fark = m2Kontrolu.fark
+            const eslesme = fark !== null ? !m2Kontrolu.uyumsuz : null
 
             return (
             <div className="flex gap-0 h-full">
@@ -1118,11 +1196,138 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
                   </div>
                 </div>
                 {eslesme === false && (
-                  <div className="mt-2 text-xs text-red-700 border-t border-red-200 pt-2">
-                    ⚠️ Hesaplanan m² ile PDF'deki toplam arasında {fark!.toFixed(3)} m² fark var. Ölçü okuma hatası olabilir; satırları tek tek kontrol edin.
+                  <div className="mt-2 space-y-2 border-t border-red-200 pt-2 text-xs text-red-700">
+                    <div>
+                      Hesaplanan m² ile PDF toplamı arasında {fark!.toFixed(3)} m² fark var.
+                      Ölçüleri ve eşleştirmeleri tek tek kontrol edin.
+                    </div>
+                    <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-red-200 bg-white/70 p-2 font-medium">
+                      <input
+                        type="checkbox"
+                        checked={m2UyumsuzluguOnaylandi}
+                        onChange={(event) => setM2UyumsuzluguOnaylandi(event.target.checked)}
+                        className="mt-0.5"
+                      />
+                      Tolerans dışındaki farkı kontrol ettim ve bu değerlerle devam etmeyi onaylıyorum.
+                    </label>
                   </div>
                 )}
               </div>
+
+              {ticariMod === 'aktif' && (
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 shrink-0">
+                  <div className="flex flex-wrap items-end gap-3">
+                    {!teklifModu && (
+                      <>
+                        <div>
+                          <label className="block text-[11px] font-medium text-blue-800 mb-1">Teslimat</label>
+                          <select
+                            value={teslimatTipi}
+                            onChange={(event) => {
+                              setTeslimatTipi(event.target.value as 'teslim_alacak' | 'sevkiyat')
+                              setFiyatOnizleme(null)
+                              setFiyatCakismasi(null)
+                            }}
+                            className="rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs"
+                          >
+                            <option value="teslim_alacak">Teslim alacak</option>
+                            <option value="sevkiyat">Sevkiyat</option>
+                          </select>
+                        </div>
+                        {teslimatTipi === 'sevkiyat' && (
+                          <div>
+                            <label className="block text-[11px] font-medium text-blue-800 mb-1">Teslim tarihi</label>
+                            <input
+                              type="date"
+                              value={sevkiyatTeslimTarihi}
+                              onChange={(event) => {
+                                setSevkiyatTeslimTarihi(event.target.value)
+                                setFiyatOnizleme(null)
+                                setFiyatCakismasi(null)
+                              }}
+                              className="rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs"
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="ml-auto text-right">
+                      {fiyatOnizleme ? (
+                        <>
+                          <div className="text-[11px] text-blue-700">PostgreSQL kesin toplamı</div>
+                          <div className="text-lg font-bold text-blue-900">
+                            {Number(fiyatOnizleme.sonuc.genel_toplam ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                            {' '}{fiyatOnizleme.sonuc.para_birimi}
+                          </div>
+                          <div className={cn(
+                            'text-[11px] font-medium',
+                            fiyatOnizleme.sonuc.gecerli ? 'text-emerald-700' : 'text-red-700',
+                          )}>
+                            {fiyatOnizleme.sonuc.gecerli
+                              ? 'Fiyatı inceleyip ikinci tıklamayla onaylayın.'
+                              : `${fiyatOnizleme.sonuc.hatalar.length} kayıt engeli var.`}
+                          </div>
+                        </>
+                      ) : fiyatCakismasi ? (
+                        <div className="max-w-sm space-y-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-left">
+                          <div className="text-[11px] font-semibold text-red-800">
+                            Fiyat bağlamı önizlemeden sonra değişti
+                          </div>
+                          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                            <div className="rounded-md bg-white p-2">
+                              <div className="text-[10px] text-gray-500">Önceki</div>
+                              <div className="text-xs font-semibold text-gray-800">
+                                {Number(fiyatCakismasi.onceki.genel_toplam).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                                {' '}{fiyatCakismasi.onceki.para_birimi}
+                              </div>
+                            </div>
+                            <span className="text-red-400">→</span>
+                            <div className="rounded-md bg-white p-2 ring-1 ring-red-200">
+                              <div className="text-[10px] text-red-600">Yeni</div>
+                              <div className="text-xs font-bold text-red-800">
+                                {Number(fiyatCakismasi.yeni.genel_toplam).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                                {' '}{fiyatCakismasi.yeni.para_birimi}
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-[10px] leading-4 text-red-700">
+                            Yeni sonucu inceleyip kesin fiyatı yeniden hesaplayın; yeni önizleme alınmadan kayıt yapılmaz.
+                          </p>
+                          {fiyatCakismasi.degisenKaynaklar.length > 0 && (
+                            <p className="break-words text-[10px] text-red-600">
+                              Değişen: {fiyatCakismasi.degisenKaynaklar.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="max-w-56 text-[11px] text-blue-700">
+                          Önce kesin fiyatı hesaplayın; {teklifModu ? 'teklif' : 'sipariş'} ancak sonucu inceledikten sonra kaydedilir.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <label className="block text-[11px] font-medium text-blue-800 mb-1">
+                      Ticari müdahale / düşük marj gerekçesi
+                    </label>
+                    <input
+                      value={ticariGerekce}
+                      onChange={(event) => {
+                        setTicariGerekce(event.target.value)
+                        setFiyatOnizleme(null)
+                        setFiyatCakismasi(null)
+                      }}
+                      className="w-full rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs"
+                      placeholder="Gerekliyse açıklamayı yazıp fiyatı yeniden hesaplayın..."
+                    />
+                  </div>
+                </div>
+              )}
+              {ticariMod === 'aktif' && fiyatOnizleme && (
+                <div className="mt-3 shrink-0">
+                  <FiyatGrupOzeti sonuc={fiyatOnizleme.sonuc} />
+                </div>
+              )}
               </div>
 
               {/* Sağ: PDF Görüntüleyici */}
@@ -1273,7 +1478,7 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
         {/* Alt bar */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl shrink-0">
           <div className="text-xs text-gray-400">
-            {adim === 'yukleme' && 'Cam sipariş listesi PDF dosyası seçin'}
+            {adim === 'yukleme' && `Cam ${teklifModu ? 'teklif' : 'sipariş'} listesi PDF dosyası seçin`}
             {adim === 'eslestirme' && 'Cari ve stok bilgilerini doğrulayın'}
             {adim === 'onizleme' && 'Verileri kontrol edip içe aktarın'}
             {adim === 'sevkiyat' && 'Sipariş kaydedildi. Teslimat tipini seçin.'}
@@ -1281,7 +1486,13 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
           <div className="flex gap-3">
             {adim !== 'yukleme' && adim !== 'sevkiyat' && (
               <button
-                onClick={() => setAdim(adim === 'onizleme' ? 'eslestirme' : 'yukleme')}
+                onClick={() => {
+                  if (adim === 'onizleme') {
+                    setFiyatOnizleme(null)
+                    setFiyatCakismasi(null)
+                  }
+                  setAdim(adim === 'onizleme' ? 'eslestirme' : 'yukleme')
+                }}
                 className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors"
               >
                 Geri
@@ -1301,14 +1512,25 @@ export default function PDFImportModal({ cariler, stoklar, onIceAktar, onStokYen
             {adim === 'onizleme' && (
               <button
                 onClick={handleIceAktar}
-                disabled={iceAktariliyor}
+                disabled={
+                  iceAktariliyor
+                  || (ticariMod === 'aktif' && fiyatOnizleme != null && !fiyatOnizleme.sonuc.gecerli)
+                  || (m2Kontrolu.uyumsuz && !m2UyumsuzluguOnaylandi)
+                  || (!teklifModu && ticariMod === 'aktif' && teslimatTipi === 'sevkiyat' && !sevkiyatTeslimTarihi)
+                }
                 className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
                 {iceAktariliyor
-                  ? (ekleIlerleme && ekleIlerleme.toplam > 300
+                  ? (ticariMod === 'aktif' && !fiyatOnizleme
+                      ? 'Kesin fiyat hesaplanıyor...'
+                      : ekleIlerleme && ekleIlerleme.toplam > 300
                       ? `İçe Aktarılıyor... (${ekleIlerleme.eklenen}/${ekleIlerleme.toplam})`
                       : 'İçe Aktarılıyor...')
-                  : `${parseResult?.satirlar.reduce((s, r) => s + r.adet, 0)} Adet (${parseResult?.satirlar.length} Satır) İçe Aktar`}
+                  : ticariMod === 'aktif'
+                    ? (fiyatOnizleme
+                        ? `Fiyatı Onayla ve ${teklifModu ? 'Teklifi' : 'Siparişi'} Kaydet`
+                        : 'Liste Fiyatını Hesapla')
+                    : `${parseResult?.satirlar.reduce((s, r) => s + r.adet, 0)} Adet (${parseResult?.satirlar.length} Satır) İçe Aktar`}
               </button>
             )}
             {adim === 'sevkiyat' && (

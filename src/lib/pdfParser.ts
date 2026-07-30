@@ -61,6 +61,17 @@ class OcrEdgeFunctionError extends Error {
   }
 }
 
+/**
+ * Bu hatalarda yerel PDF ayrıştırmaya düşmek sorunu gizler. Örneğin OCR anahtarı
+ * tanımlı değilse pdf.js metniyle devam etmek genellikle "format tanınamadı"
+ * sonucunu üretir; kullanıcı da asıl API yapılandırma hatasını göremez.
+ */
+function ocrHatasiKullaniciyaGosterilmeli(error: unknown): boolean {
+  if (!(error instanceof OcrEdgeFunctionError)) return false
+  return error.status === 400 || error.status === 401 || error.status === 403 ||
+    error.status === 413 || error.status === 500
+}
+
 type PdfTextItem = {
   str?: unknown
   transform?: number[]
@@ -96,6 +107,7 @@ export async function pdfToText(file: File, onProgress?: PDFProgressCallback): P
     console.warn('[PDF] Raw PDF OCR çok az metin döndürdü, fallback denenecek')
   } catch (e) {
     console.warn('[PDF] Raw PDF OCR başarısız, fallback denenecek:', e)
+    if (ocrHatasiKullaniciyaGosterilmeli(e)) throw e
     // Yetki, yapılandırma veya gateway hatasında aynı Edge Function'ı her
     // sayfa için yeniden çağırmak sonucu değiştirmez; yalnızca yeni hata
     // kayıtları ve gereksiz bekleme üretir. Yerel metin çıkarımına geçilir.

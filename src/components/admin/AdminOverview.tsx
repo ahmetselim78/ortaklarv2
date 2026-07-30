@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity, AlertCircle, ArrowRight, Bug, CheckCircle2, ClipboardCheck,
-  Clock3, KeyRound, Loader2, RefreshCw, Settings, ShieldAlert, UserCog, Users,
+  Clock3, DatabaseZap, KeyRound, Loader2, RefreshCw, Settings, ShieldAlert, UserCog, Users,
 } from 'lucide-react'
 import { functionErrorMessage } from '@/lib/edgeFunctionError'
 import { supabase } from '@/lib/supabase'
@@ -263,10 +263,11 @@ export default function AdminOverview() {
 
         <section>
           <div className="mb-3"><h2 className="font-bold text-slate-900">Hızlı yönetim</h2><p className="mt-1 text-xs text-slate-500">Sık kullanılan yönetim ve ayar alanları</p></div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {[
               { href: '/admin/kullanicilar', label: 'Kullanıcılar', desc: 'Hesapları ve personel bağlantılarını yönet', icon: UserCog },
               { href: '/admin/roller', label: 'Roller ve yetkiler', desc: 'Erişim kurallarını düzenle', icon: KeyRound },
+              { href: '/admin/stok-cari-maliyet', label: 'Stok, cari ve maliyet', desc: 'Kritik ticari ayarları tek alanda yönet', icon: DatabaseZap },
               { href: '/admin/uretim-giris', label: 'Üretim kayıtları', desc: 'Günlük girişleri incele ve dışa aktar', icon: ClipboardCheck },
               { href: '/admin/ayarlar', label: 'Ayarlar merkezi', desc: 'Sekiz yapılandırma alanına eriş', icon: Settings },
             ].map(item => (

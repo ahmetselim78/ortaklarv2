@@ -20,6 +20,14 @@ describe('getDefaultAuthorizedPath', () => {
     expect(getDefaultAuthorizedPath(checker(['production_stations:update']))).toBe('/istasyonlar')
   })
 
+  it('sends a finance-only user to the currency-aware current account', () => {
+    expect(getDefaultAuthorizedPath(checker(['finance:read']))).toBe('/cari-hesap')
+  })
+
+  it('includes independent offers in pricing navigation order', () => {
+    expect(getDefaultAuthorizedPath(checker(['pricing:read']))).toBe('/fiyatlandirma')
+  })
+
   it('returns null when no application page is permitted', () => {
     expect(getDefaultAuthorizedPath(checker([]))).toBeNull()
   })

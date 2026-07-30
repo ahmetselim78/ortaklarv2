@@ -3,8 +3,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2.103.3'
 
 const defaultOrigins = [
   'https://glassflow-production-281837608848.europe-west10.run.app',
+  'http://127.0.0.1:4173',
   'http://127.0.0.1:5173',
+  'http://localhost:4173',
   'http://localhost:5173',
+  'http://192.168.1.14:4173',
   'http://192.168.1.14:5173',
 ]
 

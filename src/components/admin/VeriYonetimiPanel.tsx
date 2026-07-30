@@ -469,11 +469,12 @@ export default function VeriYonetimiPanel() {
           <div>
             <h2 className="text-lg font-bold text-gray-900">Veri Yönetimi</h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Batch ve sipariş kayıtlarını kalıcı olarak silin. Dikkatli kullanın.
+              Batch ve sipariş gibi operasyon kayıtlarını yönetin.
             </p>
           </div>
         </div>
-        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+        <div className="max-w-full overflow-x-auto">
+          <div className="flex w-max gap-1 rounded-xl bg-gray-100 p-1">
           <button
             type="button"
             onClick={() => setAltSekme('batch')}
@@ -494,6 +495,7 @@ export default function VeriYonetimiPanel() {
             <Package size={15} />
             Siparişler
           </button>
+          </div>
         </div>
       </div>
 

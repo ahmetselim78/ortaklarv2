@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
 import { TableSkeleton } from '@/components/ui/Skeleton'
 import StatusBadge from '@/components/ui/StatusBadge'
+import { ticariPara } from '@/lib/ticariFormat'
 
 interface Props {
   siparisler: Siparis[]
@@ -30,6 +31,7 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
             <th className="px-4 py-3">Sipariş No</th>
             <th className="px-4 py-3">Müşteri</th>
             <th className="px-4 py-3">Adet</th>
+            <th className="px-4 py-3">Liste Toplamı</th>
             <th className="px-4 py-3">Ref No</th>
             <th className="px-4 py-3">Tarih</th>
             <th className="px-4 py-3">Teslim</th>
@@ -71,6 +73,14 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                     ? <span className="text-xs text-gray-500">{adet} adet</span>
                     : <span className="text-gray-300">—</span>
                 })()}
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-800">
+                {s.aktif_fiyat_revizyon
+                  ? ticariPara(
+                      Number(s.aktif_fiyat_revizyon.genel_toplam),
+                      s.aktif_fiyat_revizyon.para_birimi,
+                    )
+                  : <span className="text-gray-300">—</span>}
               </td>
               <td className="px-4 py-3">
                 {s.harici_siparis_no
@@ -143,7 +153,7 @@ export default function SiparisListesi({ siparisler, yukleniyor, tamirdeSiparisI
                       <Ban size={15} />
                     </button>
                   )}
-                  {s.durum === 'iptal' && onSil && silGoster && (
+                  {s.durum === 'iptal' && !s.fiyatlandirildi && onSil && silGoster && (
                     <button
                       onClick={() => onSil(s)}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-red-700 hover:bg-red-50 transition-colors"

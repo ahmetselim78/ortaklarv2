@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
+  Calculator,
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
   ExternalLink,
   Factory,
+  FileText,
   GaugeCircle,
   LayoutDashboard,
   Package,
@@ -15,6 +17,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  WalletCards,
   X,
 } from 'lucide-react'
 import type { PermissionAction } from '@/auth/AuthContext'
@@ -64,6 +67,14 @@ const navGroups: NavGroup[] = [
       { to: '/siparisler', label: 'Siparişler', icon: ClipboardList, module: 'orders' },
       { to: '/uretim', label: 'Üretim Emirleri', icon: Factory, module: 'production' },
       { to: '/istasyonlar', label: 'Üretim İstasyonları', icon: Radio, module: 'production_stations', action: 'update' },
+    ],
+  },
+  {
+    baslik: 'Ticari',
+    items: [
+      { to: '/fiyatlandirma', label: 'Maliyet Hesaplama', icon: Calculator, module: 'pricing' },
+      { to: '/teklifler', label: 'Teklifler', icon: FileText, module: 'pricing' },
+      { to: '/cari-hesap', label: 'Cari Hesap', icon: WalletCards, module: 'finance' },
     ],
   },
   {

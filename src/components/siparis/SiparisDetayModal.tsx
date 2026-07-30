@@ -431,15 +431,17 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
           </div>
           <div className="flex items-center gap-2">
             {/* Düzenle butonu — yeşil */}
-            <button
-              onClick={() => setEditModalAcik(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors whitespace-nowrap"
-            >
-              <Pencil size={14} />
-              Düzenle
-            </button>
+            {!siparis.fiyatlandirildi && (
+              <button
+                onClick={() => setEditModalAcik(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors whitespace-nowrap"
+              >
+                <Pencil size={14} />
+                Düzenle
+              </button>
+            )}
             {/* Toplu Düzenle butonu — sadece beklemede iken */}
-            {siparis.durum === 'beklemede' && (
+            {siparis.durum === 'beklemede' && !siparis.fiyatlandirildi && (
               <button
                 onClick={topluModalAc}
                 disabled={yukleniyor || siparistekiCamTurleri.length === 0}
@@ -466,6 +468,12 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
             </button>
           </div>
         </div>
+
+        {siparis.fiyatlandirildi && (
+          <div className="mx-6 mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            Bu sipariş fiyatlandırılmıştır. Teknik veya ticari değişiklikler doğrudan satır düzenleyerek değil, yeni fiyat revizyonu akışıyla yapılır.
+          </div>
+        )}
 
         {/* Yıkama progress */}
         {toplam > 0 && siparis.durum !== 'beklemede' && (
@@ -649,7 +657,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                         <th className="px-3 py-2.5">Tamir</th>
                       </>
                     )}
-                    {siparis.durum === 'beklemede' && (
+                    {siparis.durum === 'beklemede' && !siparis.fiyatlandirildi && (
                       <th className="px-3 py-2.5">İşlem</th>
                     )}
                   </tr>
@@ -807,7 +815,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
                             </td>
                           </>
                         )}
-                        {siparis.durum === 'beklemede' && (
+                        {siparis.durum === 'beklemede' && !siparis.fiyatlandirildi && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1">
                               <button
@@ -834,7 +842,7 @@ export default function SiparisDetayModal({ siparis, stoklar, cariler, onKapat, 
               </table>
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                 <span className="text-xs text-gray-400">{detaylar.length} cam parçası</span>
-                {siparis.durum === 'beklemede' && (
+                {siparis.durum === 'beklemede' && !siparis.fiyatlandirildi && (
                   <button
                     onClick={addNewRow}
                     disabled={camEkleniyor}

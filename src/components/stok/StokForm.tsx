@@ -1,68 +1,59 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { X } from 'lucide-react'
-import type { Stok, StokKategori } from '@/types/stok'
-import type { Cari } from '@/types/cari'
+import { LockKeyhole, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
 import {
   CAM_GRUPLARI,
   CITA_BOYUTLARI,
-  citaKodOnerisi,
   citaStokAdi,
-  extractKatmanYapisiFromText,
-  KOD_ARALIK_IPUCLARI,
   normalizeKatmanYapisi,
 } from '@/lib/cam'
+import type { StokKatalogKaydi, StokKartPayload, StokKategori } from '@/types/stok'
 
 const schema = z.object({
   kod: z.string().optional(),
+  ad: z.string().trim().min(1, 'Ad zorunludur'),
   kategori: z.enum(['cam', 'cita', 'yan_malzeme']),
-  ad: z.string().min(1, 'Açıklama zorunludur'),
+  cam_turu: z.enum(['tek_cam', 'kombinasyon']),
   grup: z.string().optional(),
   katman_yapisi: z.string().optional(),
-  kalinlik_mm: z.coerce.number().positive('Pozitif olmalı').optional().or(z.literal('')),
-  birim: z.string().min(1, 'Birim zorunludur'),
-  birim_fiyat: z.coerce.number().min(0).optional().or(z.literal('')),
-  tedarikci_id: z.string().optional(),
+  kalinlik_mm: z.coerce.number().positive('Sıfırdan büyük olmalıdır').optional().or(z.literal('')),
+  birim: z.string().trim().min(1, 'Birim zorunludur'),
   marka: z.string().optional(),
-  aktif: z.boolean(),
+  minimum_miktar: z.coerce.number().min(0, 'Negatif olamaz'),
+  stok_yeri: z.string().optional(),
 }).superRefine((veri, ctx) => {
-  if (veri.kategori === 'cam' && !veri.kod?.trim()) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['kod'],
-      message: 'Cam stok kodu zorunludur',
-    })
-  }
-  if (veri.kategori === 'cita') {
-    const mm = typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null
-    if (mm == null || mm <= 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['kalinlik_mm'],
-        message: 'Çıta boyutu (mm) zorunludur',
-      })
+  if (veri.kategori === 'cam') {
+    if (!veri.grup?.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['grup'], message: 'Cam grubu zorunludur' })
     }
+    if (veri.cam_turu === 'tek_cam') {
+      if (typeof veri.kalinlik_mm !== 'number' || veri.kalinlik_mm <= 0) {
+        ctx.addIssue({ code: 'custom', path: ['kalinlik_mm'], message: 'Tek cam kalınlığı zorunludur' })
+      }
+    } else {
+      const katman = normalizeKatmanYapisi(veri.katman_yapisi ?? '')
+      if (!katman || !/^[0-9]+(?:\+[0-9]+){1,4}$/.test(katman)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['katman_yapisi'],
+          message: 'Geçerli bir katman yapısı girin (örn. 4+16+4)',
+        })
+      }
+    }
+  }
+  if (veri.kategori === 'cita'
+      && (typeof veri.kalinlik_mm !== 'number' || veri.kalinlik_mm <= 0)) {
+    ctx.addIssue({ code: 'custom', path: ['kalinlik_mm'], message: 'Çıta boyutu zorunludur' })
   }
 })
 
 type FormGirdi = z.input<typeof schema>
 type FormVeri = z.output<typeof schema>
-export type StokPayload = Omit<
-  FormVeri,
-  'kod' | 'tedarikci_id' | 'marka' | 'kalinlik_mm' | 'birim_fiyat' | 'grup' | 'katman_yapisi'
-> & {
-  kod: string
-  tedarikci_id: string | null
-  marka: string | null
-  kalinlik_mm: number | null
-  birim_fiyat: number | null
-  grup: string | null
-  katman_yapisi: string | null
-}
+export type StokPayload = StokKartPayload
 
 export interface StokFormOnDegerleri {
   kod?: string
@@ -73,18 +64,22 @@ export interface StokFormOnDegerleri {
 }
 
 interface Props {
-  duzenlenecek?: Stok | null
-  cariler: Cari[]
+  duzenlenecek?: StokKatalogKaydi | null
   defaultKategori?: StokKategori
   onDegerler?: StokFormOnDegerleri | null
   onKaydet: (veri: StokPayload) => Promise<void>
   onKapat: () => void
 }
 
+const KATEGORI_ETIKETLERI: Record<StokKategori, string> = {
+  cam: 'Cam',
+  cita: 'Çıta',
+  yan_malzeme: 'Yan Malzeme',
+}
+
 export default function StokForm({
   duzenlenecek,
-  cariler,
-  defaultKategori,
+  defaultKategori = 'cam',
   onDegerler,
   onKaydet,
   onKapat,
@@ -92,7 +87,9 @@ export default function StokForm({
   useEscape(onKapat)
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
+  const sonCitaAdi = useRef('')
 
+  const baslangicKategori = duzenlenecek?.kategori ?? onDegerler?.kategori ?? defaultKategori
   const {
     register,
     handleSubmit,
@@ -105,380 +102,339 @@ export default function StokForm({
     resolver: zodResolver(schema),
     defaultValues: {
       kod: '',
-      kategori: defaultKategori ?? 'cam',
-      birim: defaultKategori === 'cita' ? 'm' : defaultKategori === 'yan_malzeme' ? 'kg' : 'm2',
       ad: '',
+      kategori: baslangicKategori,
+      cam_turu: 'tek_cam',
       grup: '',
       katman_yapisi: '',
       kalinlik_mm: '',
-      birim_fiyat: '',
-      tedarikci_id: '',
+      birim: baslangicKategori === 'cam' ? 'm2' : baslangicKategori === 'cita' ? 'm' : 'adet',
       marka: '',
-      aktif: true,
+      minimum_miktar: 0,
+      stok_yeri: '',
     },
   })
 
+  useEffect(() => {
+    const kategori = duzenlenecek?.kategori ?? onDegerler?.kategori ?? defaultKategori
+    reset({
+      kod: duzenlenecek?.kod ?? onDegerler?.kod ?? '',
+      ad: duzenlenecek?.ad ?? onDegerler?.ad ?? '',
+      kategori,
+      cam_turu: duzenlenecek?.katman_yapisi || onDegerler?.katman_yapisi
+        ? 'kombinasyon'
+        : 'tek_cam',
+      grup: duzenlenecek?.grup ?? onDegerler?.grup ?? '',
+      katman_yapisi: duzenlenecek?.katman_yapisi ?? onDegerler?.katman_yapisi ?? '',
+      kalinlik_mm: duzenlenecek?.kalinlik_mm ?? '',
+      birim: duzenlenecek?.birim ?? (kategori === 'cam' ? 'm2' : kategori === 'cita' ? 'm' : 'adet'),
+      marka: duzenlenecek?.marka ?? '',
+      minimum_miktar: duzenlenecek?.minimum_miktar ?? 0,
+      stok_yeri: duzenlenecek?.stok_yeri ?? '',
+    })
+  }, [defaultKategori, duzenlenecek, onDegerler, reset])
+
   const kategori = watch('kategori')
-  const ad = watch('ad')
-  const katman = watch('katman_yapisi')
-  const grup = watch('grup')
-  const kalinlikMm = watch('kalinlik_mm')
+  const camTuru = watch('cam_turu')
+  const citaBoyutu = watch('kalinlik_mm')
 
   useEffect(() => {
-    if (duzenlenecek) return
-    if (kategori === 'cita') {
-      setValue('birim', 'm')
-      setValue('grup', '')
-      setValue('katman_yapisi', '')
-    } else if (kategori === 'yan_malzeme') {
-      setValue('birim', 'kg')
-      setValue('kalinlik_mm', '')
-      setValue('grup', '')
-      setValue('katman_yapisi', '')
-    } else {
-      setValue('birim', 'm2')
-      setValue('kalinlik_mm', '')
-    }
-  }, [kategori, duzenlenecek, setValue])
+    if (kategori === 'cam') setValue('birim', 'm2')
+    if (kategori === 'cita') setValue('birim', 'm')
+  }, [kategori, setValue])
 
   useEffect(() => {
-    if (duzenlenecek) {
-      const stokKategori = duzenlenecek.kategori ?? 'cam'
-      const katmanVal = normalizeKatmanYapisi(duzenlenecek.katman_yapisi) || extractKatmanYapisiFromText(duzenlenecek.ad)
-      reset({
-        kod: duzenlenecek.kod ?? '',
-        kategori: stokKategori,
-        ad: duzenlenecek.ad,
-        grup: duzenlenecek.grup ?? '',
-        katman_yapisi: katmanVal,
-        kalinlik_mm: stokKategori === 'cam' ? '' : duzenlenecek.kalinlik_mm ?? '',
-        birim: duzenlenecek.birim,
-        birim_fiyat: duzenlenecek.birim_fiyat ?? '',
-        tedarikci_id: duzenlenecek.tedarikci_id ?? '',
-        marka: duzenlenecek.marka ?? '',
-        aktif: duzenlenecek.aktif ?? true,
-      })
-    } else if (onDegerler) {
-      reset({
-        kod: onDegerler.kod ?? '',
-        kategori: onDegerler.kategori ?? defaultKategori ?? 'cam',
-        birim: 'm2',
-        ad: onDegerler.ad ?? '',
-        grup: onDegerler.grup ?? '',
-        katman_yapisi: onDegerler.katman_yapisi ?? '',
-        kalinlik_mm: '',
-        birim_fiyat: '',
-        tedarikci_id: '',
-        marka: '',
-        aktif: true,
-      })
-    } else {
-      reset({
-        kod: '',
-        kategori: defaultKategori ?? 'cam',
-        birim: defaultKategori === 'cita' ? 'm' : defaultKategori === 'yan_malzeme' ? 'kg' : 'm2',
-        ad: '',
-        grup: '',
-        katman_yapisi: '',
-        kalinlik_mm: '',
-        birim_fiyat: '',
-        tedarikci_id: '',
-        marka: '',
-        aktif: true,
-      })
-    }
-  }, [duzenlenecek, defaultKategori, onDegerler, reset])
+    if (kategori !== 'cita' || typeof citaBoyutu !== 'number' || citaBoyutu <= 0) return
+    const yeniAd = citaStokAdi(citaBoyutu)
+    const mevcutAd = getValues('ad').trim()
+    if (!mevcutAd || mevcutAd === sonCitaAdi.current) setValue('ad', yeniAd)
+    sonCitaAdi.current = yeniAd
+  }, [citaBoyutu, getValues, kategori, setValue])
 
-  useEffect(() => {
-    if (kategori !== 'cam') return
-    const bulunan = extractKatmanYapisiFromText(ad)
-    setValue('katman_yapisi', bulunan)
-  }, [ad, kategori, setValue])
-
-  const onSubmit = async (veri: FormVeri) => {
-    setKaydediliyor(true)
+  const submit = async (veri: FormVeri) => {
     setSunucuHata(null)
+    const katman = veri.kategori === 'cam' && veri.cam_turu === 'kombinasyon'
+      ? normalizeKatmanYapisi(veri.katman_yapisi ?? '') || null
+      : null
+    const kalinlik = veri.kategori === 'cam' && veri.cam_turu === 'kombinasyon'
+      ? null
+      : typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null
+
+    const payload: StokPayload = {
+      kod: duzenlenecek?.kod ?? '',
+      ad: veri.ad.trim(),
+      kategori: veri.kategori,
+      grup: veri.kategori === 'cam' ? veri.grup?.trim() || null : null,
+      katman_yapisi: katman,
+      kalinlik_mm: kalinlik,
+      birim: veri.kategori === 'cam' ? 'm2' : veri.kategori === 'cita' ? 'm' : veri.birim.trim(),
+      marka: veri.kategori === 'yan_malzeme' ? veri.marka?.trim() || null : null,
+      minimum_miktar: veri.minimum_miktar,
+      stok_yeri: veri.stok_yeri?.trim() || null,
+    }
+
+    setKaydediliyor(true)
     try {
-      const camMi = veri.kategori === 'cam'
-      const citaMi = veri.kategori === 'cita'
-      const katmanYapisi = camMi
-        ? normalizeKatmanYapisi(katman) || normalizeKatmanYapisi(veri.katman_yapisi) || extractKatmanYapisiFromText(veri.ad) || null
-        : null
-      const citaMm = citaMi && typeof veri.kalinlik_mm === 'number' ? Math.round(veri.kalinlik_mm) : null
-      const payload: StokPayload = {
-        ...veri,
-        kod: veri.kod?.trim()
-          || (citaMm != null ? citaKodOnerisi(citaMm) : ''),
-        ad: veri.ad.trim(),
-        grup: camMi ? (veri.grup?.trim().toLocaleUpperCase('tr-TR') || null) : null,
-        katman_yapisi: katmanYapisi,
-        tedarikci_id: camMi ? null : veri.tedarikci_id || null,
-        marka: camMi ? null : veri.marka || null,
-        kalinlik_mm: camMi ? null : typeof veri.kalinlik_mm === 'number' ? veri.kalinlik_mm : null,
-        birim_fiyat: typeof veri.birim_fiyat === 'number' ? veri.birim_fiyat : null,
-        aktif: veri.aktif ?? true,
-      }
       await onKaydet(payload)
       onKapat()
-    } catch (e: unknown) {
-      setSunucuHata(e instanceof Error ? e.message : 'Bir hata oluştu')
+    } catch (error) {
+      setSunucuHata(error instanceof Error ? error.message : 'Stok kartı kaydedilemedi.')
     } finally {
       setKaydediliyor(false)
     }
   }
 
-  const handleCitaBoyut = (boyut: number) => {
-    setValue('ad', citaStokAdi(boyut))
-    setValue('kalinlik_mm', boyut)
-    if (!duzenlenecek && !getValues('kod')?.trim()) {
-      setValue('kod', citaKodOnerisi(boyut))
-    }
-  }
-
-  const tedarikciListesi = cariler.filter(c => c.tipi === 'tedarikci')
-  const kodIpucu = grup ? KOD_ARALIK_IPUCLARI[grup] : null
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h2 className="text-lg font-semibold text-gray-800">
-            {duzenlenecek ? 'Stok Düzenle' : 'Yeni Stok Ekle'}
-          </h2>
-          <button
-            onClick={onKapat}
-            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
-          >
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      onClick={(event) => { if (event.target === event.currentTarget && !kaydediliyor) onKapat() }}
+    >
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">
+              {duzenlenecek ? 'Stok Kartını Düzelt' : `Yeni ${KATEGORI_ETIKETLERI[baslangicKategori]} Kartı`}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Yeni kart aktif başlar. Satış ve maliyet ayarları ilgili yönetim ekranlarında belirlenir.
+            </p>
+          </div>
+          <button type="button" onClick={onKapat} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
             <X size={18} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {duzenlenecek?.aktif === false && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
-              Bu kart pasif — yeni siparişlerde görünmez.
+        <form onSubmit={handleSubmit(submit)} className="space-y-5 p-6">
+          {duzenlenecek ? (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Kategori *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(Object.keys(KATEGORI_ETIKETLERI) as StokKategori[]).map((deger) => (
+                  <button
+                    key={deger}
+                    type="button"
+                    onClick={() => setValue('kategori', deger, { shouldValidate: true })}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-sm',
+                      kategori === deger
+                        ? 'border-blue-500 bg-blue-50 font-medium text-blue-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50',
+                    )}
+                  >
+                    {KATEGORI_ETIKETLERI[deger]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              Kategori: <strong>{KATEGORI_ETIKETLERI[baslangicKategori]}</strong>
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Kategori *</label>
-            <div className="flex gap-2">
-              {([
-                { value: 'cam', label: 'Cam' },
-                { value: 'cita', label: 'Çıta' },
-                { value: 'yan_malzeme', label: 'Yan Malzeme' },
-              ] as const).map(({ value, label }) => (
-                <label
-                  key={value}
-                  className={cn(
-                    'flex-1 text-center px-3 py-2 text-sm rounded-lg border cursor-pointer transition-colors',
-                    kategori === value
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  )}
-                >
-                  <input type="radio" value={value} {...register('kategori')} className="sr-only" />
-                  {label}
-                </label>
-              ))}
+          {kategori === 'cam' && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Cam türü *</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['tek_cam', 'Tek cam'],
+                  ['kombinasyon', 'Kombinasyon'],
+                ] as const).map(([deger, etiket]) => (
+                  <button
+                    key={deger}
+                    type="button"
+                    onClick={() => setValue('cam_turu', deger, { shouldValidate: true })}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-sm',
+                      camTuru === deger
+                        ? 'border-blue-500 bg-blue-50 font-medium text-blue-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50',
+                    )}
+                  >
+                    {etiket}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="block text-sm font-medium text-gray-700">
+              Stok kodu
+              <div className="mt-1 flex min-h-10 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-600">
+                <LockKeyhole size={14} className="shrink-0 text-gray-400" />
+                {duzenlenecek?.kod ?? 'Kaydederken otomatik atanacak'}
+              </div>
+              <p className="mt-1 text-xs font-normal text-gray-400">Kod sistem tarafından üretilir ve sonradan değiştirilemez.</p>
+            </div>
+            <label className="block text-sm font-medium text-gray-700">
+              Ad *
+              <input
+                {...register('ad')}
+                className={cn(
+                  'mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                  errors.ad ? 'border-red-300' : 'border-gray-200',
+                )}
+                placeholder={kategori === 'yan_malzeme' ? 'Örn. Poliüretan' : 'Kart adı'}
+              />
+              {errors.ad && <span className="mt-1 block text-xs text-red-500">{errors.ad.message}</span>}
+            </label>
           </div>
 
           {kategori === 'cam' && (
-            <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-4 space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Kimlik</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Grup</label>
-                <div className="flex flex-wrap gap-2">
-                  {CAM_GRUPLARI.map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => setValue('grup', g)}
-                      className={cn(
-                        'px-2.5 py-1 text-xs rounded-lg border transition-colors',
-                        grup === g
-                          ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                          : 'border-gray-200 text-gray-600 hover:bg-white'
-                      )}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stok Kodu *</label>
-                  <input
-                    {...register('kod')}
-                    className={cn(
-                      'w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white',
-                      errors.kod ? 'border-red-300' : 'border-gray-200'
-                    )}
-                    placeholder={kodIpucu ?? '01002'}
-                  />
-                  {kodIpucu && (
-                    <p className="mt-1 text-xs text-gray-400">Önerilen aralık: {kodIpucu}</p>
-                  )}
-                  {errors.kod && <p className="mt-1 text-xs text-red-500">{errors.kod.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Birim *</label>
-                  <select
-                    {...register('birim')}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="m2">m²</option>
-                    <option value="m">metre</option>
-                    <option value="adet">Adet</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {kategori !== 'cam' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Stok Kodu</label>
-                <input
-                  {...register('kod')}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Boşsa otomatik"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Birim *</label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Grup *
                 <select
-                  {...register('birim')}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  {...register('grup')}
+                  className={cn(
+                    'mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                    errors.grup ? 'border-red-300' : 'border-gray-200',
+                  )}
                 >
-                  <option value="m2">m²</option>
-                  <option value="m">metre</option>
-                  <option value="adet">Adet</option>
-                  <option value="kg">kg</option>
+                  <option value="">Grup seçin</option>
+                  {CAM_GRUPLARI.map((grup) => <option key={grup} value={grup}>{grup}</option>)}
                 </select>
-              </div>
+                {errors.grup && <span className="mt-1 block text-xs text-red-500">{errors.grup.message}</span>}
+              </label>
+              {camTuru === 'tek_cam' ? (
+                <label className="block text-sm font-medium text-gray-700">
+                  Kalınlık (mm) *
+                  <input
+                    {...register('kalinlik_mm')}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    className={cn(
+                      'mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                      errors.kalinlik_mm ? 'border-red-300' : 'border-gray-200',
+                    )}
+                  />
+                  {errors.kalinlik_mm && <span className="mt-1 block text-xs text-red-500">{errors.kalinlik_mm.message}</span>}
+                </label>
+              ) : (
+                <label className="block text-sm font-medium text-gray-700">
+                  Katman yapısı *
+                  <input
+                    {...register('katman_yapisi')}
+                    className={cn(
+                      'mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                      errors.katman_yapisi ? 'border-red-300' : 'border-gray-200',
+                    )}
+                    placeholder="4+16+4"
+                  />
+                  {errors.katman_yapisi && <span className="mt-1 block text-xs text-red-500">{errors.katman_yapisi.message}</span>}
+                </label>
+              )}
             </div>
           )}
 
           {kategori === 'cita' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Çıta Boyutu (mm) *</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {CITA_BOYUTLARI.map((b) => (
+              <label className="mb-2 block text-sm font-medium text-gray-700">Boyut (mm) *</label>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {CITA_BOYUTLARI.map((boyut) => (
                   <button
-                    key={b}
+                    key={boyut}
                     type="button"
-                    onClick={() => handleCitaBoyut(b)}
+                    onClick={() => setValue('kalinlik_mm', boyut, { shouldValidate: true })}
                     className={cn(
-                      'px-3 py-1.5 text-xs rounded-lg border transition-colors',
-                      kalinlikMm === b
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      'rounded-lg border px-2.5 py-1 text-xs',
+                      Number(citaBoyutu) === boyut
+                        ? 'border-blue-500 bg-blue-50 font-medium text-blue-700'
+                        : 'border-gray-200 text-gray-600',
                     )}
                   >
-                    {b} mm
+                    {boyut} mm
                   </button>
                 ))}
               </div>
               <input
                 {...register('kalinlik_mm')}
                 type="number"
-                step="1"
+                min="0.01"
+                step="0.01"
                 className={cn(
-                  'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
-                  errors.kalinlik_mm ? 'border-red-300' : 'border-gray-200'
+                  'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                  errors.kalinlik_mm ? 'border-red-300' : 'border-gray-200',
                 )}
-                placeholder="Standart dışı boyut girebilirsiniz"
+                placeholder="Standart dışı boyut"
               />
-              {errors.kalinlik_mm && (
-                <p className="mt-1 text-xs text-red-500">{errors.kalinlik_mm.message}</p>
-              )}
-              <p className="mt-1 text-xs text-gray-400">
-                Ara boşluk mm değeri; sipariş ve üretim ekranlarında çıta kalınlığı olarak kullanılır.
-              </p>
+              {errors.kalinlik_mm && <span className="mt-1 block text-xs text-red-500">{errors.kalinlik_mm.message}</span>}
+              <p className="mt-1 text-xs text-gray-400">Kart adı ölçüye göre önerilir; stok kodunu sistem atar.</p>
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {kategori === 'cam' ? 'Açıklama *' : 'Ad *'}
-            </label>
-            <input
-              {...register('ad')}
-              className={cn(
-                'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
-                errors.ad ? 'border-red-300' : 'border-gray-200'
-              )}
-              placeholder={
-                kategori === 'cam' ? 'Örn: 4+16+4 ISICAM C' :
-                kategori === 'cita' ? 'Yukarıdan boyut seçin veya yazın' :
-                'Örn: Poliüretan, Butil...'
-              }
-            />
-            {errors.ad && <p className="mt-1 text-xs text-red-500">{errors.ad.message}</p>}
-          </div>
-
-          {kategori !== 'cam' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tedarikçi</label>
+          {kategori === 'yan_malzeme' && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="block text-sm font-medium text-gray-700">
+                Birim *
                 <select
-                  {...register('tedarikci_id')}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  {...register('birim')}
+                  className={cn(
+                    'mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                    errors.birim ? 'border-red-300' : 'border-gray-200',
+                  )}
                 >
-                  <option value="">Seçiniz...</option>
-                  {tedarikciListesi.map((c) => (
-                    <option key={c.id} value={c.id}>{c.kod} — {c.ad}</option>
+                  {['adet', 'kg', 'lt', 'm', 'm2', 'kutu', 'paket'].map((birim) => (
+                    <option key={birim} value={birim}>{birim}</option>
                   ))}
                 </select>
-              </div>
-              {kategori === 'yan_malzeme' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Kalınlık / Ölçü</label>
-                  <input
-                    {...register('kalinlik_mm')}
-                    type="number"
-                    step="0.01"
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Örn: 16"
-                  />
-                </div>
-              )}
-            </>
+              </label>
+              <label className="block text-sm font-medium text-gray-700">
+                Ölçü (mm)
+                <input {...register('kalinlik_mm')} type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+              </label>
+              <label className="block text-sm font-medium text-gray-700">
+                Marka
+                <input {...register('marka')} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+              </label>
+            </div>
           )}
 
-          <div className="flex items-center gap-3 pt-1">
-            <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
+          {(kategori === 'cam' || kategori === 'cita') && (
+            <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
+              Birim: <strong>{kategori === 'cam' ? 'm²' : 'm'}</strong>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Kritik stok seviyesi
               <input
-                type="checkbox"
-                {...register('aktif')}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                {...register('minimum_miktar')}
+                type="number"
+                min="0"
+                step="0.001"
+                className={cn(
+                  'mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500',
+                  errors.minimum_miktar ? 'border-red-300' : 'border-gray-200',
+                )}
               />
-              Aktif stok
+              {errors.minimum_miktar && <span className="mt-1 block text-xs text-red-500">{errors.minimum_miktar.message}</span>}
+            </label>
+            <label className="block text-sm font-medium text-gray-700">
+              Stok yeri
+              <input
+                {...register('stok_yeri')}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Örn. A Deposu / Raf 3"
+              />
             </label>
           </div>
 
           {sunucuHata && (
-            <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{sunucuHata}</p>
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+              {sunucuHata}
+            </p>
           )}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onKapat}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-            >
+          <div className="flex justify-end gap-3 border-t border-gray-100 pt-4">
+            <button type="button" onClick={onKapat} className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
               İptal
             </button>
-            <button
-              type="submit"
-              disabled={kaydediliyor}
-              className="px-5 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {kaydediliyor ? 'Kaydediliyor...' : duzenlenecek ? 'Güncelle' : 'Kaydet'}
+            <button type="submit" disabled={kaydediliyor} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+              {kaydediliyor ? 'Kaydediliyor…' : duzenlenecek ? 'Değişiklikleri Kaydet' : 'Kartı Oluştur'}
             </button>
           </div>
         </form>

@@ -6,8 +6,10 @@ import {
   RefreshCw, Calendar,
   User, Truck, Factory, FileDown, Trash2, StickyNote, X,
   Printer, Users, Target, MessageSquare, Send,
+  Percent,
   Pencil, Check,
   ScrollText, Bug, UserCog, KeyRound, PanelLeftClose, PanelLeftOpen, CloudUpload, Monitor,
+  DatabaseZap,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bugunTarih, formatSaatTr, formatTarihTr, tarihEkleTr } from '@/lib/tarih'
@@ -27,12 +29,14 @@ import KullaniciYonetimiPanel from '@/components/admin/KullaniciYonetimiPanel'
 import AdminOverview from '@/components/admin/AdminOverview'
 import DriveYedeklemePanel from '@/components/admin/DriveYedeklemePanel'
 import CihazOturumlariPanel from '@/components/admin/CihazOturumlariPanel'
+import StokCariMaliyetPaneli from '@/components/admin/StokCariMaliyetPaneli'
+import VergiVadeKurPaneli from '@/components/ticari/VergiVadeKurPaneli'
 import type { EtiketAyarlari } from '@/types/ayarlar'
 
 // ── Ayar görünürlük anahtarı ──────────────────────────────────────────────────
 const GORUNUM_ANAHTAR = 'admin_ayarlar_gorunum'
 
-type AyarKategori = 'etiket' | 'araclar' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti'
+type AyarKategori = 'etiket' | 'araclar' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'opti' | 'kdv'
 
 interface GorunumAyarlari {
   etiket: boolean
@@ -42,11 +46,12 @@ interface GorunumAyarlari {
   telegram: boolean
   istasyon: boolean
   opti: boolean
+  kdv: boolean
 }
 
 const VARSAYILAN_GORUNUM: GorunumAyarlari = {
   etiket: true, araclar: true,
-  hedef: true, presets: true, telegram: true, istasyon: true, opti: true,
+  hedef: true, presets: true, telegram: true, istasyon: true, opti: true, kdv: true,
 }
 
 interface AyarKategoriTanim {
@@ -67,6 +72,7 @@ const KATEGORILER: AyarKategoriTanim[] = [
   { id: 'telegram', label: 'Telegram Raporu',            aciklama: 'Bot token, rapor saatleri, mesaj bölümleri ve rapor tipi.', icon: Send,          renk: 'bg-teal-50 border-teal-200',   ikonRenk: 'text-teal-600 bg-teal-100',    ikonRenkRaw: 'text-teal-600' },
   { id: 'istasyon', label: 'Üretim İstasyonları',        aciklama: 'Operatör giriş formundaki istasyonları düzenle.',           icon: Factory,       renk: 'bg-amber-50 border-amber-200', ikonRenk: 'text-amber-600 bg-amber-100',  ikonRenkRaw: 'text-amber-600' },
   { id: 'opti',     label: 'Opti Export',                aciklama: 'PerfectCut IMP sayacı, çıta düşme ve stok FAM kodları.', icon: FileDown,      renk: 'bg-lime-50 border-lime-200',   ikonRenk: 'text-lime-700 bg-lime-100',    ikonRenkRaw: 'text-lime-700' },
+  { id: 'kdv',      label: 'KDV Grupları',               aciklama: 'Bağlantı ve satışlarda kullanılacak KDV kodlarını ve oranlarını yönet.', icon: Percent, renk: 'bg-violet-50 border-violet-200', ikonRenk: 'text-violet-700 bg-violet-100', ikonRenkRaw: 'text-violet-700' },
 ]
 
 // ── Üretim girişi tipleri ──────────────────────────────────────────────────────
@@ -581,6 +587,7 @@ function AyarlarPanelGorunum({
       {kategori === 'telegram' && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><TelegramAyarlariPanel /></div>}
       {kategori === 'istasyon' && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><IstasyonYonetimiPanel /></div>}
       {kategori === 'opti'     && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><OptiExportAyarlariPanel /></div>}
+      {kategori === 'kdv'      && <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8"><VergiVadeKurPaneli sadeceKdv /></div>}
     </div>
   )
 }
@@ -1311,6 +1318,12 @@ const ADMIN_NAV_GROUPS: Array<{ label?: string; items: Array<{ to: string; label
     ],
   },
   {
+    label: 'Stok ve Ticari',
+    items: [
+      { to: '/admin/stok-cari-maliyet', label: 'Stok, Cari ve Maliyet', icon: DatabaseZap },
+    ],
+  },
+  {
     label: 'Operasyon',
     items: [
       { to: '/admin/uretim-giris', label: 'Üretim Kayıtları', icon: ClipboardCheck },
@@ -1380,6 +1393,7 @@ export default function AdminPage() {
   else if (section === 'ayarlar' && detail === 'personel') content = <Navigate to="/admin/kullanicilar" replace />
   else if (section === 'ayarlar' && (!detail || ayarKategorisiMi(detail))) content = <AyarlarYonetimiTab kategori={ayarKategorisiMi(detail) ? detail : null} />
   else if (section === 'uretim-giris' && !detail) content = <UretimGirisiTab />
+  else if (section === 'stok-cari-maliyet' && !detail) content = <StokCariMaliyetPaneli />
   else if (section === 'veri-yonetimi' && !detail) content = <VeriYonetimiPanel />
   else if (section === 'yedekleme' && !detail) content = <DriveYedeklemePanel />
   else if (section === 'kullanicilar' && !detail) content = <KullaniciYonetimiPanel />

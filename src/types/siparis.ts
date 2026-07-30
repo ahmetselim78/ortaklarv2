@@ -18,6 +18,17 @@ export interface Siparis {
   teslimat_tipi?: string
   tamamlandi_tarihi?: string | null
   kaynak?: 'pdf' | 'manuel'
+  revision_no?: number
+  fiyatlandirildi?: boolean
+  para_birimi?: 'TRY' | 'USD' | 'EUR' | null
+  fiyatlandirma_tarihi?: string | null
+  aktif_fiyat_revizyon_id?: string | null
+  aktif_fiyat_revizyon?: {
+    genel_toplam: number
+    para_birimi: 'TRY' | 'USD' | 'EUR'
+  } | null
+  iptal_tarihi?: string | null
+  iptal_gerekcesi?: string | null
 }
 
 export interface SiparisDetay {
@@ -48,6 +59,7 @@ export interface SiparisDetay {
 }
 
 export interface CamFormSatiri {
+  detay_id?: string
   stok_id: string
   genislik_mm: number | string
   yukseklik_mm: number | string
@@ -58,4 +70,31 @@ export interface CamFormSatiri {
   poz?: string
   menfez_cap_mm?: number | string
   kucuk_cam?: boolean
+  satir_iskonto_yuzdesi?: number | string
+  satir_iskonto_tutari?: number | string
+  kenar_islemi_ucretsiz?: boolean
+  menfez_ucretsiz?: boolean
+  kucuk_cam_ucretsiz?: boolean
+}
+
+export interface YeniSiparisForm {
+  cari_id: string
+  tarih: string
+  para_birimi?: 'TRY' | 'USD' | 'EUR'
+  teslim_tarihi?: string
+  notlar?: string
+  alt_musteri?: string
+  harici_siparis_no?: string
+  teslimat_tipi?: string
+  kaynak?: 'pdf' | 'manuel'
+  ticari_mudahale_gerekcesi?: string
+  dusuk_marj_gerekcesi?: string
+  belge_iskonto_yuzdesi?: number | string
+  belge_iskonto_tutari?: number | string
+  manuel_fiyat_farki?: number | string
+  manuel_yuvarlama_farki?: number | string
+  nakliye_satis_override?: number | string
+  nakliye_maliyet_override?: number | string
+  vade_gunu?: number | string
+  camlar: CamFormSatiri[]
 }

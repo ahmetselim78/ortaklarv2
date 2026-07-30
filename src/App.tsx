@@ -6,11 +6,13 @@ import AppLayout from '@/components/layout/AppLayout'
 import SaatlikTakipPanosu from '@/components/uretim/SaatlikTakipPanosu'
 import AdminPage from '@/pages/AdminPage'
 import AyarlarPage from '@/pages/AyarlarPage'
+import CariHesapPage from '@/pages/CariHesapPage'
 import CariPage from '@/pages/CariPage'
 import Dashboard from '@/pages/Dashboard'
 import GostergeEkraniPage from '@/pages/GostergeEkraniPage'
 import KumandaPaneliPage from '@/pages/KumandaPaneliPage'
 import LoginPage from '@/pages/LoginPage'
+import MaliyetHesaplamaPage from '@/pages/MaliyetHesaplamaPage'
 import MfaPage from '@/pages/MfaPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import OperatorGirisPage from '@/pages/OperatorGirisPage'
@@ -20,6 +22,7 @@ import SaatlikTakipPage from '@/pages/SaatlikTakipPage'
 import SiparisPage from '@/pages/SiparisPage'
 import StokPage from '@/pages/StokPage'
 import TamirIstasyonuPage from '@/pages/TamirIstasyonuPage'
+import TekliflerPage from '@/pages/TekliflerPage'
 import UnauthorizedPage from '@/pages/UnauthorizedPage'
 import UretimIstasyonlariPage from '@/pages/UretimIstasyonlariPage'
 import UretimPage from '@/pages/UretimPage'
@@ -52,8 +55,11 @@ export default function App() {
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/cari" element={<ProtectedRoute module="cari"><CariPage /></ProtectedRoute>} />
+          <Route path="/cari-hesap" element={<ProtectedRoute module="finance"><CariHesapPage /></ProtectedRoute>} />
           <Route path="/stok" element={<ProtectedRoute module="inventory"><StokPage /></ProtectedRoute>} />
           <Route path="/siparisler" element={<ProtectedRoute module="orders"><SiparisPage /></ProtectedRoute>} />
+          <Route path="/fiyatlandirma" element={<ProtectedRoute module="pricing"><MaliyetHesaplamaPage /></ProtectedRoute>} />
+          <Route path="/teklifler" element={<ProtectedRoute module="pricing"><TekliflerPage /></ProtectedRoute>} />
           <Route path="/uretim" element={<ProtectedRoute module="production"><UretimPage /></ProtectedRoute>} />
           <Route path="/istasyonlar" element={<ProtectedRoute module="production_stations" action="update"><UretimIstasyonlariPage /></ProtectedRoute>} />
           <Route path="/saatlik-takip" element={<ProtectedRoute module="hourly_tracking"><SaatlikTakipPage /></ProtectedRoute>} />

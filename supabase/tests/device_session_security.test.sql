@@ -29,6 +29,15 @@ SELECT ok(
   'istemci kayıt RPCsini doğrudan çağıramaz'
 );
 
+-- Bu test mevcut yerel veritabanındaki gerçek geliştirme oturumlarından bağımsız
+-- çalışmalıdır. Değişiklik transaction sonunda geri alınır.
+UPDATE public.user_device_sessions
+SET status = 'revoked',
+    termination_reason = 'unknown',
+    ended_at = now(),
+    updated_at = now()
+WHERE status = 'active';
+
 INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 VALUES
   ('94000000-0000-0000-0000-000000000001', 'session-admin-1@example.test', '{}'::jsonb, now(), now()),

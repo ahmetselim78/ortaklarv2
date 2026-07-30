@@ -54,3 +54,8 @@ opti programı için export/
 
 # Yazıcı köprüsünün dağıtım çıktısı; kaynak dosya yazici-kopru.js'dir
 yazici-kopru/*.exe
+
+#benim eklediklerim
+docs
+tmp
+outputs

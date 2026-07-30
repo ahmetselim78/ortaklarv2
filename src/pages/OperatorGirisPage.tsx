@@ -1662,10 +1662,10 @@ export default function OperatorGirisPage() {
             </p>
             <button
               type="button"
-              onClick={() => void cikisYap()}
+              onClick={() => window.close()}
               className="mt-6 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-gray-950 transition-colors hover:bg-amber-400"
             >
-              <LogOut size={15} /> Başka hesapla giriş yap
+              <ArrowLeft size={15} /> Sekmeyi kapat
             </button>
           </div>
         </div>

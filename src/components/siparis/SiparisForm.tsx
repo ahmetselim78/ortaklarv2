@@ -5,17 +5,25 @@ import { z } from 'zod'
 import { X, Trash2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Truck, PackageCheck, AlertTriangle, Plus } from 'lucide-react'
 import type { Cari } from '@/types/cari'
 import type { Stok } from '@/types/stok'
+import type { YeniSiparisForm } from '@/types/siparis'
 import type { SiparisTaslakCam, SiparisTaslakVerisi } from '@/types/taslak'
 import type { EkleIlerleme } from '@/hooks/useSiparis'
+import type { FiyatHesapSonucu, FiyatOnizlemesi, TicariMod } from '@/types/ticari'
 import { cn } from '@/lib/utils'
 import { useEscape } from '@/hooks/useEscape'
 import CamStokPicker from '@/components/siparis/CamStokPicker'
+import FiyatGrupOzeti from '@/components/ticari/FiyatGrupOzeti'
 import { aktifCitaStoklari, citaEslestir, getAraBoslukMm } from '@/lib/cam'
+import { ticariBugun } from '@/lib/ticariFormat'
+import { TicariRpcError } from '@/services/ticariService'
 
 const KENAR_ISLEMLERI = ['Rodaj', 'Bizote'] as const
 const NOT_ETIKETLERI = ['Menfez'] as const
 
+const ticariSayiSchema = z.union([z.literal(''), z.coerce.number().finite()]).optional()
+
 const camSchema = z.object({
+  detay_id: z.string().optional(),
   stok_id: z.string().min(1, 'Cam cinsi seçiniz'),
   cita_stok_id: z.string().optional(),
   genislik_mm: z.coerce.number().positive('Pozitif olmalı'),
@@ -24,15 +32,34 @@ const camSchema = z.object({
   kenar_islemi: z.string().optional(),
   notlar: z.string().optional(),
   poz: z.string().optional(),
+  menfez_cap_mm: ticariSayiSchema,
+  kucuk_cam: z.boolean().optional(),
+  satir_iskonto_yuzdesi: ticariSayiSchema,
+  satir_iskonto_tutari: ticariSayiSchema,
+  kenar_islemi_ucretsiz: z.boolean().optional(),
+  menfez_ucretsiz: z.boolean().optional(),
+  kucuk_cam_ucretsiz: z.boolean().optional(),
 })
 
 const schema = z.object({
+  para_birimi: z.enum(['TRY', 'USD', 'EUR']).optional(),
+  harici_siparis_no: z.string().optional(),
+  kaynak: z.enum(['pdf', 'manuel']).optional(),
+  belge_iskonto_yuzdesi: ticariSayiSchema,
+  belge_iskonto_tutari: ticariSayiSchema,
+  manuel_fiyat_farki: ticariSayiSchema,
+  manuel_yuvarlama_farki: ticariSayiSchema,
+  nakliye_satis_override: ticariSayiSchema,
+  nakliye_maliyet_override: ticariSayiSchema,
+  vade_gunu: ticariSayiSchema,
   cari_id: z.string().min(1, 'Müşteri seçiniz'),
   tarih: z.string().min(1, 'Tarih zorunludur'),
   teslim_tarihi: z.string().optional(),
   alt_musteri: z.string().optional(),
   notlar: z.string().optional(),
   teslimat_tipi: z.string().optional(),
+  ticari_mudahale_gerekcesi: z.string().optional(),
+  dusuk_marj_gerekcesi: z.string().optional(),
   camlar: z.array(camSchema).min(1, 'En az 1 cam parçası eklenmelidir'),
 })
 
@@ -42,7 +69,9 @@ type FormVeri = z.output<typeof schema>
 interface Props {
   cariler: Cari[]
   stoklar: Stok[]
-  onKaydet: (veri: FormVeri) => Promise<unknown>
+  onKaydet: (veri: FormVeri, onizleme?: FiyatOnizlemesi | null) => Promise<unknown>
+  onFiyatOnizle?: (veri: FormVeri) => Promise<FiyatOnizlemesi>
+  ticariMod?: TicariMod | null
   onKapat: () => void
   /** Taslaktan devam ediliyorsa başlangıç verisi */
   initialTaslak?: SiparisTaslakVerisi
@@ -54,9 +83,16 @@ interface Props {
   onTaslakKaydet?: (veri: SiparisTaslakVerisi) => void
   /** Büyük siparişlerde (300+ satır) parçalı ekleme ilerlemesi (opsiyonel gösterge). */
   ekleIlerleme?: EkleIlerleme | null
+  /** Fiyatlı sipariş revizyonunda mevcut snapshot'tan hazırlanan başlangıç verisi. */
+  initialVeri?: YeniSiparisForm
+  /** Verildiğinde form yeni sipariş yerine fiyat revizyonu olarak çalışır. */
+  revizyonTuru?: 'teknik' | 'ticari'
+  /** Kullanıcıya gösterilen mevcut fiyat revizyon numarası. */
+  fiyatRevizyonNo?: number
 }
 
 const BOŞ_CAM = {
+  detay_id: '',
   stok_id: '',
   cita_stok_id: '',
   genislik_mm: '' as unknown as number,
@@ -65,22 +101,54 @@ const BOŞ_CAM = {
   kenar_islemi: '',
   notlar: '',
   poz: '',
+  menfez_cap_mm: '' as unknown as number,
+  kucuk_cam: false,
+  satir_iskonto_yuzdesi: '' as unknown as number,
+  satir_iskonto_tutari: '' as unknown as number,
+  kenar_islemi_ucretsiz: false,
+  menfez_ucretsiz: false,
+  kucuk_cam_ucretsiz: false,
 }
 
 function taslakDegeri(value: unknown): string | number | undefined {
   return typeof value === 'string' || typeof value === 'number' ? value : undefined
 }
 
-export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initialTaslak, onTaslakKaydet, ekleIlerleme }: Props) {
-  const [adim, setAdim] = useState<1 | 2 | 3>(1)
+export default function SiparisForm({
+  cariler,
+  stoklar,
+  onKaydet,
+  onFiyatOnizle,
+  ticariMod,
+  onKapat,
+  initialTaslak,
+  onTaslakKaydet,
+  ekleIlerleme,
+  initialVeri,
+  revizyonTuru,
+  fiyatRevizyonNo,
+}: Props) {
+  const [adim, setAdim] = useState<1 | 2 | 3 | 4>(1)
   const [kaydediliyor, setKaydediliyor] = useState(false)
+  const [onizleniyor, setOnizleniyor] = useState(false)
+  const [fiyatOnizleme, setFiyatOnizleme] = useState<FiyatOnizlemesi | null>(null)
+  const [fiyatCakismasi, setFiyatCakismasi] = useState<{
+    onceki: FiyatHesapSonucu
+    yeni: FiyatHesapSonucu
+    degisenKaynaklar: string[]
+  } | null>(null)
   const [sunucuHata, setSunucuHata] = useState<string | null>(null)
   const [genisletilmis, setGenisletilmis] = useState<Set<number>>(new Set())
   // Form başarıyla kaydedildi mi? (taslak kaydını atlamak için)
   const [basariliKayit, setBasariliKayit] = useState(false)
 
   // Adım 3 state
-  const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat'>('teslim_alacak')
+  const [teslimatTipi, setTeslimatTipi] = useState<'teslim_alacak' | 'sevkiyat'>(
+    initialVeri?.teslimat_tipi === 'sevkiyat' ? 'sevkiyat' : 'teslim_alacak',
+  )
+  const revizyonMu = revizyonTuru != null
+  const teknikAlanlarKilitli = revizyonTuru === 'ticari'
+  const ticariAlanlarKilitli = revizyonTuru === 'teknik'
 
   const toggleGenislet = (idx: number) => {
     setGenisletilmis(prev => {
@@ -105,13 +173,27 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
   } = useForm<FormGirdi, unknown, FormVeri>({
     resolver: zodResolver(schema),
     defaultValues: {
-      tarih: initialTaslak?.tarih || new Date().toISOString().split('T')[0],
-      cari_id: initialTaslak?.cari_id ?? '',
-      teslim_tarihi: initialTaslak?.teslim_tarihi ?? '',
-      alt_musteri: initialTaslak?.alt_musteri ?? '',
-      notlar: initialTaslak?.notlar ?? '',
-      teslimat_tipi: initialTaslak?.teslimat_tipi || 'teslim_alacak',
-      camlar: initialTaslak?.camlar?.length ? initialTaslak.camlar : [{ ...BOŞ_CAM }],
+      tarih: initialVeri?.tarih || initialTaslak?.tarih || ticariBugun(),
+      cari_id: initialVeri?.cari_id ?? initialTaslak?.cari_id ?? '',
+      para_birimi: initialVeri?.para_birimi,
+      teslim_tarihi: initialVeri?.teslim_tarihi ?? initialTaslak?.teslim_tarihi ?? '',
+      alt_musteri: initialVeri?.alt_musteri ?? initialTaslak?.alt_musteri ?? '',
+      notlar: initialVeri?.notlar ?? initialTaslak?.notlar ?? '',
+      harici_siparis_no: initialVeri?.harici_siparis_no ?? '',
+      kaynak: initialVeri?.kaynak ?? 'manuel',
+      teslimat_tipi: initialVeri?.teslimat_tipi ?? initialTaslak?.teslimat_tipi ?? 'teslim_alacak',
+      ticari_mudahale_gerekcesi: initialVeri?.ticari_mudahale_gerekcesi ?? '',
+      dusuk_marj_gerekcesi: initialVeri?.dusuk_marj_gerekcesi ?? '',
+      belge_iskonto_yuzdesi: initialVeri?.belge_iskonto_yuzdesi ?? '',
+      belge_iskonto_tutari: initialVeri?.belge_iskonto_tutari ?? '',
+      manuel_fiyat_farki: initialVeri?.manuel_fiyat_farki ?? '',
+      manuel_yuvarlama_farki: initialVeri?.manuel_yuvarlama_farki ?? '',
+      nakliye_satis_override: initialVeri?.nakliye_satis_override ?? '',
+      nakliye_maliyet_override: initialVeri?.nakliye_maliyet_override ?? '',
+      vade_gunu: initialVeri?.vade_gunu ?? '',
+      camlar: initialVeri?.camlar?.length
+        ? initialVeri.camlar
+        : initialTaslak?.camlar?.length ? initialTaslak.camlar : [{ ...BOŞ_CAM }],
     },
   })
 
@@ -233,7 +315,37 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
   const geriDon = () => {
     if (adim === 2) setAdim(1)
     else if (adim === 3) setAdim(2)
+    else if (adim === 4) {
+      setFiyatOnizleme(null)
+      setFiyatCakismasi(null)
+      setAdim(3)
+    }
   }
+
+  const kesinFiyatiHesapla = handleSubmit(async (veri) => {
+    if (teslimatTipi === 'sevkiyat' && !veri.teslim_tarihi) {
+      setSunucuHata('Sevkiyat seçildi ancak teslim tarihi girilmedi. Lütfen teslim tarihi belirleyiniz.')
+      return
+    }
+    if (!onFiyatOnizle) {
+      setSunucuHata('Kesin fiyat önizleme servisi kullanılamıyor.')
+      return
+    }
+    setOnizleniyor(true)
+    setSunucuHata(null)
+    setFiyatCakismasi(null)
+    try {
+      const yeniOnizleme = await onFiyatOnizle(veri)
+      setFiyatOnizleme(yeniOnizleme)
+      setFiyatCakismasi(null)
+      setAdim(4)
+    } catch (e: unknown) {
+      setFiyatOnizleme(null)
+      setSunucuHata(e instanceof Error ? e.message : 'Kesin fiyat hesaplanamadı.')
+    } finally {
+      setOnizleniyor(false)
+    }
+  })
 
   const onSubmit = async (veri: FormVeri) => {
     if (teslimatTipi === 'sevkiyat' && !veri.teslim_tarihi) {
@@ -243,11 +355,31 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     setKaydediliyor(true)
     setSunucuHata(null)
     try {
-      await onKaydet(veri)
+      if (ticariMod === 'aktif' && (!fiyatOnizleme || !fiyatOnizleme.sonuc.gecerli)) {
+        throw new Error('Sipariş, geçerli ve kullanıcı tarafından incelenmiş kesin fiyat önizlemesi olmadan kaydedilemez.')
+      }
+      await onKaydet(veri, fiyatOnizleme)
       setBasariliKayit(true)
       onKapat()
     } catch (e: unknown) {
-      setSunucuHata(e instanceof Error ? e.message : 'Bir hata oluştu')
+      const mesaj = e instanceof Error ? e.message : 'Bir hata oluştu'
+      if (
+        e instanceof TicariRpcError
+        && e.kod === 'FIYAT_ONIZLEME_CAKISMASI'
+        && fiyatOnizleme
+        && e.detay?.yeni_sonuc
+        && typeof e.detay.yeni_sonuc === 'object'
+      ) {
+        setFiyatCakismasi({
+          onceki: fiyatOnizleme.sonuc,
+          yeni: e.detay.yeni_sonuc as unknown as FiyatHesapSonucu,
+          degisenKaynaklar: Array.isArray(e.detay.degisen_kaynaklar)
+            ? e.detay.degisen_kaynaklar.map(String)
+            : [],
+        })
+      }
+      if (/FIYAT_ONIZLEME|önizleme|Fiyatlandırma verileri/i.test(mesaj)) setFiyatOnizleme(null)
+      setSunucuHata(mesaj)
     } finally {
       setKaydediliyor(false)
     }
@@ -291,6 +423,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
     { no: 1, etiket: 'Müşteri Bilgileri' },
     { no: 2, etiket: 'Cam Listesi' },
     { no: 3, etiket: 'Sevkiyat' },
+    ...(ticariMod === 'aktif' ? [{ no: 4, etiket: 'Fiyat Onayı' }] : []),
   ]
 
   const camListesiModu = adim === 2
@@ -309,7 +442,11 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
         {/* Başlık + Adım göstergesi */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-gray-800">Yeni Sipariş</h2>
+            <h2 className="text-base font-semibold text-gray-800">
+              {revizyonMu
+                ? `${revizyonTuru === 'teknik' ? 'Teknik' : 'Ticari'} Fiyat Revizyonu · R${String((fiyatRevizyonNo ?? 0) + 1).padStart(2, '0')}`
+                : 'Yeni Sipariş'}
+            </h2>
             <div className="flex items-center gap-2 mt-2">
               {ADIMLAR.map((a, i) => (
                 <div key={a.no} className="flex items-center gap-2">
@@ -336,16 +473,28 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="hidden" />
+        <input type="hidden" {...register('para_birimi')} />
+        <input type="hidden" {...register('harici_siparis_no')} />
+        <input type="hidden" {...register('kaynak')} />
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 py-5">
 
             {/* ── ADIM 1: Müşteri Bilgileri ── */}
             {adim === 1 && (
               <div className="space-y-4">
+                {revizyonMu && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Müşteri, sipariş tarihi ve belge para birimi fiyatlı siparişte değiştirilemez.
+                    {revizyonTuru === 'teknik'
+                      ? ' Bu akışta ölçü, adet, stok ve teknik işlemleri değiştirebilirsiniz.'
+                      : ' Bu akışta iskonto, vade, nakliye ve manuel fiyat müdahalelerini değiştirebilirsiniz.'}
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Müşteri *</label>
                   <select
                     {...register('cari_id')}
+                    disabled={revizyonMu}
                     className={cn(
                       'w-full rounded-lg border px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500',
                       errors.cari_id ? 'border-red-300' : 'border-gray-200'
@@ -365,6 +514,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                     <input
                       type="date"
                       {...register('tarih')}
+                      disabled={revizyonMu}
                       className={cn(
                         'w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500',
                         errors.tarih ? 'border-red-300' : 'border-gray-200'
@@ -445,6 +595,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                               <input
                                 type="text"
                                 {...register(`camlar.${index}.poz`)}
+                                disabled={teknikAlanlarKilitli}
                                 data-row={index}
                                 data-field="poz"
                                 onKeyDown={e => handlePozEnter(e, index)}
@@ -464,6 +615,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                     onChange={(id) => camSecildi(index, id)}
                                     onSelectedEnter={() => genislikAlaninaGec(index)}
                                     invalid={!!errors.camlar?.[index]?.stok_id}
+                                    disabled={teknikAlanlarKilitli}
                                   />
                                 )}
                               />
@@ -472,6 +624,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                               <input
                                 type="number"
                                 {...register(`camlar.${index}.genislik_mm`)}
+                                disabled={teknikAlanlarKilitli}
                                 data-row={index}
                                 data-field="genislik_mm"
                                 onKeyDown={e => handleEnterNav(e, index, 'genislik_mm')}
@@ -487,6 +640,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                               <input
                                 type="number"
                                 {...register(`camlar.${index}.yukseklik_mm`)}
+                                disabled={teknikAlanlarKilitli}
                                 data-row={index}
                                 data-field="yukseklik_mm"
                                 onKeyDown={e => handleEnterNav(e, index, 'yukseklik_mm')}
@@ -502,6 +656,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                               <input
                                 type="number"
                                 {...register(`camlar.${index}.adet`)}
+                                disabled={teknikAlanlarKilitli}
                                 data-row={index}
                                 data-field="adet"
                                 onKeyDown={e => handleEnterNav(e, index, 'adet')}
@@ -520,6 +675,7 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                   <button
                                     key={tag}
                                     type="button"
+                                    disabled={teknikAlanlarKilitli}
                                     onClick={() => toggleTag(index, 'notlar', tag)}
                                     onKeyDown={e => {
                                       if (e.key !== 'Enter') return
@@ -543,12 +699,13 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                 >
                                   {genisletilmis.has(index)
                                     ? <><ChevronUp size={9} /> Az</>
-                                    : <><ChevronDown size={9} /> Kenar</>}
+                                    : <><ChevronDown size={9} /> Detay / iskonto</>}
                                 </button>
                                 {genisletilmis.has(index) && KENAR_ISLEMLERI.map(tag => (
                                   <button
                                     key={tag}
                                     type="button"
+                                    disabled={teknikAlanlarKilitli}
                                     onClick={() => toggleTag(index, 'kenar_islemi', tag)}
                                     className={cn(
                                       'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
@@ -562,13 +719,97 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                                 ))}
                                 <input type="hidden" {...register(`camlar.${index}.kenar_islemi`)} />
                                 <input type="hidden" {...register(`camlar.${index}.notlar`)} />
+                                <input type="hidden" {...register(`camlar.${index}.detay_id`)} />
+                                {genisletilmis.has(index) && (
+                                  <div className="mt-2 grid w-full min-w-[310px] grid-cols-2 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                    <label className="text-[10px] text-gray-600">
+                                      Menfez çapı (mm)
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        {...register(`camlar.${index}.menfez_cap_mm`)}
+                                        disabled={teknikAlanlarKilitli}
+                                        className="mt-0.5 w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs disabled:bg-gray-100"
+                                      />
+                                    </label>
+                                    <label className="flex items-center gap-1.5 self-end rounded border border-gray-200 bg-white px-2 py-1 text-[10px] text-gray-600">
+                                      <input
+                                        type="checkbox"
+                                        {...register(`camlar.${index}.kucuk_cam`)}
+                                        disabled={teknikAlanlarKilitli}
+                                      />
+                                      Küçük cam
+                                    </label>
+                                    <label className="text-[10px] text-gray-600">
+                                      Satır iskonto %
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        step="0.01"
+                                        {...register(`camlar.${index}.satir_iskonto_yuzdesi`, {
+                                          onChange: (event) => {
+                                            if (event.target.value !== '') {
+                                              setValue(`camlar.${index}.satir_iskonto_tutari`, '')
+                                            }
+                                            setFiyatOnizleme(null)
+                                          },
+                                        })}
+                                        disabled={ticariAlanlarKilitli}
+                                        className="mt-0.5 w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs disabled:bg-gray-100"
+                                      />
+                                    </label>
+                                    <label className="text-[10px] text-gray-600">
+                                      Satır iskonto tutarı
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        {...register(`camlar.${index}.satir_iskonto_tutari`, {
+                                          onChange: (event) => {
+                                            if (event.target.value !== '') {
+                                              setValue(`camlar.${index}.satir_iskonto_yuzdesi`, '')
+                                            }
+                                            setFiyatOnizleme(null)
+                                          },
+                                        })}
+                                        disabled={ticariAlanlarKilitli}
+                                        className="mt-0.5 w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs disabled:bg-gray-100"
+                                      />
+                                    </label>
+                                    <label className="flex items-center gap-1.5 text-[10px] text-gray-600">
+                                      <input
+                                        type="checkbox"
+                                        {...register(`camlar.${index}.kenar_islemi_ucretsiz`)}
+                                        disabled={ticariAlanlarKilitli}
+                                      />
+                                      Kenar işlemi ücretsiz
+                                    </label>
+                                    <label className="flex items-center gap-1.5 text-[10px] text-gray-600">
+                                      <input
+                                        type="checkbox"
+                                        {...register(`camlar.${index}.menfez_ucretsiz`)}
+                                        disabled={ticariAlanlarKilitli}
+                                      />
+                                      Menfez ücretsiz
+                                    </label>
+                                    <label className="col-span-2 flex items-center gap-1.5 text-[10px] text-gray-600">
+                                      <input
+                                        type="checkbox"
+                                        {...register(`camlar.${index}.kucuk_cam_ucretsiz`)}
+                                        disabled={ticariAlanlarKilitli}
+                                      />
+                                      Küçük cam ek bedeli ücretsiz
+                                    </label>
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="px-1.5 py-1.5">
                               <button
                                 type="button"
                                 onClick={() => remove(index)}
-                                disabled={fields.length <= 1}
+                                disabled={fields.length <= 1 || teknikAlanlarKilitli}
                                 className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
                               >
                                 <Trash2 size={13} />
@@ -584,7 +825,8 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                     <button
                       type="button"
                       onClick={satirEkle}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      disabled={teknikAlanlarKilitli}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Plus size={13} />
                       Satır Ekle
@@ -675,6 +917,112 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                 )}
               </div>
             )}
+
+            {/* ── ADIM 4: PostgreSQL kesin fiyat önizlemesi ── */}
+            {adim === 4 && (
+              <div className="space-y-4">
+                <div className={cn(
+                  'rounded-xl border p-4',
+                  fiyatOnizleme?.sonuc.gecerli
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-amber-200 bg-amber-50',
+                )}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800">Kesin fiyat önizlemesi</h3>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Bu tutar PostgreSQL hesap motorundan geldi. Kaydetme sırasında fiyat bağlamı yeniden doğrulanır.
+                      </p>
+                    </div>
+                    {fiyatOnizleme?.sonuc.gecerli && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
+                        Kayda hazır
+                      </span>
+                    )}
+                  </div>
+
+                  {fiyatOnizleme ? (
+                    <>
+                      <div className="mt-4">
+                        <FiyatGrupOzeti sonuc={fiyatOnizleme.sonuc} />
+                      </div>
+
+                      {!fiyatOnizleme.sonuc.gecerli && (
+                        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+                          <div className="text-xs font-semibold text-red-700">Kayıt engelleri</div>
+                          <ul className="mt-2 space-y-1 text-xs text-red-700">
+                            {fiyatOnizleme.sonuc.hatalar.map((hata, index) => (
+                              <li key={`${hata.kod}-${hata.satir_no ?? 0}-${index}`}>
+                                {hata.satir_no ? `${hata.satir_no}. satır: ` : ''}{hata.kod.replaceAll('_', ' ')}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  ) : fiyatCakismasi ? (
+                    <div className="mt-4 space-y-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                      <div>
+                        <p className="text-xs font-semibold text-red-800">
+                          Fiyatlandırma verileri önizlemeden sonra değişti
+                        </p>
+                        <p className="mt-1 text-xs text-red-700">
+                          Yeni toplamı inceleyin. “Fiyatı Yenile” ile yeni hash’li önizleme alınmadan kayıt yapılmaz.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                        <div className="rounded-lg bg-white p-3">
+                          <div className="text-[11px] text-gray-500">Önceki onay</div>
+                          <div className="mt-1 font-semibold text-gray-800">
+                            {Number(fiyatCakismasi.onceki.genel_toplam).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                            {' '}{fiyatCakismasi.onceki.para_birimi}
+                          </div>
+                        </div>
+                        <ChevronRight size={16} className="text-red-400" />
+                        <div className="rounded-lg bg-white p-3 ring-1 ring-red-200">
+                          <div className="text-[11px] text-red-600">Sunucudaki yeni toplam</div>
+                          <div className="mt-1 font-bold text-red-800">
+                            {Number(fiyatCakismasi.yeni.genel_toplam).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                            {' '}{fiyatCakismasi.yeni.para_birimi}
+                          </div>
+                        </div>
+                      </div>
+                      {fiyatCakismasi.degisenKaynaklar.length > 0 && (
+                        <p className="break-words text-[11px] text-red-600">
+                          Değişen kaynaklar: {fiyatCakismasi.degisenKaynaklar.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-4 rounded-lg bg-white/80 p-3 text-xs text-amber-700">
+                      Form veya gerekçe değişti. Güncel kesin fiyatı yeniden hesaplayın.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Ticari müdahale / düşük marj gerekçesi
+                  </label>
+                  <textarea
+                    {...register('ticari_mudahale_gerekcesi', {
+                      onChange: (event) => {
+                        setValue('dusuk_marj_gerekcesi', event.target.value)
+                        setFiyatOnizleme(null)
+                        setFiyatCakismasi(null)
+                      },
+                    })}
+                    rows={2}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="İskonto, manuel fark veya düşük marj varsa gerekçeyi yazın..."
+                  />
+                  <input
+                    type="hidden"
+                    {...register('dusuk_marj_gerekcesi')}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Alt Butonlar */}
@@ -710,6 +1058,34 @@ export default function SiparisForm({ cariler, stoklar, onKaydet, onKapat, initi
                   >
                     İleri <ChevronRight size={15} />
                   </button>
+                ) : adim === 3 && ticariMod === 'aktif' ? (
+                  <button
+                    type="button"
+                    onClick={kesinFiyatiHesapla}
+                    disabled={onizleniyor}
+                    className="flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {onizleniyor ? 'Liste fiyatı hesaplanıyor...' : 'Liste Fiyatını Hesapla'}
+                    {!onizleniyor && <ChevronRight size={15} />}
+                  </button>
+                ) : adim === 4 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={kesinFiyatiHesapla}
+                      disabled={onizleniyor}
+                      className="px-4 py-2 text-sm rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      {onizleniyor ? 'Hesaplanıyor...' : 'Fiyatı Yenile'}
+                    </button>
+                    <button
+                      onClick={handleSubmit(onSubmit)}
+                      disabled={kaydediliyor || !fiyatOnizleme?.sonuc.gecerli}
+                      className="px-5 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {kaydediliyor ? 'Kaydediliyor...' : 'Fiyatı Onayla ve Kaydet'}
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={handleSubmit(onSubmit)}

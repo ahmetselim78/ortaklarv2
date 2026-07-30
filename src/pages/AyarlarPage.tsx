@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Printer, ChevronRight, ArrowLeft, Truck, Target, MessageSquare, Send, Factory } from 'lucide-react'
+import { Printer, ChevronRight, ArrowLeft, Truck, Target, MessageSquare, Send, Factory, Percent } from 'lucide-react'
 import { useAyarlar } from '@/hooks/useAyarlar'
 import { supabase } from '@/lib/supabase'
 
@@ -12,6 +12,7 @@ const VARSAYILAN_GORUNUM = {
   presets: true,
   telegram: true,
   istasyon: true,
+  kdv: true,
 }
 
 function useGorunumAyarlari() {
@@ -47,10 +48,11 @@ import HedefVardiyaPanel from '@/components/ayarlar/HedefVardiyaPanel'
 import AksiyonNotuPresetsPanel from '@/components/ayarlar/AksiyonNotuPresetsPanel'
 import TelegramAyarlariPanel from '@/components/ayarlar/TelegramAyarlariPanel'
 import IstasyonYonetimiPanel from '@/components/ayarlar/IstasyonYonetimiPanel'
+import VergiVadeKurPaneli from '@/components/ticari/VergiVadeKurPaneli'
 
 /* ── Kategori tanımları ──────────────────────────────────────── */
 
-type AyarKategori = 'etiket' | 'araclar' | 'hedef' | 'presets' | 'telegram' | 'istasyon'
+type AyarKategori = 'etiket' | 'araclar' | 'hedef' | 'presets' | 'telegram' | 'istasyon' | 'kdv'
 
 interface Kategori {
   id: AyarKategori
@@ -109,6 +111,14 @@ const kategoriler: Kategori[] = [
     icon: Factory,
     renk: 'bg-amber-50 hover:bg-amber-100 border-amber-200',
     ikonRenk: 'text-amber-600 bg-amber-100',
+  },
+  {
+    id: 'kdv',
+    label: 'KDV Grupları',
+    aciklama: 'Bağlantı ve satışlarda kullanılacak KDV kodlarını, oranlarını ve sürümlerini yönet.',
+    icon: Percent,
+    renk: 'bg-violet-50 hover:bg-violet-100 border-violet-200',
+    ikonRenk: 'text-violet-700 bg-violet-100',
   },
 ]
 
@@ -327,6 +337,30 @@ export default function AyarlarPage() {
       </div>
       <div className="flex-1 overflow-auto p-8">
         <IstasyonYonetimiPanel />
+      </div>
+    </div>
+  )
+
+  /* KDV Grupları */
+  if (aktifKategori === 'kdv') return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-8 py-4">
+        <button
+          type="button"
+          onClick={() => setAktifKategori(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-800"
+        >
+          <ArrowLeft size={15} />
+          Ayarlar
+        </button>
+        <span className="text-gray-300">/</span>
+        <div className="flex items-center gap-2">
+          <Percent size={16} className="text-violet-700" />
+          <span className="text-sm font-semibold text-gray-900">KDV Grupları</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-8">
+        <VergiVadeKurPaneli sadeceKdv />
       </div>
     </div>
   )

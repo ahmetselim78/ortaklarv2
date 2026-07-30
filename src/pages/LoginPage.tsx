@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import {
+  Activity,
   ArrowRight,
   Check,
   Eye,
@@ -9,7 +10,7 @@ import {
   LockKeyhole,
   Mail,
   ShieldCheck,
-  Sparkles,
+  Waypoints,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getSignInErrorMessage } from '@/lib/authError'
@@ -67,32 +68,36 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative min-h-dvh overflow-x-hidden overflow-y-auto bg-[#07111f] text-slate-950">
-      <div aria-hidden="true" className="auth-glow absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full bg-blue-500/20 blur-3xl" />
-      <div aria-hidden="true" className="auth-glow auth-delay-2 absolute -bottom-52 right-[-8rem] h-[38rem] w-[38rem] rounded-full bg-cyan-400/10 blur-3xl" />
+    <main className="relative min-h-dvh overflow-x-hidden overflow-y-auto bg-[#061321] text-slate-950">
+      <div aria-hidden="true" className="auth-glow absolute -left-40 -top-48 h-[34rem] w-[34rem] rounded-full bg-[#087dff]/25 blur-3xl" />
+      <div aria-hidden="true" className="auth-glow auth-delay-2 absolute -bottom-52 right-[-8rem] h-[38rem] w-[38rem] rounded-full bg-[#23d8d0]/15 blur-3xl" />
       <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_90%)]" />
 
       <div className="relative mx-auto grid min-h-dvh w-full max-w-7xl min-w-0 content-center items-start gap-4 px-4 py-4 sm:gap-6 sm:px-8 sm:py-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:gap-16 lg:px-12 lg:py-8">
         <section className="auth-enter mx-auto min-w-0 w-full max-w-lg text-white lg:mx-0">
           <div className="flex items-center gap-3 lg:mb-12">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-500 shadow-lg shadow-blue-500/25">
-              <ShieldCheck size={23} aria-hidden="true" />
+            <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06] shadow-lg shadow-blue-500/15">
+              <img
+                src="/glassflow-logo.png"
+                alt="GlassFlow logosu"
+                className="h-full w-full object-cover"
+              />
             </div>
             <div>
-              <p className="font-bold tracking-tight">OrtaklarV2</p>
-              <p className="text-xs text-slate-400">Güvenli çalışma alanı</p>
+              <p className="text-lg font-bold tracking-tight">GlassFlow</p>
+              <p className="text-xs font-medium tracking-wide text-cyan-200/70">MES · ERP PLATFORMU</p>
             </div>
           </div>
 
           <div className="hidden lg:block">
-            <span className="inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-400/10 px-3 py-1.5 text-xs font-semibold text-blue-200">
-              <Sparkles size={14} aria-hidden="true" /> Her şey tek bir güvenli alanda
+            <span className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
+              <Waypoints size={14} aria-hidden="true" /> Üretim ve işletme yönetimi, tek akışta
             </span>
             <h1 className="mt-5 max-w-lg text-5xl font-bold leading-[1.06] tracking-tight">
-              İşinize kaldığınız yerden devam edin.
+              Fabrikanızın tüm akışı tek ekranda.
             </h1>
             <p className="mt-5 max-w-md text-base leading-7 text-slate-300">
-              Üretimden sevkiyata tüm operasyonlarınıza güvenli ve hızlı biçimde erişin.
+              Üretimden sevkiyata, stoktan finansa tüm süreçlerinizi GlassFlow ile güvenle yönetin.
             </p>
 
             <div className="relative mt-10 h-52 max-w-md overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-sm">
@@ -100,12 +105,12 @@ export default function LoginPage() {
               <div aria-hidden="true" className="auth-orbit auth-orbit-reverse absolute -right-4 -top-14 h-52 w-52 rounded-full border border-dashed border-cyan-300/25" />
               <div className="relative z-10 flex h-full flex-col justify-between">
                 <div className="auth-float flex w-fit items-center gap-3 rounded-2xl border border-white/10 bg-[#0d1a2c]/90 px-4 py-3 shadow-xl">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-400/15 text-emerald-300"><Check size={18} aria-hidden="true" /></div>
-                  <div><p className="text-xs text-slate-400">Güvenli bağlantı</p><p className="text-sm font-semibold">Verileriniz korunuyor</p></div>
+                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-400/15 text-cyan-200"><Activity size={18} aria-hidden="true" /></div>
+                  <div><p className="text-xs text-slate-400">Canlı operasyon</p><p className="text-sm font-semibold">Üretim akışı izleniyor</p></div>
                 </div>
                 <div className="auth-float auth-delay-1 ml-16 flex w-fit items-center gap-3 self-end rounded-2xl border border-blue-300/15 bg-blue-500/15 px-4 py-3 shadow-xl backdrop-blur-md">
-                  <ShieldCheck size={20} className="text-blue-200" aria-hidden="true" />
-                  <div><p className="text-xs text-blue-200/70">2 adımlı doğrulama</p><p className="text-sm font-semibold">Ek güvenlik katmanı</p></div>
+                  <Check size={20} className="text-cyan-200" aria-hidden="true" />
+                  <div><p className="text-xs text-blue-200/70">MES + ERP entegrasyonu</p><p className="text-sm font-semibold">Tüm veriler tek merkezde</p></div>
                 </div>
               </div>
             </div>
@@ -116,11 +121,16 @@ export default function LoginPage() {
           <form onSubmit={submit} className="min-w-0 rounded-[1.75rem] border border-white/50 bg-white/[0.97] p-5 shadow-[0_35px_100px_-30px_rgba(0,0,0,0.65)] backdrop-blur-xl sm:p-8 lg:rounded-[2rem] lg:p-10">
             <div className="mb-7">
               <div className="mb-5 flex items-center gap-3 lg:hidden">
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
-                  <LockKeyhole size={19} aria-hidden="true" />
+                <div className="relative h-11 w-[4.75rem] shrink-0 overflow-hidden rounded-xl bg-[#071b2e] shadow-md shadow-blue-500/20">
+                  <img
+                    src="/glassflow-logo.png"
+                    alt=""
+                    aria-hidden="true"
+                    className="h-full w-full object-cover"
+                  />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-slate-950">Güvenli giriş</p>
+                  <p className="text-sm font-bold text-slate-950">GlassFlow</p>
                   <p className="text-xs text-slate-500">Hesabınıza devam edin</p>
                 </div>
               </div>

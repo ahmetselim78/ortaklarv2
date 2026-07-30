@@ -18,7 +18,17 @@ export function useCari() {
       .order('created_at', { ascending: false })
 
     if (error) setHata(error.message)
-    else setCariler(data as Cari[])
+    else {
+      setCariler((data ?? []).map((cari) => ({
+        ...cari,
+        tedarik_kapsamlari: Array.isArray(cari.tedarik_kapsamlari)
+          ? cari.tedarik_kapsamlari
+          : [],
+        tedarikci_calisma_modeli: cari.tipi === 'tedarikci'
+          ? (cari.tedarikci_calisma_modeli ?? 'manuel_fiyat')
+          : null,
+      })) as Cari[])
+    }
     setYukleniyor(false)
   }, [])
 

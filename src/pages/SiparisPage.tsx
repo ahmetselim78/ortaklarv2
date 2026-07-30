@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Plus, ClipboardList, FileUp, Wrench, Files, Search, X as XIcon } from 'lucide-react'
 import Pagination from '@/components/ui/Pagination'
 import EmptyState from '@/components/ui/EmptyState'
@@ -17,6 +17,8 @@ import TaslaklarPanel from '@/components/siparis/TaslaklarPanel'
 import type { Siparis, SiparisDurum } from '@/types/siparis'
 import type { SiparisTaslakVerisi } from '@/types/taslak'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/auth/AuthContext'
+import { yeniIdempotencyAnahtari } from '@/services/ticariService'
 
 type DurumFiltre = 'hepsi' | 'tamirde' | SiparisDurum
 
@@ -34,12 +36,31 @@ const DURUM_FILTRELER: { deger: DurumFiltre; etiket: string }[] = [
 const SAYFA_BOYUTU = 20
 // Serbest metin aramasında her tuş vuruşunda sunucuya istek atmamak için debounce.
 const ARAMA_DEBOUNCE_MS = 350
+const BEKLEYEN_FIYATLI_IPTAL_KEY = 'ortaklar.bekleyen_fiyatli_siparis_iptali.v1'
 
 export default function SiparisPage() {
-  const { siparisler, toplamKayit, durumSayilari, yukleniyor, hata, ekle, guncelle, durumGuncelle, sil, yenile, ekleIlerleme } = useSiparis()
+  const {
+    siparisler,
+    toplamKayit,
+    durumSayilari,
+    yukleniyor,
+    hata,
+    ekle,
+    guncelle,
+    iptal,
+    sil,
+    yenile,
+    ekleIlerleme,
+    fiyatOnizlemesiOlustur,
+    ticariMod,
+    ticariModYukleniyor,
+    ticariModHata,
+  } = useSiparis()
   const { cariler } = useCari()
   const { stoklar, yenile: yenileStok } = useStok()
   const location = useLocation()
+  const navigate = useNavigate()
+  const { access } = useAuth()
 
   const [formAcik, setFormAcik] = useState(false)
   const [pdfModalAcik, setPdfModalAcik] = useState(false)
@@ -49,6 +70,8 @@ export default function SiparisPage() {
   const { taslaklar, upsert: taslakUpsert, sil: taslakSil } = useSiparisTaslaklari()
   const [gorunenSiparis, setGorunenSiparis] = useState<Siparis | null>(null)
   const [iptalEdilecek, setIptalEdilecek] = useState<Siparis | null>(null)
+  const [iptalGerekce, setIptalGerekce] = useState('')
+  const [iptalIdempotencyKey, setIptalIdempotencyKey] = useState('')
   const [iptalEdiliyor, setIptalEdiliyor] = useState(false)
   const [silEdilecek, setSilEdilecek] = useState<Siparis | null>(null)
   const [silEdiliyor, setSilEdiliyor] = useState(false)
@@ -58,6 +81,7 @@ export default function SiparisPage() {
   const [altMusteriFiltre, setAltMusteriFiltre] = useState<string>('')
   const [altMusteriAramaDebounced, setAltMusteriAramaDebounced] = useState<string>('')
   const [sayfa, setSayfa] = useState(1)
+  const [islemHata, setIslemHata] = useState<string | null>(null)
 
   // Üretim emirleri panelinden gelen sipariş açma isteği — ref ile tek seferlik.
   // Liste artık sunucu tarafında sayfalandığı için hedef sipariş görünen sayfada
@@ -131,25 +155,113 @@ export default function SiparisPage() {
 
   useEffect(() => { setSayfa(1) }, [durumFiltre, cariFiltre, altMusteriAramaDebounced])
 
+  useEffect(() => {
+    if (access?.aal !== 'aal2') return
+    const raw = window.sessionStorage.getItem(BEKLEYEN_FIYATLI_IPTAL_KEY)
+    if (!raw) return
+    try {
+      const bekleyen = JSON.parse(raw) as { siparis_id?: string; gerekce?: string; idempotency_key?: string }
+      if (!bekleyen.siparis_id || !bekleyen.idempotency_key) return
+      void supabase
+        .from('siparisler')
+        .select('*, cari(ad, kod), siparis_detaylari(adet), sevkiyat_planlari(id, tarih)')
+        .eq('id', bekleyen.siparis_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!data || data.durum === 'iptal') {
+            window.sessionStorage.removeItem(BEKLEYEN_FIYATLI_IPTAL_KEY)
+            return
+          }
+          setIptalEdilecek(data as Siparis)
+          setIptalGerekce(bekleyen.gerekce ?? '')
+          setIptalIdempotencyKey(bekleyen.idempotency_key ?? '')
+        })
+    } catch {
+      window.sessionStorage.removeItem(BEKLEYEN_FIYATLI_IPTAL_KEY)
+    }
+  }, [access?.aal])
+
   const handleIptalOnayla = async () => {
     if (!iptalEdilecek) return
+    if (iptalEdilecek.fiyatlandirildi && iptalGerekce.trim().length < 3) {
+      setIslemHata('Fiyatlandırılmış sipariş iptali için en az 3 karakterlik gerekçe zorunludur.')
+      return
+    }
+    if (iptalEdilecek.fiyatlandirildi && access?.aal !== 'aal2') {
+      const idempotencyKey = iptalIdempotencyKey || yeniIdempotencyAnahtari()
+      setIptalIdempotencyKey(idempotencyKey)
+      window.sessionStorage.setItem(BEKLEYEN_FIYATLI_IPTAL_KEY, JSON.stringify({
+        siparis_id: iptalEdilecek.id,
+        gerekce: iptalGerekce.trim(),
+        idempotency_key: idempotencyKey,
+      }))
+      navigate('/mfa', { state: { from: location.pathname } })
+      return
+    }
+    const aktifIdempotencyKey = iptalEdilecek.fiyatlandirildi
+      ? (iptalIdempotencyKey || yeniIdempotencyAnahtari())
+      : undefined
+    if (aktifIdempotencyKey) setIptalIdempotencyKey(aktifIdempotencyKey)
     setIptalEdiliyor(true)
+    setIslemHata(null)
     try {
-      await durumGuncelle(iptalEdilecek.id, 'iptal')
+      await iptal(
+        iptalEdilecek,
+        iptalGerekce.trim() || 'Legacy sipariş iptali',
+        aktifIdempotencyKey,
+      )
+      window.sessionStorage.removeItem(BEKLEYEN_FIYATLI_IPTAL_KEY)
+      setIptalEdilecek(null)
+      setIptalGerekce('')
+      setIptalIdempotencyKey('')
+    } catch (e) {
+      const mesaj = e instanceof Error ? e.message : 'Sipariş iptal edilemedi.'
+      if (/AAL2_GEREKLI|iki adımlı doğrulama/i.test(mesaj)) {
+        const idempotencyKey = aktifIdempotencyKey || yeniIdempotencyAnahtari()
+        setIptalIdempotencyKey(idempotencyKey)
+        window.sessionStorage.setItem(BEKLEYEN_FIYATLI_IPTAL_KEY, JSON.stringify({
+          siparis_id: iptalEdilecek.id,
+          gerekce: iptalGerekce.trim(),
+          idempotency_key: idempotencyKey,
+        }))
+        navigate('/mfa', { state: { from: location.pathname } })
+      } else {
+        setIslemHata(mesaj)
+      }
     } finally {
       setIptalEdiliyor(false)
-      setIptalEdilecek(null)
     }
   }
 
   const handleSilOnayla = async () => {
     if (!silEdilecek) return
     setSilEdiliyor(true)
+    setIslemHata(null)
     try {
       await sil(silEdilecek.id)
+      setSilEdilecek(null)
+    } catch (e) {
+      setIslemHata(e instanceof Error ? e.message : 'Sipariş silinemedi.')
     } finally {
       setSilEdiliyor(false)
-      setSilEdilecek(null)
+    }
+  }
+
+  const yeniSiparisAcikMi = ticariMod !== 'bakim' && !ticariModYukleniyor && !ticariModHata
+  const yeniSiparisAc = (kaynak: 'manuel' | 'pdf') => {
+    if (!yeniSiparisAcikMi) {
+      setIslemHata(
+        ticariMod === 'bakim'
+          ? 'Bakım modunda yeni sipariş kapalıdır; legacy/fiyatsız akışa geri dönüş yapılmaz.'
+          : ticariModHata || 'Ticari mod doğrulanana kadar yeni sipariş işlemi bekletiliyor.',
+      )
+      return
+    }
+    setIslemHata(null)
+    if (kaynak === 'pdf') setPdfModalAcik(true)
+    else {
+      setAktifTaslak(null)
+      setFormAcik(true)
     }
   }
 
@@ -164,8 +276,9 @@ export default function SiparisPage() {
         <div className="flex gap-3">
           <button
             onClick={() => setTaslaklarAcik(true)}
+            disabled={!yeniSiparisAcikMi}
             className={cn(
-              'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors',
+              'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
               taslaklar.length > 0
                 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
                 : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50',
@@ -181,15 +294,17 @@ export default function SiparisPage() {
             )}
           </button>
           <button
-            onClick={() => setPdfModalAcik(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+            onClick={() => yeniSiparisAc('pdf')}
+            disabled={!yeniSiparisAcikMi}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FileUp size={16} />
             PDF'den İçe Aktar
           </button>
           <button
-            onClick={() => { setAktifTaslak(null); setFormAcik(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={() => yeniSiparisAc('manuel')}
+            disabled={!yeniSiparisAcikMi}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={16} />
             Yeni Sipariş
@@ -307,6 +422,16 @@ export default function SiparisPage() {
       {hata && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{hata}</div>
       )}
+      {(ticariMod === 'bakim' || ticariModHata) && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          {ticariMod === 'bakim'
+            ? 'Ticari mod bakımda: yeni manuel/PDF sipariş kapalıdır. Mevcut fiyatlı siparişler görüntülenebilir; yetkili AAL2 iptali kullanılabilir.'
+            : `Ticari mod doğrulanamadı: ${ticariModHata}`}
+        </div>
+      )}
+      {islemHata && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{islemHata}</div>
+      )}
 
       {/* Not: "hiç sipariş yok" boş durumu tüm tablo boşken gösterilir (durumSayilari.hepsi);
           bir filtreye takılıp görünen sayfada sonuç olmaması ayrı bir durumdur (aşağıda). */}
@@ -317,8 +442,9 @@ export default function SiparisPage() {
           aciklama={'Sağ üstteki "Yeni Sipariş" butonuyla ilk siparişinizi oluşturabilirsiniz.'}
           aksiyon={
             <button
-              onClick={() => setFormAcik(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={() => yeniSiparisAc('manuel')}
+              disabled={!yeniSiparisAcikMi}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
               <Plus size={16} />
               Yeni Sipariş
@@ -336,7 +462,11 @@ export default function SiparisPage() {
             yukleniyor={yukleniyor}
             tamirdeSiparisIds={tamirdeSiparisIds}
             onGoruntule={setGorunenSiparis}
-            onIptal={setIptalEdilecek}
+            onIptal={(siparis) => {
+              setIptalGerekce('')
+              setIptalIdempotencyKey(siparis.fiyatlandirildi ? yeniIdempotencyAnahtari() : '')
+              setIptalEdilecek(siparis)
+            }}
             onSil={setSilEdilecek}
             silGoster={durumFiltre === 'iptal'}
           />
@@ -356,8 +486,10 @@ export default function SiparisPage() {
           stoklar={stoklar}
           initialTaslak={aktifTaslak?.veri}
           ekleIlerleme={ekleIlerleme}
-          onKaydet={async (form) => {
-            const r = await ekle(form)
+          ticariMod={ticariMod}
+          onFiyatOnizle={fiyatOnizlemesiOlustur}
+          onKaydet={async (form, onizleme) => {
+            const r = await ekle(form, onizleme)
             // Başarılı kayıt → ilgili taslağı sil
             if (aktifTaslak) taslakSil(aktifTaslak.id)
             return r
@@ -380,6 +512,7 @@ export default function SiparisPage() {
           taslaklar={taslaklar}
           cariler={cariler}
           onSec={(t) => {
+            if (!yeniSiparisAcikMi) return
             setAktifTaslak({ id: t.id, veri: t.veri })
             setTaslaklarAcik(false)
             setFormAcik(true)
@@ -407,8 +540,10 @@ export default function SiparisPage() {
           cariler={cariler.filter((c) => c.tipi === 'musteri')}
           stoklar={stoklar}
           ekleIlerleme={ekleIlerleme}
-          onIceAktar={async (form) => {
-            const result = await ekle(form)
+          ticariMod={ticariMod}
+          onFiyatOnizle={fiyatOnizlemesiOlustur}
+          onIceAktar={async (form, onizleme) => {
+            const result = await ekle(form, onizleme)
             yenile()
             return result
           }}
@@ -424,18 +559,41 @@ export default function SiparisPage() {
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Sipariş İptal Edilsin mi?</h3>
             <p className="text-sm text-gray-500 mb-5">
               <span className="font-medium text-gray-700">{iptalEdilecek.siparis_no}</span> siparişi
-              iptal durumuna alınacak. Bu işlem geri alınabilir.
+              {iptalEdilecek.fiyatlandirildi
+                ? ' iptal edilecek ve siparişin tüm sistem kaynaklı net cari etkisi tek hareketle sıfırlanacak. Bu finansal işlem geri alınamaz.'
+                : ' iptal durumuna alınacak.'}
             </p>
+            {iptalEdilecek.fiyatlandirildi && (
+              <div className="mb-5">
+                <label className="block text-xs font-medium text-gray-700 mb-1">İptal gerekçesi *</label>
+                <textarea
+                  value={iptalGerekce}
+                  onChange={(event) => setIptalGerekce(event.target.value)}
+                  rows={3}
+                  autoFocus
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+                  placeholder="Finansal iptal gerekçesini yazın..."
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Sipariş bağlantılı manuel tahsilatlar iptal netine girmez; müşteri kredisi olarak kalır.
+                </p>
+              </div>
+            )}
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setIptalEdilecek(null)}
+                onClick={() => {
+                  window.sessionStorage.removeItem(BEKLEYEN_FIYATLI_IPTAL_KEY)
+                  setIptalEdilecek(null)
+                  setIptalGerekce('')
+                  setIptalIdempotencyKey('')
+                }}
                 className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
               >
                 Vazgeç
               </button>
               <button
                 onClick={handleIptalOnayla}
-                disabled={iptalEdiliyor}
+                disabled={iptalEdiliyor || (iptalEdilecek.fiyatlandirildi === true && iptalGerekce.trim().length < 3)}
                 className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
               >
                 {iptalEdiliyor ? 'İptal ediliyor...' : 'İptal Et'}
