@@ -18,7 +18,7 @@ import {
 
 } from '@/lib/cam'
 
-import { fizikselGlsKodu } from '@/lib/siparisDetay'
+import { fizikselCamAdedi, fizikselGlsKodu } from '@/lib/siparisDetay'
 
 import {
 
@@ -228,23 +228,15 @@ export async function exportTarihiGuncelle(uretimEmriId: string) {
 
 
 
-/**
+/** Çıta büküm CSV içeriğini, her sipariş satırını kendi adediyle koruyarak oluşturur. */
 
- * Verilen Üretim Emri detay listesinden Çıta Büküm makinesine özgü
-
- * noktalı virgül (;) ayrımlı CSV oluşturur ve tarayıcıya indirir.
-
- */
-
-export function exportCitaBukumCSV(
+export function citaBukumCsvOlustur(
 
   detaylar: UretimEmriDetay[],
 
-  batchNo: string,
-
   citaStoklar: CitaStokLite[] = [],
 
-) {
+): string {
 
   const fmt1 = (n: number) => n.toFixed(1)
 
@@ -268,11 +260,11 @@ export function exportCitaBukumCSV(
 
     const cevre = 2 * (genislik + yukseklik)
 
-    const adet = Math.max(1, d.adet ?? 1)
+    const adet = fizikselCamAdedi(d.adet)
 
 
 
-    return Array.from({ length: adet }, () => ({ kalinlik, malzeme, siraNo, altMusteri, cevre, yukseklik, genislik }))
+    return [{ kalinlik, malzeme, siraNo, altMusteri, cevre, yukseklik, genislik, adet }]
 
   })
 
@@ -282,13 +274,29 @@ export function exportCitaBukumCSV(
 
   const lines = satirVerileri.map((s, idx) =>
 
-    `${idx + 1};3;4;1;0;0;${s.kalinlik};${s.malzeme};${s.siraNo};${s.altMusteri};4.0;${fmt1(s.cevre)};${fmt1(s.yukseklik)};${fmt1(s.genislik)};${zeros};;;;;;`
+    `${idx + 1};3;4;${s.adet};0;0;${s.kalinlik};${s.malzeme};${s.siraNo};${s.altMusteri};4.0;${fmt1(s.cevre)};${fmt1(s.yukseklik)};${fmt1(s.genislik)};${zeros};;;;;;`
 
   )
 
 
 
-  const content = lines.join('\r\n')
+  return lines.join('\r\n')
+
+}
+
+
+
+export function exportCitaBukumCSV(
+
+  detaylar: UretimEmriDetay[],
+
+  batchNo: string,
+
+  citaStoklar: CitaStokLite[] = [],
+
+) {
+
+  const content = citaBukumCsvOlustur(detaylar, citaStoklar)
 
   dosyaIndir('\uFEFF' + content, `${batchNo}_CITA.csv`, 'text/csv;charset=utf-8;')
 
