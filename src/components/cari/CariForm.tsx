@@ -31,7 +31,6 @@ const schema = z.object({
   email: z.string().email('Geçersiz e-posta').optional().or(z.literal('')),
   adres: z.string().optional(),
   notlar: z.string().optional(),
-  aktif: z.boolean(),
   tedarik_kapsamlari: z.array(z.enum([
     'cam',
     'cita',
@@ -88,13 +87,12 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
     resolver: zodResolver(schema),
     defaultValues: {
       tipi: 'musteri',
-      aktif: true,
       tedarik_kapsamlari: [],
       tedarikci_calisma_modeli: 'manuel_fiyat',
     },
   })
   const tipi = watch('tipi')
-  const aktif = watch('aktif')
+  const aktif = duzenlenecek?.aktif !== false
   const tedarikKapsamlari = watch('tedarik_kapsamlari') ?? []
 
   const kapatmayiDene = useCallback(() => {
@@ -116,7 +114,6 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
         email: duzenlenecek.email ?? '',
         adres: duzenlenecek.adres ?? '',
         notlar: duzenlenecek.notlar ?? '',
-        aktif: duzenlenecek.aktif !== false,
         tedarik_kapsamlari: duzenlenecek.tedarik_kapsamlari ?? [],
         tedarikci_calisma_modeli: duzenlenecek.tedarikci_calisma_modeli ?? 'manuel_fiyat',
       })
@@ -128,7 +125,6 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
         email: '',
         adres: '',
         notlar: '',
-        aktif: true,
         tedarik_kapsamlari: [],
         tedarikci_calisma_modeli: 'manuel_fiyat',
       })
@@ -170,7 +166,7 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
         aria-modal="true"
         aria-labelledby={baslikId}
         aria-describedby={aciklamaId}
-        className="flex max-h-[96dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl shadow-slate-950/20 sm:max-h-[92vh] sm:rounded-2xl"
+        className="flex max-h-[96dvh] w-full max-w-[1400px] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl shadow-slate-950/20 sm:max-h-[92vh] sm:rounded-2xl"
       >
         <div className="shrink-0 border-b border-gray-100 bg-gradient-to-r from-blue-50/80 via-white to-white px-5 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-4">
@@ -225,10 +221,10 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
         <form
           id={formId}
           onSubmit={handleSubmit(onSubmit)}
-          className="flex-1 space-y-4 overflow-y-auto overscroll-contain bg-slate-50/70 px-4 py-5 sm:px-6"
+          className="grid flex-1 content-start gap-4 overflow-y-auto overscroll-contain bg-slate-50/70 px-4 py-5 sm:px-6 lg:grid-cols-2 xl:grid-cols-3"
         >
           {isSubmitted && Object.keys(errors).length > 0 && (
-            <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 lg:col-span-2 xl:col-span-3">
               <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
               <div>
                 <p className="font-semibold">Bazı bilgiler eksik veya hatalı.</p>
@@ -388,7 +384,7 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
               <textarea
                 id={`${formId}-adres`}
                 {...register('adres')}
-                rows={3}
+                rows={2}
                 className={cn(alanSinifi, 'resize-y leading-6')}
                 placeholder="Açık adres bilgisi"
                 autoComplete="street-address"
@@ -440,7 +436,7 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
               </div>
             </fieldset>
             <fieldset className={cn(
-              'rounded-2xl border bg-white p-4 shadow-sm shadow-slate-950/[0.02] sm:p-5',
+              'rounded-2xl border bg-white p-4 shadow-sm shadow-slate-950/[0.02] sm:p-5 lg:col-span-2 xl:col-span-1',
               errors.tedarik_kapsamlari ? 'border-red-200' : 'border-gray-200',
             )}>
               <legend className="sr-only">Tedarik kapsamı</legend>
@@ -455,7 +451,7 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
                   <p className="text-xs text-gray-500">Bir veya birden fazla malzeme grubu seçin</p>
                 </div>
               </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {TEDARIK_KAPSAMI_SECENEKLERI.map((secenek) => {
                   const secili = tedarikKapsamlari.includes(secenek.deger)
                   return (
@@ -496,8 +492,8 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
                 <NotebookPen size={16} aria-hidden="true" />
               </span>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">Notlar ve durum</h3>
-                <p className="text-xs text-gray-500">Ekip içi bilgi ve kullanım durumu</p>
+                <h3 className="text-sm font-semibold text-gray-900">Notlar</h3>
+                <p className="text-xs text-gray-500">Ekip içi isteğe bağlı bilgi</p>
               </div>
             </div>
 
@@ -506,40 +502,13 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
               <textarea
                 id={`${formId}-notlar`}
                 {...register('notlar')}
-                rows={3}
+                rows={2}
                 className={cn(alanSinifi, 'resize-y leading-6')}
                 placeholder="Bu cariyle ilgili ekip içi notlar"
               />
             </div>
 
-            {tipi === 'musteri' ? (
-              <label className={cn(
-                'mt-4 flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition',
-                aktif
-                  ? 'border-emerald-200 bg-emerald-50/70'
-                  : 'border-gray-200 bg-gray-50',
-              )}>
-                <input
-                  type="checkbox"
-                  {...register('aktif')}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-gray-800">
-                    {aktif ? 'Aktif müşteri' : 'Pasif müşteri'}
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-gray-500">
-                    {aktif
-                      ? 'Yeni teklif ve siparişlerde seçilebilir.'
-                      : 'Yeni işlemlerde görünmez; geçmiş hareketleri korunur.'}
-                  </span>
-                </span>
-                <span className={cn(
-                  'mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full',
-                  aktif ? 'bg-emerald-500' : 'bg-gray-400',
-                )} />
-              </label>
-            ) : (
+            {tipi === 'tedarikci' && (
               <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                 <p className="text-sm font-semibold text-amber-900">
                   Durum: {aktif ? 'Aktif tedarikçi' : 'Pasif tedarikçi'}
@@ -552,7 +521,7 @@ export default function CariForm({ duzenlenecek, onKaydet, onKapat }: Props) {
           </section>
 
           {sunucuHata && (
-            <div role="alert" className="flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div role="alert" className="flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 lg:col-span-2 xl:col-span-3">
               <AlertCircle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>{sunucuHata}</span>
             </div>

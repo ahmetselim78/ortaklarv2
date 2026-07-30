@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Boxes,
+  Building2,
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
   History,
   LayoutDashboard,
   Loader2,
-  PackageCheck,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react'
@@ -54,8 +58,12 @@ const sekmeDegerleri: TedarikciCalismaSekmesi[] = [
 
 export default function TedarikciCalismaPaneli({
   tedarikci,
+  onDuzenle,
+  duzenleyebilir = false,
 }: {
   tedarikci: Cari
+  onDuzenle?: (tedarikci: Cari) => void
+  duzenleyebilir?: boolean
 }) {
   const { access, hasPermission } = useAuth()
   const location = useLocation()
@@ -141,15 +149,102 @@ export default function TedarikciCalismaPaneli({
     navigate(`${location.pathname}?${params.toString()}`, { replace: true })
   }
 
+  const portalModeli = tedarikci.tedarikci_calisma_modeli === 'sisecam_portal'
+  const tedarikciBasligi = (
+    <div className="flex min-w-0 flex-wrap items-center gap-4 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
+      <div className="min-w-[210px] flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+            <Building2 size={12} />
+            Tedarikçi
+          </span>
+          {!tedarikci.aktif && (
+            <span className="rounded-full bg-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600">
+              Pasif
+            </span>
+          )}
+        </div>
+        <h2 className="mt-1.5 truncate text-xl font-semibold text-gray-900">{tedarikci.ad}</h2>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-500">
+          {tedarikci.telefon && (
+            <a href={`tel:${tedarikci.telefon}`} className="inline-flex items-center gap-1.5 hover:text-gray-900">
+              <Phone size={13} />
+              {tedarikci.telefon}
+            </a>
+          )}
+          {tedarikci.email && (
+            <a href={`mailto:${tedarikci.email}`} className="inline-flex items-center gap-1.5 hover:text-gray-900">
+              <Mail size={13} />
+              {tedarikci.email}
+            </a>
+          )}
+          {tedarikci.adres && (
+            <span className="inline-flex max-w-xs items-center gap-1.5 truncate">
+              <MapPin size={13} className="shrink-0" />
+              {tedarikci.adres}
+            </span>
+          )}
+          {!tedarikci.telefon && !tedarikci.email && !tedarikci.adres && (
+            <span>İletişim bilgisi eklenmemiş</span>
+          )}
+        </div>
+      </div>
+
+      <div className="min-w-[280px] flex-[1.25] rounded-xl bg-violet-50/70 px-4 py-3 ring-1 ring-inset ring-violet-100">
+        <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">Tedarikçi çalışma alanı</div>
+        <div className="mt-1 text-sm font-semibold text-gray-900">Yalnız {tedarikKapsamiOzetMetni(tedarikci.tedarik_kapsamlari)} ürünleri</div>
+        <p className="mt-0.5 text-xs text-gray-500">Ürün bağlantıları, fiyatlar ve satın alma kayıtları bu firmaya özel tutulur.</p>
+      </div>
+
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {duzenleyebilir && onDuzenle && (
+          <button
+            type="button"
+            onClick={() => onDuzenle(tedarikci)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Pencil size={14} />
+            Bilgileri düzenle
+          </button>
+        )}
+        {adminYonetebilir && (
+          <button
+            type="button"
+            onClick={() => navigate('/admin/stok-cari-maliyet')}
+            className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50"
+          >
+            <ShieldCheck size={14} />
+            Kritik yönetime git
+          </button>
+        )}
+        {goruntuleyebilir && (
+          <button
+            type="button"
+            onClick={() => void yukle()}
+            disabled={yukleniyor}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={yukleniyor ? 'animate-spin' : ''} />
+            Yenile
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
   if (!goruntuleyebilir) {
     return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        Bu tedarikçinin ürün ve alış fiyatlarını görmek için maliyet okuma yetkisi gerekir.
+      <div className="min-w-0" data-testid="tedarikci-calisma-paneli">
+        {tedarikciBasligi}
+        <div className="p-3 sm:p-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            Bu tedarikçinin ürün ve alış fiyatlarını görmek için maliyet okuma yetkisi gerekir.
+          </div>
+        </div>
       </div>
     )
   }
 
-  const portalModeli = tedarikci.tedarikci_calisma_modeli === 'sisecam_portal'
   const sekmeler = [
     { id: 'genel' as const, etiket: 'Genel Bakış', icon: LayoutDashboard },
     { id: 'urunler' as const, etiket: 'Ürün Bağlantıları', icon: Boxes },
@@ -159,33 +254,14 @@ export default function TedarikciCalismaPaneli({
   ]
 
   return (
-    <div className="space-y-4" data-testid="tedarikci-calisma-paneli">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50/80 via-white to-white p-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">Tedarikçi çalışma alanı</div>
-          <div className="mt-1 text-sm font-semibold text-gray-900">Yalnız {tedarikKapsamiOzetMetni(tedarikci.tedarik_kapsamlari)} ürünleri</div>
-          <p className="mt-0.5 text-xs text-gray-500">Ürün bağlantıları, fiyatlar ve satın alma kayıtları bu firmaya özel tutulur.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {adminYonetebilir && (
-            <button
-              type="button"
-              onClick={() => navigate('/admin/stok-cari-maliyet')}
-              className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50"
-            >
-              <ShieldCheck size={14} />
-              Kritik yönetime git
-            </button>
-          )}
-          <button type="button" onClick={() => void yukle()} disabled={yukleniyor} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"><RefreshCw size={14} className={yukleniyor ? 'animate-spin' : ''} /> Yenile</button>
-        </div>
-      </div>
-
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-1" role="tablist" aria-label="Tedarikçi işlemleri">
+    <div className="min-w-0" data-testid="tedarikci-calisma-paneli">
+      {tedarikciBasligi}
+      <div className="space-y-4 p-3 sm:p-4">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-1" role="tablist" aria-label="Tedarikçi işlemleri">
         {sekmeler.map(({ id, etiket, icon: Icon }) => (
           <button key={id} type="button" role="tab" aria-selected={sekme === id} onClick={() => sekmeyiSec(id)} className={`inline-flex whitespace-nowrap items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${sekme === id ? 'bg-white text-violet-700 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-800'}`}><Icon size={14} />{etiket}</button>
         ))}
-      </div>
+        </div>
 
       {hata && <div role="alert" className="flex gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={17} className="mt-0.5 shrink-0" />{hata}</div>}
       {!tedarikci.aktif && (
@@ -207,8 +283,6 @@ export default function TedarikciCalismaPaneli({
           {sekme === 'genel' && (
             <GenelBakis
               tedarikci={tedarikci}
-              detay={detay}
-              urunKatalogu={urunKatalogu}
               onSekmeSec={sekmeyiSec}
             />
           )}
@@ -252,44 +326,23 @@ export default function TedarikciCalismaPaneli({
             />
           )}
         </>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   )
 }
 
 function GenelBakis({
   tedarikci,
-  detay,
-  urunKatalogu,
   onSekmeSec,
 }: {
   tedarikci: Cari
-  detay: TedarikciMaliyetDetayi
-  urunKatalogu: TedarikciStokBaglantiKatalogu
   onSekmeSec: (sekme: TedarikciCalismaSekmesi) => void
 }) {
-  const portalModeli = tedarikci.tedarikci_calisma_modeli === 'sisecam_portal'
-  const aktifBaglantilar = urunKatalogu.baglantilar.filter((baglanti) => baglanti.aktif)
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <OzetKarti baslik="Bağlı ürün" deger={aktifBaglantilar.length} alt={`${urunKatalogu.ozet.aday_sayisi} kapsam içi ürün bağlanabilir`} icon={<Boxes size={18} />} />
-        <OzetKarti baslik="Fiyat kaydı" deger={detay.fiyatlar.length} alt={`${detay.engeller.aktif_stok_fiyati_sayisi} aktif fiyat`} icon={<CircleDollarSign size={18} />} />
-        <OzetKarti baslik="Gelecek dönem" deger={detay.engeller.gelecek_fiyat_donemi_sayisi} alt="İleri tarihli fiyat seçimi" icon={<History size={18} />} />
-        <OzetKarti baslik="Çalışma modeli" deger={portalModeli ? 'Portal' : 'Manuel'} alt={portalModeli ? 'Sirküler + sipariş/fatura' : 'Ürün bazında fiyat'} icon={<PackageCheck size={18} />} />
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-3">
-        <HizliIslem baslik="Ürün bağlantıları" aciklama={`Bu firmadan alınan ${tedarikKapsamiOzetMetni(tedarikci.tedarik_kapsamlari)} ürünlerini seçin.`} buton="Ürünleri yönet" onClick={() => onSekmeSec('urunler')} />
-        <HizliIslem baslik="Alış fiyatları" aciklama="Bağlı ürün için marka, vade ve geçerlilik bilgisiyle fiyat girin." buton="Fiyat girişi aç" onClick={() => onSekmeSec('fiyatlar')} />
-        <HizliIslem baslik="Satın alma ve fatura" aciklama={portalModeli ? 'Portal siparişini, faturayı ve ödeme vadesini birlikte izleyin.' : 'Sipariş, fatura, farklı vade ve ödeme tarihlerini bu tedarikçiye özel izleyin.'} buton="Satın alma takibini aç" onClick={() => onSekmeSec('siparisler')} />
-      </div>
-
-      <div className="rounded-2xl border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Tedarik kapsamı</h3>
-        <p className="mt-0.5 text-xs text-gray-500">Kapsam dışındaki stoklar fiyat ve bağlantı seçimlerinde gösterilmez.</p>
-        <div className="mt-3 flex flex-wrap gap-2">{tedarikci.tedarik_kapsamlari.map((kapsam) => <span key={kapsam} className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700">{tedarikKapsamiEtiketi(kapsam)}</span>)}</div>
-      </div>
+    <div className="grid gap-3 lg:grid-cols-2">
+      <HizliIslem baslik="Ürün bağlantıları" aciklama={`Bu firmadan alınan ${tedarikKapsamiOzetMetni(tedarikci.tedarik_kapsamlari)} ürünlerini seçin.`} buton="Ürünleri yönet" onClick={() => onSekmeSec('urunler')} />
+      <HizliIslem baslik="Alış fiyatları" aciklama="Bağlı ürün için marka, vade ve geçerlilik bilgisiyle fiyat girin." buton="Fiyat girişi aç" onClick={() => onSekmeSec('fiyatlar')} />
     </div>
   )
 }
@@ -343,10 +396,6 @@ function FiyatGecmisi({
       </div>
     </div>
   )
-}
-
-function OzetKarti({ baslik, deger, alt, icon }: { baslik: string; deger: string | number; alt: string; icon: ReactNode }) {
-  return <div className="rounded-2xl border border-gray-200 bg-white p-4"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-medium uppercase tracking-wide text-gray-500">{baslik}</div><div className="mt-2 text-xl font-semibold text-gray-950">{deger}</div><div className="mt-1 text-xs text-gray-500">{alt}</div></div><span className="rounded-lg bg-violet-50 p-2 text-violet-700">{icon}</span></div></div>
 }
 
 function HizliIslem({ baslik, aciklama, buton, onClick }: { baslik: string; aciklama: string; buton: string; onClick: () => void }) {
