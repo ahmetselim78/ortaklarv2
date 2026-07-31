@@ -60,7 +60,8 @@ export default function SiparisPage() {
   const { stoklar, yenile: yenileStok } = useStok()
   const location = useLocation()
   const navigate = useNavigate()
-  const { access } = useAuth()
+  const { access, hasPermission } = useAuth()
+  const siparisOlusturabilir = hasPermission('orders', 'create')
 
   const [formAcik, setFormAcik] = useState(false)
   const [pdfModalAcik, setPdfModalAcik] = useState(false)
@@ -247,8 +248,15 @@ export default function SiparisPage() {
     }
   }
 
-  const yeniSiparisAcikMi = ticariMod !== 'bakim' && !ticariModYukleniyor && !ticariModHata
+  const yeniSiparisAcikMi = siparisOlusturabilir
+    && ticariMod !== 'bakim'
+    && !ticariModYukleniyor
+    && !ticariModHata
   const yeniSiparisAc = (kaynak: 'manuel' | 'pdf') => {
+    if (!siparisOlusturabilir) {
+      setIslemHata('Yeni sipariş oluşturma yetkiniz yok.')
+      return
+    }
     if (!yeniSiparisAcikMi) {
       setIslemHata(
         ticariMod === 'bakim'
@@ -273,7 +281,7 @@ export default function SiparisPage() {
           <h1 className="text-2xl font-semibold text-gray-800">Siparişler</h1>
           <p className="text-sm text-gray-500 mt-0.5">{durumSayilari.hepsi} sipariş</p>
         </div>
-        <div className="flex gap-3">
+        {siparisOlusturabilir && <div className="flex gap-3">
           <button
             onClick={() => setTaslaklarAcik(true)}
             disabled={!yeniSiparisAcikMi}
@@ -309,7 +317,7 @@ export default function SiparisPage() {
             <Plus size={16} />
             Yeni Sipariş
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* Durum Filtresi */}
@@ -439,8 +447,10 @@ export default function SiparisPage() {
         <EmptyState
           icon={ClipboardList}
           baslik="Henüz sipariş yok"
-          aciklama={'Sağ üstteki "Yeni Sipariş" butonuyla ilk siparişinizi oluşturabilirsiniz.'}
-          aksiyon={
+          aciklama={siparisOlusturabilir
+            ? 'Sağ üstteki "Yeni Sipariş" butonuyla ilk siparişinizi oluşturabilirsiniz.'
+            : 'Henüz görüntülenecek bir sipariş kaydı bulunmuyor.'}
+          aksiyon={siparisOlusturabilir ? (
             <button
               onClick={() => yeniSiparisAc('manuel')}
               disabled={!yeniSiparisAcikMi}
@@ -449,7 +459,7 @@ export default function SiparisPage() {
               <Plus size={16} />
               Yeni Sipariş
             </button>
-          }
+          ) : undefined}
         />
       ) : !yukleniyor && siparisler.length === 0 && !hata ? (
         <div className="py-16 text-center text-sm text-gray-400">
@@ -480,7 +490,7 @@ export default function SiparisPage() {
       )}
 
       {/* Yeni Sipariş Formu */}
-      {formAcik && (
+      {formAcik && siparisOlusturabilir && (
         <SiparisForm
           cariler={cariler}
           stoklar={stoklar}
@@ -507,7 +517,7 @@ export default function SiparisPage() {
       )}
 
       {/* Taslaklar Listesi */}
-      {taslaklarAcik && (
+      {taslaklarAcik && siparisOlusturabilir && (
         <TaslaklarPanel
           taslaklar={taslaklar}
           cariler={cariler}
@@ -535,7 +545,7 @@ export default function SiparisPage() {
       )}
 
       {/* PDF Import */}
-      {pdfModalAcik && (
+      {pdfModalAcik && siparisOlusturabilir && (
         <PDFImportModal
           cariler={cariler.filter((c) => c.tipi === 'musteri')}
           stoklar={stoklar}

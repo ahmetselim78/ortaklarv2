@@ -19,6 +19,10 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import {
+  cariCalismaSekmesiniDogrula,
+  type TedarikciCalismaSekmesi,
+} from '@/lib/cariNavigation'
+import {
   stokKategorisininTedarikKapsami,
   stokProfilininTedarikKapsami,
   tedarikKapsamiEtiketi,
@@ -41,20 +45,7 @@ import TedarikciFiyatYonetimi from './TedarikciFiyatYonetimi'
 import TedarikciSiparisTakibi from './TedarikciSiparisTakibi'
 import TedarikciUrunBaglantilari from './TedarikciUrunBaglantilari'
 
-export type TedarikciCalismaSekmesi =
-  | 'genel'
-  | 'urunler'
-  | 'fiyatlar'
-  | 'siparisler'
-  | 'gecmis'
-
-const sekmeDegerleri: TedarikciCalismaSekmesi[] = [
-  'genel',
-  'urunler',
-  'fiyatlar',
-  'siparisler',
-  'gecmis',
-]
+export type { TedarikciCalismaSekmesi } from '@/lib/cariNavigation'
 
 export default function TedarikciCalismaPaneli({
   tedarikci,
@@ -69,8 +60,10 @@ export default function TedarikciCalismaPaneli({
   const location = useLocation()
   const navigate = useNavigate()
   const [sekme, setSekme] = useState<TedarikciCalismaSekmesi>(() => {
-    const deger = new URLSearchParams(location.search).get('sekme') as TedarikciCalismaSekmesi | null
-    return deger && sekmeDegerleri.includes(deger) ? deger : 'genel'
+    return cariCalismaSekmesiniDogrula(
+      'tedarikci',
+      new URLSearchParams(location.search).get('sekme'),
+    ) as TedarikciCalismaSekmesi
   })
   const [detay, setDetay] = useState<TedarikciMaliyetDetayi | null>(null)
   const [katalog, setKatalog] = useState<SadeMaliyetYonetimi | null>(null)
@@ -131,22 +124,28 @@ export default function TedarikciCalismaPaneli({
   }, [tedarikci.id, yukle])
 
   useEffect(() => {
-    const deger = new URLSearchParams(location.search).get('sekme') as TedarikciCalismaSekmesi | null
-    const gecerli = deger
-      && sekmeDegerleri.includes(deger)
-    setSekme(gecerli ? deger : 'genel')
-    if (!gecerli && deger !== 'genel') {
-      const params = new URLSearchParams(location.search)
-      params.set('sekme', 'genel')
+    const params = new URLSearchParams(location.search)
+    if (
+      params.get('tur') !== 'tedarikci'
+      || params.get('cari') !== tedarikci.id
+    ) return
+    const hamDeger = params.get('sekme')
+    const deger = cariCalismaSekmesiniDogrula(
+      'tedarikci',
+      hamDeger,
+    ) as TedarikciCalismaSekmesi
+    setSekme(deger)
+    if (hamDeger !== deger) {
+      params.set('sekme', deger)
       navigate(`${location.pathname}?${params.toString()}`, { replace: true })
     }
-  }, [location.pathname, location.search, navigate])
+  }, [location.pathname, location.search, navigate, tedarikci.id])
 
   const sekmeyiSec = (yeniSekme: TedarikciCalismaSekmesi) => {
     setSekme(yeniSekme)
     const params = new URLSearchParams(location.search)
     params.set('sekme', yeniSekme)
-    navigate(`${location.pathname}?${params.toString()}`, { replace: true })
+    navigate(`${location.pathname}?${params.toString()}`)
   }
 
   const portalModeli = tedarikci.tedarikci_calisma_modeli === 'sisecam_portal'
@@ -193,7 +192,7 @@ export default function TedarikciCalismaPaneli({
       <div className="min-w-[280px] flex-[1.25] rounded-xl bg-violet-50/70 px-4 py-3 ring-1 ring-inset ring-violet-100">
         <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">Tedarikçi çalışma alanı</div>
         <div className="mt-1 text-sm font-semibold text-gray-900">Yalnız {tedarikKapsamiOzetMetni(tedarikci.tedarik_kapsamlari)} ürünleri</div>
-        <p className="mt-0.5 text-xs text-gray-500">Ürün bağlantıları, fiyatlar ve satın alma kayıtları bu firmaya özel tutulur.</p>
+        <p className="mt-0.5 text-xs text-gray-500">Ürün bağlantıları, fiyatlar ve sipariş–fatura–ödeme yaşam döngüsü bu firmaya özel tutulur.</p>
       </div>
 
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -249,7 +248,7 @@ export default function TedarikciCalismaPaneli({
     { id: 'genel' as const, etiket: 'Genel Bakış', icon: LayoutDashboard },
     { id: 'urunler' as const, etiket: 'Ürün Bağlantıları', icon: Boxes },
     { id: 'fiyatlar' as const, etiket: 'Alış Fiyatı Gir', icon: CircleDollarSign },
-    { id: 'siparisler' as const, etiket: 'Satın Alma / Fatura', icon: ClipboardList },
+    { id: 'siparisler' as const, etiket: 'Alış Bağlantıları', icon: ClipboardList },
     { id: 'gecmis' as const, etiket: 'Fiyat Geçmişi', icon: History },
   ]
 

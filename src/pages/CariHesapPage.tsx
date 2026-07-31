@@ -32,6 +32,14 @@ import PageHeader from '@/components/ui/PageHeader'
 import Pagination from '@/components/ui/Pagination'
 import { TableSkeleton } from '@/components/ui/Skeleton'
 import { useTicariKaynak } from '@/hooks/useTicariKaynak'
+import {
+  acilisBakiyesiYonEtiketleri,
+  cariBakiyeDurumu as bakiyeDurumu,
+} from '@/lib/cariHesapSemantics'
+import {
+  cariHesapDurumunuCoz,
+  cariTurunuDogrula,
+} from '@/lib/cariNavigation'
 import { ticariBugun, ticariPara, ticariTarih } from '@/lib/ticariFormat'
 import { cn } from '@/lib/utils'
 import {
@@ -68,6 +76,8 @@ const hareketEtiketleri: Record<string, string> = {
   on_odeme: 'Ön ödeme',
   siparis_borcu: 'Sipariş borcu',
   tahsilat: 'Tahsilat',
+  tedarikci_faturasi: 'Tedarikçi faturası',
+  tedarikci_odemesi: 'Tedarikçi ödemesi',
   ters_kayit: 'Ters kayıt',
 }
 
@@ -93,12 +103,6 @@ function metniKisalt(metin: string | null, sinir = 52) {
 
 function tarihAnahtari(hareket: CariHareket) {
   return [hareket.islem_tarihi, hareket.created_at ?? '', hareket.id].join('|')
-}
-
-function bakiyeDurumu(net: number) {
-  if (net > 0) return { etiket: 'Müşteri borcu', renk: 'text-rose-700', zemin: 'bg-rose-50' }
-  if (net < 0) return { etiket: 'Müşteri alacağı', renk: 'text-emerald-700', zemin: 'bg-emerald-50' }
-  return { etiket: 'Hesap dengede', renk: 'text-slate-600', zemin: 'bg-slate-50' }
 }
 
 function cariBasHarfleri(cari: CariSecenegi) {
@@ -127,11 +131,13 @@ function HareketDetayPaneli({
   hareket,
   cariAdi,
   cariKodu,
+  cariTuru,
   bakiye,
 }: {
   hareket: CariHareket
   cariAdi: string
   cariKodu?: string
+  cariTuru: CariSecenegi['tipi']
   bakiye: number
 }) {
   return (
@@ -183,7 +189,7 @@ function HareketDetayPaneli({
         </div>
         <div>
           <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">İşlem sonrası bakiye</dt>
-          <dd className={cn('mt-1 text-sm font-semibold', bakiyeDurumu(bakiye).renk)}>{ticariPara(bakiye, hareket.para_birimi)}</dd>
+          <dd className={cn('mt-1 text-sm font-semibold', bakiyeDurumu(bakiye, cariTuru).renk)}>{ticariPara(bakiye, hareket.para_birimi)}</dd>
         </div>
       </dl>
     </div>
@@ -201,12 +207,12 @@ function TahsilatFormu({
   onKapat: () => void
   onKaydedildi: () => Promise<void>
 }) {
-  const varsayilanCari = cariler.find(cari => cari.id === varsayilanCariId)
-  const [cariTuru, setCariTuru] = useState<CariSecenegi['tipi']>(
-    varsayilanCari?.tipi ?? 'musteri',
+  const musteriler = cariler.filter(
+    cari => cari.aktif !== false && cari.tipi === 'musteri',
   )
+  const varsayilanCari = musteriler.find(cari => cari.id === varsayilanCariId)
   const [form, setForm] = useState<TahsilatPayload>({
-    cari_id: varsayilanCariId ?? '',
+    cari_id: varsayilanCari?.id ?? '',
     para_birimi: 'TRY',
     tutar: '',
     hareket_turu: 'tahsilat',
@@ -217,30 +223,24 @@ function TahsilatFormu({
   const idempotencyKeyRef = useRef(yeniIdempotencyAnahtari())
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [hata, setHata] = useState<string | null>(null)
-  const secilebilirCariler = cariler.filter(cari => cari.aktif !== false && cari.tipi === cariTuru)
-  const seciliCari = cariler.find(cari => cari.id === form.cari_id)
+  const seciliCari = musteriler.find(cari => cari.id === form.cari_id)
 
   const formuGuncelle = (degisiklik: Partial<TahsilatPayload>) => {
     idempotencyKeyRef.current = yeniIdempotencyAnahtari()
     setForm(deger => ({ ...deger, ...degisiklik }))
   }
 
-  const cariTurunuSec = (yeniTur: CariSecenegi['tipi']) => {
-    setCariTuru(yeniTur)
-    if (seciliCari?.tipi !== yeniTur) formuGuncelle({ cari_id: '' })
-  }
-
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     const tutar = Number(form.tutar.replace(',', '.'))
     if (
-      !form.cari_id
+      !seciliCari
       || !form.islem_tarihi
       || !Number.isFinite(tutar)
       || tutar <= 0
       || form.aciklama.trim().length < 3
     ) {
-      setHata('Cari, işlem tarihi, sıfırdan büyük tutar ve en az 3 karakterlik açıklama zorunludur.')
+      setHata('Müşteri, işlem tarihi, sıfırdan büyük tutar ve en az 3 karakterlik açıklama zorunludur.')
       return
     }
 
@@ -274,7 +274,7 @@ function TahsilatFormu({
             <h2 id="tahsilat-baslik" className="text-lg font-semibold text-slate-900">
               Yeni tahsilat
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Cariyi seçin, ödeme bilgilerini girin ve işlemi tamamlayın.</p>
+            <p className="mt-1 text-sm text-slate-500">Müşteriyi seçin, ödeme bilgilerini girin ve işlemi tamamlayın.</p>
           </div>
           <ModalKapatButonu onKapat={onKapat} />
         </div>
@@ -283,57 +283,20 @@ function TahsilatFormu({
           <section>
             <div className="mb-3 flex items-center gap-2">
               <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
-              <h3 className="text-sm font-semibold text-slate-900">Cariyi seçin</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Müşteriyi seçin</h3>
             </div>
 
-            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => cariTurunuSec('musteri')}
-                aria-pressed={cariTuru === 'musteri'}
-                className={cn(
-                  'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition',
-                  cariTuru === 'musteri'
-                    ? 'bg-white text-blue-700 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800',
-                )}
-              >
-                <UsersRound size={16} />
-                Müşteriler
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">
-                  {cariler.filter(cari => cari.tipi === 'musteri' && cari.aktif !== false).length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => cariTurunuSec('tedarikci')}
-                aria-pressed={cariTuru === 'tedarikci'}
-                className={cn(
-                  'flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition',
-                  cariTuru === 'tedarikci'
-                    ? 'bg-white text-violet-700 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800',
-                )}
-              >
-                <Building2 size={16} />
-                Tedarikçiler
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">
-                  {cariler.filter(cari => cari.tipi === 'tedarikci' && cari.aktif !== false).length}
-                </span>
-              </button>
-            </div>
-
-            <label className="mt-3 block">
-              <span className="sr-only">{cariTuru === 'musteri' ? 'Müşteri seçin' : 'Tedarikçi seçin'}</span>
+            <label className="block">
+              <span className="sr-only">Müşteri seçin</span>
               <select
-                autoFocus={!varsayilanCariId}
+                autoFocus={!varsayilanCari}
                 required
                 value={form.cari_id}
                 onChange={event => formuGuncelle({ cari_id: event.target.value })}
                 className={alanSinifi}
               >
-                <option value="">{cariTuru === 'musteri' ? 'Müşteri seçin' : 'Tedarikçi seçin'}</option>
-                {secilebilirCariler.map(cari => (
+                <option value="">Müşteri seçin</option>
+                {musteriler.map(cari => (
                   <option key={cari.id} value={cari.id}>{cari.kod} · {cari.ad}</option>
                 ))}
               </select>
@@ -343,14 +306,14 @@ function TahsilatFormu({
               <div className="mt-3 flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-3.5 py-3">
                 <span className={cn(
                   'grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold text-white',
-                  seciliCari.tipi === 'musteri' ? 'bg-blue-600' : 'bg-violet-600',
+                  'bg-blue-600',
                 )}>
                   {cariBasHarfleri(seciliCari)}
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold text-slate-900">{seciliCari.ad}</span>
                   <span className="mt-0.5 block text-xs text-slate-500">
-                    {seciliCari.kod} · {seciliCari.tipi === 'musteri' ? 'Müşteri' : 'Tedarikçi'}
+                    {seciliCari.kod} · Müşteri
                   </span>
                 </span>
               </div>
@@ -517,6 +480,8 @@ function AcilisBakiyesiFormu({
   const idempotencyKeyRef = useRef(yeniIdempotencyAnahtari())
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [hata, setHata] = useState<string | null>(null)
+  const seciliCari = cariler.find(cari => cari.id === form.cari_id)
+  const yonEtiketleri = acilisBakiyesiYonEtiketleri(seciliCari?.tipi ?? null)
 
   const formuGuncelle = (degisiklik: Partial<CariAcilisBakiyesiPayload>) => {
     idempotencyKeyRef.current = yeniIdempotencyAnahtari()
@@ -563,7 +528,13 @@ function AcilisBakiyesiFormu({
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
           <div>
             <h2 id="acilis-baslik" className="text-lg font-semibold text-slate-900">Açılış bakiyesi kaydet</h2>
-            <p className="mt-1 text-sm text-slate-500">Mevcut borç veya alacağı carinin başlangıç bakiyesi olarak girin.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {seciliCari?.tipi === 'tedarikci'
+                ? 'Tedarikçiye borcumuzu veya tedarikçiden alacağımızı başlangıç bakiyesi olarak girin.'
+                : seciliCari?.tipi === 'musteri'
+                  ? 'Müşterinin mevcut borcunu veya kredisini başlangıç bakiyesi olarak girin.'
+                  : 'Mevcut borç veya alacağı carinin başlangıç bakiyesi olarak girin.'}
+            </p>
           </div>
           <ModalKapatButonu onKapat={onKapat} />
         </div>
@@ -578,7 +549,7 @@ function AcilisBakiyesiFormu({
               onChange={event => formuGuncelle({ cari_id: event.target.value })}
               className={alanSinifi}
             >
-              <option value="">Müşteri seçin</option>
+              <option value="">Cari seçin</option>
               {cariler.filter(cari => cari.aktif !== false).map(cari => (
                 <option key={cari.id} value={cari.id}>{cari.kod} · {cari.ad}</option>
               ))}
@@ -592,8 +563,8 @@ function AcilisBakiyesiFormu({
               onChange={event => formuGuncelle({ yon: event.target.value as CariAcilisBakiyesiPayload['yon'] })}
               className={alanSinifi}
             >
-              <option value="borc">Borç · müşteri borcu</option>
-              <option value="alacak">Alacak · müşteri kredisi</option>
+              <option value="borc">{yonEtiketleri.borc}</option>
+              <option value="alacak">{yonEtiketleri.alacak}</option>
             </select>
           </label>
 
@@ -755,7 +726,9 @@ export default function CariHesapPage() {
   const [seciliCariId, setSeciliCariId] = useState(
     () => new URLSearchParams(location.search).get('cari') ?? '',
   )
-  const [portfoyCariTuru, setPortfoyCariTuru] = useState<CariSecenegi['tipi']>('musteri')
+  const [portfoyCariTuru, setPortfoyCariTuru] = useState<CariSecenegi['tipi']>(
+    () => cariTurunuDogrula(new URLSearchParams(location.search).get('tur')),
+  )
   const [cariArama, setCariArama] = useState('')
   const [yalnizAcikBakiyeler, setYalnizAcikBakiyeler] = useState(false)
   const [hareketArama, setHareketArama] = useState('')
@@ -773,11 +746,6 @@ export default function CariHesapPage() {
   const [tutarsizliklar, setTutarsizliklar] = useState<CariBakiyeTutarsizligi[] | null>(null)
   const terslemeAnahtarlariRef = useRef(new Map<string, string>())
   const otomatikParaCariRef = useRef('')
-
-  useEffect(() => {
-    const urlCari = new URLSearchParams(location.search).get('cari') ?? ''
-    setSeciliCariId(mevcut => mevcut === urlCari ? mevcut : urlCari)
-  }, [location.search])
 
   useEffect(() => {
     setSayfa(1)
@@ -803,12 +771,38 @@ export default function CariHesapPage() {
     () => new Map(cariler.map(cari => [cari.id, cari.kod])),
     [cariler],
   )
-  const seciliCari = cariler.find(cari => cari.id === seciliCariId) ?? null
-  const gecerliSeciliCariId = seciliCari?.id ?? ''
+  const cariTipleri = useMemo(
+    () => new Map(cariler.map(cari => [cari.id, cari.tipi])),
+    [cariler],
+  )
 
   useEffect(() => {
-    if (seciliCari?.tipi) setPortfoyCariTuru(seciliCari.tipi)
-  }, [seciliCari?.tipi])
+    const durum = cariHesapDurumunuCoz(
+      location.search,
+      kaynak.veri ? cariler : null,
+    )
+    setPortfoyCariTuru(mevcut => mevcut === durum.tur ? mevcut : durum.tur)
+    setSeciliCariId(mevcut => mevcut === durum.cariId ? mevcut : durum.cariId)
+
+    const mevcutArama = new URLSearchParams(location.search).toString()
+    if (
+      durum.normalizedSearch !== null
+      && durum.normalizedSearch !== mevcutArama
+    ) {
+      navigate(
+        {
+          pathname: location.pathname,
+          search: durum.normalizedSearch ? `?${durum.normalizedSearch}` : '',
+        },
+        { replace: true },
+      )
+    }
+  }, [cariler, kaynak.veri, location.pathname, location.search, navigate])
+
+  const seciliCari = cariler.find(
+    cari => cari.id === seciliCariId && cari.tipi === portfoyCariTuru,
+  ) ?? null
+  const gecerliSeciliCariId = seciliCari?.id ?? ''
 
   useEffect(() => {
     if (!gecerliSeciliCariId || otomatikParaCariRef.current === gecerliSeciliCariId) return
@@ -935,7 +929,10 @@ export default function CariHesapPage() {
   }
   const ozetParaBirimi: ParaBirimi = paraFiltresi || 'TRY'
   const seciliParaOzeti = paraOzeti(ozetParaBirimi)
-  const seciliParaDurumu = bakiyeDurumu(seciliParaOzeti.net)
+  const seciliParaDurumu = bakiyeDurumu(
+    seciliParaOzeti.net,
+    seciliCari?.tipi ?? portfoyCariTuru,
+  )
 
   const aktifHareketFiltresiSayisi = [
     paraFiltresi,
@@ -951,19 +948,28 @@ export default function CariHesapPage() {
       otomatikParaCariRef.current = ''
     }
     const params = new URLSearchParams(location.search)
+    params.set('tur', portfoyCariTuru)
     if (cariId) params.set('cari', cariId)
     else params.delete('cari')
     const yeniArama = params.toString()
     navigate(
       { pathname: location.pathname, search: yeniArama ? '?' + yeniArama : '' },
-      { replace: true },
     )
   }
 
   const portfoyTurunuSec = (yeniTur: CariSecenegi['tipi']) => {
     setPortfoyCariTuru(yeniTur)
+    setSeciliCariId('')
     setCariArama('')
-    cariSec('')
+    setParaFiltresi('')
+    setTahsilatAcik(false)
+    otomatikParaCariRef.current = ''
+    const params = new URLSearchParams(location.search)
+    params.set('tur', yeniTur)
+    params.delete('cari')
+    navigate(
+      { pathname: location.pathname, search: `?${params.toString()}` },
+    )
   }
 
   const hareketFiltreleriniTemizle = () => {
@@ -1084,13 +1090,15 @@ export default function CariHesapPage() {
     <div className="mx-auto max-w-[1480px] space-y-5 p-4 sm:p-6 lg:p-8">
       <PageHeader
         baslik="Cari Hesaplar"
-        aciklama="Müşteri bakiyelerini izleyin, tahsilatları kaydedin ve hesap hareketlerini yönetin."
+        aciklama={portfoyCariTuru === 'musteri'
+          ? 'Müşteri bakiyelerini izleyin, tahsilatları kaydedin ve hesap hareketlerini yönetin.'
+          : 'Tedarikçiye borçlarımızı, ödemelerimizi ve hesap hareketlerini izleyin.'}
         icon={WalletCards}
         className="mb-0"
         aksiyon={(
           <>
             <YenileButonu onClick={() => void kaynak.yenile()} yukleniyor={kaynak.yukleniyor} />
-            {hasPermission('finance', 'create') && (
+            {portfoyCariTuru === 'musteri' && hasPermission('finance', 'create') && (
               <button
                 type="button"
                 onClick={() => setTahsilatAcik(true)}
@@ -1262,7 +1270,7 @@ export default function CariHesapPage() {
                       {paraBirimleri.map(para => {
                         const net = Number(bakiyeler.find(ozet => ozet.para_birimi === para)?.net_bakiye ?? 0)
                         if (Math.abs(net) < 0.0001) return null
-                        const durum = bakiyeDurumu(net)
+                        const durum = bakiyeDurumu(net, cari.tipi)
                         return (
                           <span key={para} className={cn('rounded-md px-1.5 py-1 text-[10px] font-bold', durum.zemin, durum.renk)}>
                             {ticariPara(net, para)}
@@ -1357,9 +1365,17 @@ export default function CariHesapPage() {
               </div>
 
               <div className="grid min-w-[260px] flex-1 grid-cols-2 gap-x-6 gap-y-1 text-xs">
-                <span className="text-slate-500">Toplam borç</span>
+                <span className="text-slate-500">
+                  {(seciliCari?.tipi ?? portfoyCariTuru) === 'tedarikci'
+                    ? 'Tedarikçiden alacağımız'
+                    : 'Toplam borç'}
+                </span>
                 <span className="text-right font-semibold text-slate-800">{ticariPara(seciliParaOzeti.borc, ozetParaBirimi)}</span>
-                <span className="text-slate-500">Toplam alacak</span>
+                <span className="text-slate-500">
+                  {(seciliCari?.tipi ?? portfoyCariTuru) === 'tedarikci'
+                    ? 'Tedarikçiye borcumuz'
+                    : 'Toplam alacak'}
+                </span>
                 <span className="text-right font-semibold text-slate-800">{ticariPara(seciliParaOzeti.alacak, ozetParaBirimi)}</span>
               </div>
 
@@ -1528,6 +1544,7 @@ export default function CariHesapPage() {
                           hareket={hareket}
                           cariAdi={cariAdlari.get(hareket.cari_id) ?? hareket.cari_id}
                           cariKodu={cariKodlari.get(hareket.cari_id)}
+                          cariTuru={cariTipleri.get(hareket.cari_id) ?? portfoyCariTuru}
                           bakiye={net}
                         />
                       </div>
@@ -1567,7 +1584,10 @@ export default function CariHesapPage() {
                 <tbody className="divide-y divide-slate-100">
                   {sayfadakiHareketler.map(hareket => {
                     const net = hareketSonrasiBakiyeler.get(hareket.id) ?? 0
-                    const durum = bakiyeDurumu(net)
+                    const durum = bakiyeDurumu(
+                      net,
+                      cariTipleri.get(hareket.cari_id) ?? portfoyCariTuru,
+                    )
                     const detayAcik = acikHareketId === hareket.id
                     return (
                       <Fragment key={hareket.id}>
@@ -1641,6 +1661,7 @@ export default function CariHesapPage() {
                                 hareket={hareket}
                                 cariAdi={cariAdlari.get(hareket.cari_id) ?? hareket.cari_id}
                                 cariKodu={cariKodlari.get(hareket.cari_id)}
+                                cariTuru={cariTipleri.get(hareket.cari_id) ?? portfoyCariTuru}
                                 bakiye={net}
                               />
                             </td>
@@ -1792,10 +1813,10 @@ export default function CariHesapPage() {
         </span>
       </div>
 
-      {tahsilatAcik && (
+      {tahsilatAcik && portfoyCariTuru === 'musteri' && (
         <TahsilatFormu
           cariler={cariler}
-          varsayilanCariId={seciliCari?.id}
+          varsayilanCariId={seciliCari?.tipi === 'musteri' ? seciliCari.id : undefined}
           onKapat={() => setTahsilatAcik(false)}
           onKaydedildi={async () => {
             await kaynak.yenile()

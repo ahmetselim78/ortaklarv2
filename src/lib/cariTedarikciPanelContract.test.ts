@@ -33,7 +33,8 @@ describe('cari müşteri ve tedarikçi çalışma alanı sözleşmesi', () => {
   it('müşterinin satış/hesap işlemlerini tedarikçinin satın alma akışına taşımaz', () => {
     expect(calismaAlani).toContain("secilen.tipi === 'musteri'")
     expect(calismaAlani).toContain('Müşteri işlemleri')
-    expect(tedarikciPaneli).toContain('Ürün bağlantıları, fiyatlar ve satın alma kayıtları')
+    expect(tedarikciPaneli).toContain('sipariş–fatura–ödeme yaşam döngüsü')
+    expect(tedarikciPaneli).toContain("etiket: 'Alış Bağlantıları'")
   })
 
   it('alış fiyatı seçimlerini yalnız aktif tedarikçi–stok bağlantılarıyla sınırlar', () => {

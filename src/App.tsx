@@ -26,6 +26,7 @@ import TekliflerPage from '@/pages/TekliflerPage'
 import UnauthorizedPage from '@/pages/UnauthorizedPage'
 import UretimIstasyonlariPage from '@/pages/UretimIstasyonlariPage'
 import UretimPage from '@/pages/UretimPage'
+import YapimAsamasindaPage from '@/pages/YapimAsamasindaPage'
 
 function HomeRoute() {
   const { hasPermission } = useAuth()
@@ -58,11 +59,47 @@ export default function App() {
           <Route path="/cari-hesap" element={<ProtectedRoute module="finance"><CariHesapPage /></ProtectedRoute>} />
           <Route path="/stok" element={<ProtectedRoute module="inventory"><StokPage /></ProtectedRoute>} />
           <Route path="/siparisler" element={<ProtectedRoute module="orders"><SiparisPage /></ProtectedRoute>} />
-          <Route path="/fiyatlandirma" element={<ProtectedRoute module="pricing"><MaliyetHesaplamaPage /></ProtectedRoute>} />
+          <Route path="/fiyatlandirma" element={<ProtectedRoute module="costing"><MaliyetHesaplamaPage /></ProtectedRoute>} />
           <Route path="/teklifler" element={<ProtectedRoute module="pricing"><TekliflerPage /></ProtectedRoute>} />
           <Route path="/uretim" element={<ProtectedRoute module="production"><UretimPage /></ProtectedRoute>} />
+          <Route
+            path="/uretim-planlama"
+            element={(
+              <ProtectedRoute module="production">
+                <YapimAsamasindaPage
+                  title="Üretim Planlama"
+                  category="Operasyonel Üretim"
+                  description="Üretim kapasitesi, iş yükü ve terminlerin birlikte planlanacağı çalışma alanı hazırlanıyor."
+                />
+              </ProtectedRoute>
+            )}
+          />
           <Route path="/istasyonlar" element={<ProtectedRoute module="production_stations" action="update"><UretimIstasyonlariPage /></ProtectedRoute>} />
           <Route path="/saatlik-takip" element={<ProtectedRoute module="hourly_tracking"><SaatlikTakipPage /></ProtectedRoute>} />
+          <Route
+            path="/odeme-takibi"
+            element={(
+              <ProtectedRoute module="finance">
+                <YapimAsamasindaPage
+                  title="Ödeme Takibi"
+                  category="Finans"
+                  description="Planlanan tahsilat ve ödemelerin vade bazında izleneceği finans çalışma alanı hazırlanıyor."
+                />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/bankalar"
+            element={(
+              <ProtectedRoute module="finance">
+                <YapimAsamasindaPage
+                  title="Bankalar"
+                  category="Finans"
+                  description="Banka hesapları ve finansal hareketlerin merkezi olarak izleneceği çalışma alanı hazırlanıyor."
+                />
+              </ProtectedRoute>
+            )}
+          />
           <Route path="/ayarlar" element={<ProtectedRoute module="settings"><AyarlarPage /></ProtectedRoute>} />
           <Route path="/admin/*" element={<ProtectedRoute module="admin" action="manage" requireAal2><AdminPage /></ProtectedRoute>} />
         </Route>

@@ -205,7 +205,7 @@ export default function TedarikciSiparisTakibi({
             </h3>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Sipariş fatura numarası girilene kadar “Fatura bekliyor” durumunda kalır.
+            Siparişten faturaya ve ödemeye kadar satın alma yaşam döngüsünü bu bağlantı üzerinden izleyin.
           </p>
         </div>
         <div className="flex items-center gap-2">

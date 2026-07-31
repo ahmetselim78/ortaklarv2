@@ -23,13 +23,18 @@ import {
   yeniIdempotencyAnahtari,
 } from '@/services/ticariService'
 import { ticariPara } from '@/lib/ticariFormat'
+import {
+  cariCalismaDurumunuCoz,
+  cariCalismaSekmesiniDogrula,
+  type MusteriCalismaSekmesi,
+} from '@/lib/cariNavigation'
 import { tedarikKapsamiOzetMetni } from '@/lib/tedarikKapsami'
 import type { Cari } from '@/types/cari'
 import type { CariBaglantisi, CariDetayOzeti, ParaBirimi } from '@/types/ticari'
 import CariBaglantiSihirbazi from './CariBaglantiSihirbazi'
 import TedarikciCalismaPaneli from './TedarikciCalismaPaneli'
 
-type Sekme = 'genel' | 'baglantilar' | 'siparisler' | 'hareketler'
+type Sekme = MusteriCalismaSekmesi
 
 export default function CariCalismaAlani({
   cariler,
@@ -60,9 +65,7 @@ export default function CariCalismaAlani({
   const [secilenId, setSecilenId] = useState(ilkUrlCarisi?.id ?? '')
   const ilkUrlSekmesi = ilkUrlParametreleri.get('sekme')
   const [sekme, setSekme] = useState<Sekme>(
-    ['genel', 'baglantilar', 'siparisler', 'hareketler'].includes(ilkUrlSekmesi ?? '')
-      ? ilkUrlSekmesi as Sekme
-      : 'genel',
+    cariCalismaSekmesiniDogrula('musteri', ilkUrlSekmesi) as Sekme,
   )
   const [detay, setDetay] = useState<CariDetayOzeti | null>(null)
   const [yukleniyor, setYukleniyor] = useState(false)
@@ -73,47 +76,39 @@ export default function CariCalismaAlani({
   const islemMenusuRef = useRef<HTMLDivElement>(null)
   const secilen = cariler.find((cari) => cari.id === secilenId)
     ?? turCarileri[0]
-    ?? cariler[0]
   const baglantiOlusturabilir = hasPermission('pricing', 'read')
     && hasPermission('pricing', 'create')
     && hasPermission('pricing', 'update')
 
   const urlSeciminiGuncelle = useCallback((cari: Cari, yeniSekme: string) => {
     const params = new URLSearchParams(location.search)
+    const gecerliSekme = cariCalismaSekmesiniDogrula(cari.tipi, yeniSekme)
     params.set('tur', cari.tipi)
     params.set('cari', cari.id)
-    params.set('sekme', yeniSekme)
-    navigate(`${location.pathname}?${params.toString()}`, { replace: true })
+    params.set('sekme', gecerliSekme)
+    navigate(`${location.pathname}?${params.toString()}`)
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    const urlCarisi = cariler.find((cari) => cari.id === params.get('cari'))
-    if (!urlCarisi) {
-      const istenenTur = params.get('tur') === 'tedarikci' ? 'tedarikci' : 'musteri'
-      const sonraki = cariler.find((cari) => cari.tipi === istenenTur) ?? cariler[0]
-      if (sonraki) urlSeciminiGuncelle(sonraki, 'genel')
-      return
+    if (cariler.length === 0) return
+    const durum = cariCalismaDurumunuCoz(location.search, cariler)
+
+    setTur(mevcut => mevcut === durum.tur ? mevcut : durum.tur)
+    setSecilenId(mevcut => mevcut === durum.cariId ? mevcut : durum.cariId)
+    if (durum.tur === 'musteri') {
+      setSekme(mevcut => mevcut === durum.sekme ? mevcut : durum.sekme as Sekme)
     }
-    if (urlCarisi.id !== secilenId) setSecilenId(urlCarisi.id)
-    if (urlCarisi.tipi !== tur) setTur(urlCarisi.tipi)
-    const urlSekmesi = params.get('sekme')
-    if (
-      urlCarisi.tipi === 'musteri'
-      && urlSekmesi
-      && ['genel', 'baglantilar', 'siparisler', 'hareketler'].includes(urlSekmesi)
-      && urlSekmesi !== sekme
-    ) {
-      setSekme(urlSekmesi as Sekme)
-    } else if (
-      urlCarisi.tipi === 'musteri'
-      && urlSekmesi !== 'genel'
-      && !['baglantilar', 'siparisler', 'hareketler'].includes(urlSekmesi ?? '')
-    ) {
-      setSekme('genel')
-      urlSeciminiGuncelle(urlCarisi, 'genel')
+
+    if (durum.normalizedSearch !== new URLSearchParams(location.search).toString()) {
+      navigate(
+        {
+          pathname: location.pathname,
+          search: durum.normalizedSearch ? `?${durum.normalizedSearch}` : '',
+        },
+        { replace: true },
+      )
     }
-  }, [cariler, location.search, secilenId, sekme, tur, urlSeciminiGuncelle])
+  }, [cariler, location.pathname, location.search, navigate])
 
   useEffect(() => {
     if (!islemMenusuAcik) return
@@ -132,21 +127,6 @@ export default function CariCalismaAlani({
       document.removeEventListener('keydown', escapeBasildi)
     }
   }, [islemMenusuAcik])
-
-  useEffect(() => {
-    if (secilen && secilen.tipi === tur) {
-      if (secilen.id !== secilenId) setSecilenId(secilen.id)
-      return
-    }
-    const sonraki = turCarileri[0] ?? cariler[0]
-    if (!sonraki) {
-      if (secilenId) setSecilenId('')
-      return
-    }
-    setTur(sonraki.tipi)
-    setSecilenId(sonraki.id)
-    setSekme('genel')
-  }, [cariler, secilen, secilenId, tur, turCarileri])
 
   const detayiYukle = useCallback(async () => {
     if (!secilen?.id) return
@@ -210,7 +190,15 @@ export default function CariCalismaAlani({
     setIslemMenusuAcik(false)
     const ilkKayit = cariler.find((cari) => cari.tipi === yeniTur)
     setSecilenId(ilkKayit?.id ?? '')
-    if (ilkKayit) urlSeciminiGuncelle(ilkKayit, 'genel')
+    if (ilkKayit) {
+      urlSeciminiGuncelle(ilkKayit, 'genel')
+      return
+    }
+    const params = new URLSearchParams(location.search)
+    params.set('tur', yeniTur)
+    params.set('sekme', 'genel')
+    params.delete('cari')
+    navigate(`${location.pathname}?${params.toString()}`)
   }
 
   const musteriSekmesiniSec = (yeniSekme: Sekme) => {

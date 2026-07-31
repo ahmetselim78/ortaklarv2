@@ -124,7 +124,9 @@ export default function CariPage() {
           cariler={cariler}
           onDuzenle={handleDuzenle}
           duzenleyebilir={cariGuncelleyebilir}
-          onCariHesapAc={(cari) => navigate(`/cari-hesap?cari=${encodeURIComponent(cari.id)}`)}
+          onCariHesapAc={(cari) => navigate(
+            `/cari-hesap?tur=${cari.tipi}&cari=${encodeURIComponent(cari.id)}`,
+          )}
         />
       )}
 
