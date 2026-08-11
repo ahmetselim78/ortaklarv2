@@ -1,17 +1,20 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Printer, Wifi, WifiOff, Wrench } from 'lucide-react'
+import { ArrowLeft, CircleDotDashed, Printer, Wifi, WifiOff, Wrench } from 'lucide-react'
 import TamireGonderModal from '@/components/tamir/TamireGonderModal'
 import type { TamireGonderCam } from '@/components/tamir/TamireGonderModal'
+import KalanEtiketlerModal from '@/components/kumanda/KalanEtiketlerModal'
 import { fizikselGlsKodu } from '@/lib/siparisDetay'
-import { getCamKompozisyon } from '@/lib/cam'
+import { getCamKompozisyon, getEtiketCamTipi } from '@/lib/cam'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
-import { etiketKopruSaglikKontrolu, etiketOtomatikYazdir } from '@/lib/etiketBasim'
-import type { EtiketBasimDurumu } from '@/lib/etiketBasim'
+import { etiketKopruSaglikKontrolu, etiketOtomatikYazdir, etiketleriTopluYazdir } from '@/lib/etiketBasim'
+import type { EtiketBasimDurumu, EtiketBasimSonucu } from '@/lib/etiketBasim'
 import type { EtiketVeri } from '@/types/ayarlar'
 import { useAyarlar } from '@/hooks/useAyarlar'
+import { kalanEtiketToplami, seciliKalanEtiketKalemleri } from '@/lib/kalanEtiketler'
+import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
 
 /* ========== Yardımcılar ========== */
 
@@ -51,6 +54,8 @@ interface BatchCamKumanda {
   uretim_durumu: string
   genislik_mm: number
   yukseklik_mm: number
+  menfezli: boolean
+  menfez_cap_mm: number | null
   adet: number
   taranan_adet: number
   stok_ad: string
@@ -92,6 +97,9 @@ interface TamirOlayPayload {
   batch_no?: string
 }
 
+const BASKI_ONCESI_KOPRU_ZAMAN_ASIMI_MS = 1000
+const ORTA_KART_GECMISI_LIMITI = 24
+
 /* ========== Bileşen ========== */
 
 export default function KumandaPaneliPage() {
@@ -102,6 +110,10 @@ export default function KumandaPaneliPage() {
   const [flash, setFlash] = useState(false)
   const [kopruBagli, setKopruBagli] = useState<boolean | null>(null)
   const [kopruMesaji, setKopruMesaji] = useState('Yazıcı köprüsü kontrol ediliyor.')
+  const kopruDurumuRef = useRef<{ bagli: boolean | null; mesaj: string }>({
+    bagli: null,
+    mesaj: 'Yazıcı köprüsü kontrol ediliyor.',
+  })
   const { etiketAyarlari } = useAyarlar()
   const etiketAyarlariRef = useRef(etiketAyarlari)
   const islenenEtiketIstekleriRef = useRef(new Set<string>())
@@ -112,7 +124,9 @@ export default function KumandaPaneliPage() {
   const [batchCamlari, setBatchCamlari] = useState<BatchCamKumanda[]>([])
   const [aktifMusteri, setAktifMusteri] = useState<string | null>(null)
   const [tamirCam, setTamirCam] = useState<TamireGonderCam | null>(null)
+  const [kalanEtiketModalAcik, setKalanEtiketModalAcik] = useState(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const presenceKeyRef = useRef(`kumanda-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   useEffect(() => {
     etiketAyarlariRef.current = etiketAyarlari
@@ -120,9 +134,13 @@ export default function KumandaPaneliPage() {
 
   useEffect(() => {
     let aktif = true
+    kopruDurumuRef.current = { bagli: null, mesaj: 'Yazıcı köprüsü kontrol ediliyor.' }
+    setKopruBagli(null)
+    setKopruMesaji('Yazıcı köprüsü kontrol ediliyor.')
     const kontrolEt = async () => {
       const sonuc = await etiketKopruSaglikKontrolu(etiketAyarlari)
       if (!aktif) return
+      kopruDurumuRef.current = sonuc
       setKopruBagli(sonuc.bagli)
       setKopruMesaji(sonuc.mesaj)
     }
@@ -134,37 +152,161 @@ export default function KumandaPaneliPage() {
     }
   }, [etiketAyarlari])
 
-  const kumandadanEtiketYazdir = useCallback(async (etiketVeri: EtiketVeri, taramaZamani: number) => {
-    setKartlar(prev => prev.map(k =>
-      k.cam_kodu === etiketVeri.cam_kodu && k.zaman === taramaZamani
-        ? { ...k, etiket_durumu: 'gonderiliyor', etiket_mesaji: 'Kumanda Paneli yazıcı köprüsüne gönderiyor.' }
-        : k
-    ))
+  const kumandadanEtiketYazdir = useCallback(async (
+    etiketVeri: EtiketVeri,
+    taramaZamani: number,
+    kopruyuYenidenKontrolEt = false,
+  ) => {
+    const sonucuUygula = async (sonuc: EtiketBasimSonucu) => {
+      if (sonuc.durum === 'yaziciya_gonderildi') {
+        kopruDurumuRef.current = { bagli: true, mesaj: sonuc.mesaj }
+        setKopruBagli(true)
+      }
+      setKopruMesaji(sonuc.mesaj)
 
-    const sonuc = await etiketOtomatikYazdir(etiketAyarlariRef.current, etiketVeri)
+      setKartlar(prev => prev.map(k =>
+        k.cam_kodu === etiketVeri.cam_kodu && k.zaman === taramaZamani
+          ? { ...k, etiket_durumu: sonuc.durum, etiket_mesaji: sonuc.mesaj }
+          : k
+      ))
+
+      try {
+        await channelRef.current?.send({
+          type: 'broadcast',
+          event: 'etiket_durumu',
+          payload: {
+            cam_kodu: etiketVeri.cam_kodu,
+            zaman: taramaZamani,
+            etiket_durumu: sonuc.durum,
+            etiket_mesaji: sonuc.mesaj,
+          },
+        })
+      } catch (error) {
+        console.error('Etiket durumu yayınlanamadı:', error)
+      }
+      return sonuc
+    }
+
+    try {
+      const etiketAyarlari = etiketAyarlariRef.current
+      if (!etiketAyarlari.yazici.kopru_adresi.trim() || etiketAyarlari.yazdirma_kosulu !== 'otomatik') {
+        return await sonucuUygula(await etiketOtomatikYazdir(etiketAyarlari, etiketVeri))
+      }
+
+      if (kopruyuYenidenKontrolEt) {
+        setKartlar(prev => prev.map(k =>
+          k.cam_kodu === etiketVeri.cam_kodu && k.zaman === taramaZamani
+            ? { ...k, etiket_durumu: 'gonderiliyor', etiket_mesaji: 'Yazıcı köprüsü yeniden kontrol ediliyor.' }
+            : k
+        ))
+      }
+
+      const bilinenKopruDurumu = kopruDurumuRef.current
+      if (bilinenKopruDurumu.bagli === false && !kopruyuYenidenKontrolEt) {
+        return await sonucuUygula({
+          durum: 'basarisiz',
+          mesaj: `Etiket basılamadı: ${bilinenKopruDurumu.mesaj}`,
+        })
+      }
+
+      const kopruSonucu = await etiketKopruSaglikKontrolu(
+        etiketAyarlari,
+        BASKI_ONCESI_KOPRU_ZAMAN_ASIMI_MS,
+      )
+      kopruDurumuRef.current = kopruSonucu
+      setKopruBagli(kopruSonucu.bagli)
+      setKopruMesaji(kopruSonucu.mesaj)
+
+      if (!kopruSonucu.bagli) {
+        return await sonucuUygula({
+          durum: 'basarisiz',
+          mesaj: `Etiket basılamadı: ${kopruSonucu.mesaj}`,
+        })
+      }
+
+      setKartlar(prev => prev.map(k =>
+        k.cam_kodu === etiketVeri.cam_kodu && k.zaman === taramaZamani
+          ? { ...k, etiket_durumu: 'gonderiliyor', etiket_mesaji: 'Kumanda Paneli yazıcı köprüsüne gönderiyor.' }
+          : k
+      ))
+
+      return await sonucuUygula(
+        await etiketOtomatikYazdir(etiketAyarlari, etiketVeri),
+      )
+    } catch (error) {
+      return await sonucuUygula({
+        durum: 'basarisiz',
+        mesaj: `Etiket baskısı tamamlanamadı: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`,
+      })
+    }
+  }, [])
+
+  const kalanEtiketleriYazdir = useCallback(async (seciliListeAnahtarlari: ReadonlySet<string>) => {
+    const kalemler = seciliKalanEtiketKalemleri(batchCamlari, seciliListeAnahtarlari)
+    const toplam = kalanEtiketToplami(kalemler)
+    const etiketler: EtiketVeri[] = []
+
+    for (const { cam, adet } of kalemler) {
+      const etiketVeri: EtiketVeri = {
+        cam_kodu: cam.cam_kodu,
+        cam_tipi: getEtiketCamTipi({}, { ad: cam.stok_ad, katman_yapisi: cam.katman_yapisi }),
+        cari_adi: cam.musteri,
+        alt_musteri: cam.nihai_musteri,
+        siparis_no: cam.siparis_no,
+        poz: cam.poz,
+        liste_adedi: cam.liste_adedi,
+        batch_sira: cam.sira_no,
+        genislik_mm: cam.genislik_mm,
+        yukseklik_mm: cam.yukseklik_mm,
+      }
+      for (let i = 0; i < adet; i++) etiketler.push(etiketVeri)
+    }
+
+    const sonuc = await etiketleriTopluYazdir(etiketAyarlariRef.current, etiketler)
     setKopruBagli(sonuc.durum === 'yaziciya_gonderildi')
     setKopruMesaji(sonuc.mesaj)
 
-    let ilkEslesmeGuncellendi = false
-    setKartlar(prev => prev.map(k => {
-      if (ilkEslesmeGuncellendi || k.cam_kodu !== etiketVeri.cam_kodu) return k
-      if (k.zaman !== taramaZamani) return k
-      ilkEslesmeGuncellendi = true
-      return { ...k, etiket_durumu: sonuc.durum, etiket_mesaji: sonuc.mesaj }
-    }))
+    if (sonuc.durum !== 'yaziciya_gonderildi') return sonuc
 
-    await channelRef.current?.send({
-      type: 'broadcast',
-      event: 'etiket_durumu',
-      payload: {
-        cam_kodu: etiketVeri.cam_kodu,
-        zaman: taramaZamani,
-        etiket_durumu: sonuc.durum,
-        etiket_mesaji: sonuc.mesaj,
-      },
-    })
-    return sonuc
-  }, [])
+    const tamamlananSiparisDetayIds = [...new Set(kalemler.map(({ cam }) => cam.siparis_detay_id))]
+    const tamamlananDetayIdSet = new Set(tamamlananSiparisDetayIds)
+
+    try {
+      // Büyük batch'lerde PostgREST URL sınırına takılmamak için güncellemeleri parçalara ayır.
+      for (let i = 0; i < tamamlananSiparisDetayIds.length; i += 100) {
+        const chunk = tamamlananSiparisDetayIds.slice(i, i + 100)
+        const { error } = await supabase
+          .from('siparis_detaylari')
+          .update({ uretim_durumu: 'yikandi' })
+          .in('id', chunk)
+        if (error) throw new Error(error.message)
+      }
+
+      setBatchCamlari(prev => prev.map(cam =>
+        tamamlananDetayIdSet.has(cam.siparis_detay_id)
+          ? { ...cam, uretim_durumu: 'yikandi', taranan_adet: cam.adet }
+          : cam
+      ))
+
+      // Önce batch'i, ardından batch'teki tüm siparişleri hesapla. Böylece son kalan
+      // etiketler basıldığında hem batch hem de listeler tamamlandı durumuna geçer.
+      if (batchId) await recalculateUretimEmriDurumu(batchId)
+      const batchSiparisIds = [...new Set(batchCamlari.map(cam => cam.siparis_id).filter(Boolean))]
+      for (const siparisId of batchSiparisIds) {
+        await recalculateSiparisDurumu(siparisId)
+      }
+    } catch (error) {
+      return {
+        durum: 'basarisiz' as const,
+        mesaj: `${toplam} etiket yazıcıya gönderildi ancak camlar tamamlandı durumuna alınamadı: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}. Etiketleri tekrar basmayın.`,
+      }
+    }
+
+    return {
+      ...sonuc,
+      mesaj: `${toplam} etiket yazıcıya gönderildi ve ilgili camlar tamamlandı. ${sonuc.mesaj}`,
+    }
+  }, [batchCamlari, batchId])
 
   // Çıta onay durumu (gösterge ekranından gelir) — her zaman görünür
   const [citaOnay, setCitaOnay] = useState<{
@@ -192,7 +334,7 @@ export default function KumandaPaneliPage() {
             .select(`
               id, siparis_detay_id, sira_no,
               siparis_detaylari (
-                siparis_id, cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet, poz,
+                siparis_id, cam_kodu, uretim_durumu, genislik_mm, yukseklik_mm, adet, poz, notlar, menfez_cap_mm,
                 stok!stok_id ( kod, ad, grup, katman_yapisi ),
                 cita_stok:stok!cita_stok_id ( kalinlik_mm ),
                 siparisler ( siparis_no, alt_musteri, cari ( ad ) )
@@ -220,6 +362,9 @@ export default function KumandaPaneliPage() {
       uretim_durumu: d.siparis_detaylari.uretim_durumu,
       genislik_mm: d.siparis_detaylari.genislik_mm,
       yukseklik_mm: d.siparis_detaylari.yukseklik_mm,
+      menfezli: d.siparis_detaylari.menfez_cap_mm != null
+        || /menfez/i.test(d.siparis_detaylari.notlar ?? ''),
+      menfez_cap_mm: d.siparis_detaylari.menfez_cap_mm ?? null,
       adet: d.siparis_detaylari.adet ?? 1,
       taranan_adet: 0,
       stok_ad: d.siparis_detaylari.stok?.ad ?? '',
@@ -338,7 +483,9 @@ export default function KumandaPaneliPage() {
 
   useEffect(() => {
     const channel = supabase
-      .channel('uretim-istasyonlar')
+      .channel('uretim-istasyonlar', {
+        config: { presence: { key: presenceKeyRef.current } },
+      })
       .on('broadcast', { event: 'cita_onay_durumu' }, ({ payload }) => {
         const p = payload as any
         if (p.bekliyor) {
@@ -350,6 +497,7 @@ export default function KumandaPaneliPage() {
       .on('broadcast', { event: 'batch_secildi' }, ({ payload }) => {
         batchYukle(payload.batch_id, payload.batch_no)
         setKartlar([])
+        setKalanEtiketModalAcik(false)
         setCitaOnay({ bekliyor: false, eski: null, yeni: null, mevcut: null })
       })
       .on('broadcast', { event: 'yeni_cam' }, ({ payload }) => {
@@ -359,16 +507,24 @@ export default function KumandaPaneliPage() {
             ? c.uretim_emri_detay_id === p.uretim_emri_detay_id
             : c.cam_kodu === p.cam_kodu,
         )
+        const taramaZamani = p.zaman ?? Date.now()
 
         // Tekrar girilen camlar kartlara eklenmez, sadece sayı güncellenir
         if (!p.tekrar) {
+          const kopruBagliDegil = kopruDurumuRef.current.bagli === false
           const yeniKart: CamKarti = {
             ...(payload as Omit<CamKarti, 'etiket_durumu' | 'etiket_mesaji' | 'tamirde'>),
-            etiket_durumu: p.etiket_durumu ?? 'gonderiliyor',
-            etiket_mesaji: p.etiket_mesaji ?? 'Kumanda Paneli yazıcı köprüsüne gönderiyor.',
+            zaman: taramaZamani,
+            etiket_durumu: kopruBagliDegil ? 'basarisiz' : (p.etiket_durumu ?? 'gonderiliyor'),
+            etiket_mesaji: kopruBagliDegil
+              ? `Etiket basılamadı: ${kopruDurumuRef.current.mesaj}`
+              : (p.etiket_mesaji ?? 'Kumanda Paneli yazıcı köprüsüne gönderiyor.'),
             tamirde: false,
           }
-          setKartlar(prev => [yeniKart, ...prev].slice(0, 10))
+          setKartlar(prev => [
+            yeniKart,
+            ...prev.filter(k => k.cam_kodu !== yeniKart.cam_kodu || k.zaman !== yeniKart.zaman),
+          ].slice(0, ORTA_KART_GECMISI_LIMITI))
           setFlash(true)
           setTimeout(() => setFlash(false), 600)
         }
@@ -396,7 +552,6 @@ export default function KumandaPaneliPage() {
 
         // Yazıcı köprüsü Kumanda bilgisayarında çalışır. Bu nedenle fiziksel baskı
         // Poz Giriş cihazından değil, broadcast'i alan Kumanda Paneli'nden yapılır.
-        const taramaZamani = p.zaman ?? Date.now()
         const etiketIstekId = `${p.uretim_emri_detay_id ?? p.cam_kodu ?? 'bilinmeyen'}:${taramaZamani}`
         if (!islenenEtiketIstekleriRef.current.has(etiketIstekId)) {
           islenenEtiketIstekleriRef.current.add(etiketIstekId)
@@ -443,12 +598,24 @@ export default function KumandaPaneliPage() {
         if (!p.cam_kodu) return
         setKartlar(prev => prev.map(k => k.cam_kodu === p.cam_kodu ? { ...k, tamirde: true } : k))
       })
-      .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
+      .subscribe((status) => {
+        const bagli = status === 'SUBSCRIBED'
+        setConnected(bagli)
+        if (bagli) {
+          void channel.track({
+            istasyon: 'kumanda',
+            acilis_zamani: new Date().toISOString(),
+          }).then((sonuc) => {
+            if (sonuc !== 'ok') console.error('Kumanda Paneli aktiflik bilgisi yayınlanamadı:', sonuc)
+          })
+        }
+      })
 
     channelRef.current = channel
     return () => {
       channelRef.current = null
-      supabase.removeChannel(channel)
+      void channel.untrack()
+      void supabase.removeChannel(channel)
     }
   }, [batchYukle, kumandadanEtiketYazdir])
 
@@ -464,9 +631,21 @@ export default function KumandaPaneliPage() {
           borderColor: 'rgb(31,41,55)',
         }}
       >
-        <button onClick={() => navigate('/istasyonlar')} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
-          <ArrowLeft size={20} />
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/istasyonlar')} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+            <ArrowLeft size={20} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setKalanEtiketModalAcik(true)}
+            disabled={!batchId || batchCamlari.length === 0}
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-700 bg-blue-950/70 px-3 py-2.5 text-sm font-black text-blue-200 hover:bg-blue-900 disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-900 disabled:text-gray-600"
+            title={batchId ? 'Batch içindeki listelerden kalan etiketleri yazdır' : 'Önce Poz Giriş ekranından batch seçin'}
+          >
+            <Printer size={17} />
+            Geri Kalan Etiketleri Yazdır
+          </button>
+        </div>
         <div className="flex items-center gap-3">
           {batchNo && (
             <span className="font-mono font-black text-xl text-blue-400 tracking-widest">{batchNo}</span>
@@ -582,7 +761,7 @@ export default function KumandaPaneliPage() {
         </div>
 
         {/* ===== ORTA: Cam Kartları ===== */}
-        <div className="flex-1 flex flex-col px-6 py-3 overflow-y-auto gap-2 kumanda-scroll">
+        <div className="flex-1 flex flex-col px-4 py-2 overflow-y-auto gap-1.5 kumanda-scroll">
           {kartlar.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center">
               {batchId === null ? (
@@ -606,6 +785,8 @@ export default function KumandaPaneliPage() {
           ) : (
             kartlar.map((k) => {
               const batchCam = batchCamlari.find(c => c.cam_kodu === k.cam_kodu)
+              const yenidenYazdirilabilir = k.etiket_durumu === 'basarisiz'
+                || k.etiket_durumu === 'devre_disi'
               const etiketDurumu = (() => {
                 switch (k.etiket_durumu) {
                   case 'yaziciya_gonderildi':
@@ -621,15 +802,15 @@ export default function KumandaPaneliPage() {
               return (
                 <div
                   key={`${k.cam_kodu}-${k.zaman}`}
-                  className={`rounded-xl border-2 px-4 py-3 ${
+                  className={`rounded-xl border-2 px-3 py-2 ${
                     k.tamirde
                       ? 'tamir-karti-uyari border-red-500 bg-red-950/70'
                       : 'bg-gray-900/70 border-gray-800'
                   }`}
                 >
                   {/* Üst satır: GLS + BOYUT büyük puntolarla + etiket durumu + tamir butonu */}
-                  <div className="flex items-center justify-between gap-4 mb-2">
-                    <div className="flex items-center gap-4 min-w-0">
+                  <div className="flex items-center justify-between gap-4 mb-1">
+                    <div className="flex items-center gap-2 min-w-0 2xl:gap-4">
                       <div className="shrink-0">
                         <div className="text-[10px] text-amber-500/80 uppercase tracking-widest font-black mb-0.5">GLS</div>
                         <div className="font-black text-amber-300 text-4xl leading-none tabular-nums">
@@ -637,13 +818,22 @@ export default function KumandaPaneliPage() {
                         </div>
                       </div>
                       <div className="h-10 w-px bg-gray-700 shrink-0" />
-                      <div className="min-w-0">
+                      <div className="shrink-0">
                         <div className="text-[10px] text-gray-500 uppercase tracking-widest font-black mb-0.5">BOYUT</div>
-                        <div className="font-black text-white text-4xl leading-none tabular-nums whitespace-nowrap">
+                        <div className="font-black text-white text-3xl 2xl:text-4xl leading-none tabular-nums whitespace-nowrap">
                           {k.genislik_mm} × {k.yukseklik_mm}
-                          <span className="text-xl text-gray-400 font-bold ml-1.5">mm</span>
+                          <span className="text-base 2xl:text-xl text-gray-400 font-bold ml-1.5">mm</span>
                         </div>
                       </div>
+                      {batchCam?.menfezli && (
+                        <span
+                          className="flex h-8 w-8 2xl:h-10 2xl:w-10 shrink-0 items-center justify-center text-fuchsia-300"
+                          title={batchCam.menfez_cap_mm != null ? `Menfez Ø${batchCam.menfez_cap_mm} mm` : 'Menfezli cam'}
+                          aria-label={batchCam.menfez_cap_mm != null ? `Menfez çapı ${batchCam.menfez_cap_mm} milimetre` : 'Menfezli cam'}
+                        >
+                          <CircleDotDashed className="h-7 w-7 2xl:h-8 2xl:w-8" strokeWidth={2.5} />
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       {k.tamirde && (
@@ -659,30 +849,32 @@ export default function KumandaPaneliPage() {
                         <span className={`w-2 h-2 rounded-full ${etiketDurumu.nokta}`} />
                         {etiketDurumu.metin}
                       </span>
-                      <button
-                        type="button"
-                        disabled={!batchCam || k.etiket_durumu === 'gonderiliyor'}
-                        onClick={() => {
-                          if (!batchCam) return
-                          void kumandadanEtiketYazdir({
-                            cam_kodu: batchCam.cam_kodu,
-                            cam_tipi: k.cam_tipi,
-                            cari_adi: batchCam.musteri,
-                            alt_musteri: batchCam.nihai_musteri,
-                            siparis_no: batchCam.siparis_no,
-                            poz: batchCam.poz,
-                            liste_adedi: batchCam.liste_adedi,
-                            batch_sira: batchCam.sira_no,
-                            genislik_mm: batchCam.genislik_mm,
-                            yukseklik_mm: batchCam.yukseklik_mm,
-                          }, k.zaman)
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-blue-700 bg-blue-950/70 px-2.5 py-1.5 text-xs font-bold text-blue-300 hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-40"
-                        title="Bu etiketi Kumanda bilgisayarındaki köprüden yeniden yazdır"
-                      >
-                        <Printer size={13} />
-                        Yeniden Yazdır
-                      </button>
+                      {yenidenYazdirilabilir && (
+                        <button
+                          type="button"
+                          disabled={!batchCam}
+                          onClick={() => {
+                            if (!batchCam) return
+                            void kumandadanEtiketYazdir({
+                              cam_kodu: batchCam.cam_kodu,
+                              cam_tipi: k.cam_tipi,
+                              cari_adi: batchCam.musteri,
+                              alt_musteri: batchCam.nihai_musteri,
+                              siparis_no: batchCam.siparis_no,
+                              poz: batchCam.poz,
+                              liste_adedi: batchCam.liste_adedi,
+                              batch_sira: batchCam.sira_no,
+                              genislik_mm: batchCam.genislik_mm,
+                              yukseklik_mm: batchCam.yukseklik_mm,
+                            }, k.zaman, true)
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-700 bg-blue-950/70 px-2.5 py-1.5 text-xs font-bold text-blue-300 hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Bu etiketi Kumanda bilgisayarındaki köprüden yeniden yazdır"
+                        >
+                          <Printer size={13} />
+                          Yeniden Yazdır
+                        </button>
+                      )}
                       <button
                         onClick={() => batchCam && setTamirCam({
                           cam_kodu: batchCam.cam_kodu,
@@ -708,7 +900,7 @@ export default function KumandaPaneliPage() {
                   </div>
 
                   {/* Detay grid: ikincil bilgiler daha küçük */}
-                  <div className="grid grid-cols-3 gap-4 pt-2 border-t border-gray-700/80">
+                  <div className="grid grid-cols-3 gap-3 pt-1.5 border-t border-gray-700/80">
                     <div>
                       <div className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-0.5">POZ</div>
                       <div className="font-bold text-white text-base leading-tight break-words">{batchCam?.poz || '—'}</div>
@@ -805,6 +997,17 @@ export default function KumandaPaneliPage() {
                           }`}>{c.stok_ad}</p>
                         )}
                       </div>
+                      {c.menfezli && (
+                        <span
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center ${
+                            girildi ? 'text-fuchsia-700' : 'text-fuchsia-300'
+                          }`}
+                          title={c.menfez_cap_mm != null ? `Menfez Ø${c.menfez_cap_mm} mm` : 'Menfezli cam'}
+                          aria-label={c.menfez_cap_mm != null ? `Menfez çapı ${c.menfez_cap_mm} milimetre` : 'Menfezli cam'}
+                        >
+                          <CircleDotDashed size={25} strokeWidth={2.5} />
+                        </span>
+                      )}
                     </div>
                   )
                 })}
@@ -822,6 +1025,15 @@ export default function KumandaPaneliPage() {
       </div>
 
       {/* Tamir Modal */}
+      {kalanEtiketModalAcik && batchNo && (
+        <KalanEtiketlerModal
+          batchNo={batchNo}
+          camlar={batchCamlari}
+          onYazdir={kalanEtiketleriYazdir}
+          onKapat={() => setKalanEtiketModalAcik(false)}
+        />
+      )}
+
       {tamirCam && (
         <TamireGonderModal
           cam={tamirCam}

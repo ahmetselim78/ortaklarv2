@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, Search, Package, Check, Layers, Square, Shapes } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { useEscape } from '@/hooks/useEscape'
 
 interface DetayOzet {
@@ -89,25 +90,34 @@ function siparisBatchNoHaritasi(aktifBatchler: AktifBatchRow[]) {
 }
 
 async function siparisListesiniGetir(): Promise<SiparisOzet[]> {
-  const { data: tumSiparisler, error: siparisHata } = await supabase
-    .from('siparisler')
-    .select('id, siparis_no, tarih, durum, cari(ad)')
-    .or('durum.in.(beklemede,batchte,eksik_var),durum.is.null')
-    .order('created_at', { ascending: false })
+  const tumSiparisler = await tumSatirlariGetir(
+    (from, to) =>
+      supabase
+        .from('siparisler')
+        .select('id, siparis_no, tarih, durum, cari(ad)', { count: 'exact' })
+        .or('durum.in.(beklemede,batchte,eksik_var),durum.is.null')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to),
+    { baglam: 'yeni batch - uygun siparisler' },
+  )
 
-  if (siparisHata) throw new Error(siparisHata.message)
-  if (!tumSiparisler || tumSiparisler.length === 0) return []
+  if (tumSiparisler.length === 0) return []
 
   const sipIds = tumSiparisler.map((s) => s.id)
 
   const [adetSatirlari, aktifBatchler] = await Promise.all([
     paralelChunkSorgu(sipIds, async (chunk) => {
-      const { data, error } = await supabase
-        .from('siparis_detaylari')
-        .select('siparis_id, adet')
-        .in('siparis_id', chunk)
-      if (error) throw new Error(error.message)
-      return data ?? []
+      return tumSatirlariGetir(
+        (from, to) =>
+          supabase
+            .from('siparis_detaylari')
+            .select('id, siparis_id, adet', { count: 'exact' })
+            .in('siparis_id', chunk)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { baglam: 'yeni batch - siparis adetleri' },
+      )
     }),
     supabase
       .from('uretim_emirleri')
@@ -197,12 +207,16 @@ export default function YeniBatchModal({ onOlustur, onKapat }: Props) {
     void (async () => {
       try {
         const satirlar = await paralelChunkSorgu(eksikIds, async (chunk) => {
-          const { data, error } = await supabase
-            .from('siparis_detaylari')
-            .select('siparis_id, adet, genislik_mm, yukseklik_mm, stok_id')
-            .in('siparis_id', chunk)
-          if (error) throw new Error(error.message)
-          return data ?? []
+          return tumSatirlariGetir(
+            (from, to) =>
+              supabase
+                .from('siparis_detaylari')
+                .select('id, siparis_id, adet, genislik_mm, yukseklik_mm, stok_id', { count: 'exact' })
+                .in('siparis_id', chunk)
+                .order('id', { ascending: true })
+                .range(from, to),
+            { baglam: 'yeni batch - secili siparis detaylari' },
+          )
         })
 
         if (iptal) return

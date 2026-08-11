@@ -14,6 +14,7 @@ import { fizikselGlsKodu, normalizeBatchSiraInput } from '@/lib/siparisDetay'
 import { recalculateSiparisDurumu, recalculateUretimEmriDurumu } from '@/services/durumService'
 import { tumSatirlariGetir } from '@/lib/supabasePagination'
 import { camTarananSayisi, tarananAdetHesapla, yikamaLogSayilariGetir } from '@/lib/yikamaLoglari'
+import { istasyonAktifMi } from '@/lib/istasyonPresence'
 
 /* ========== Tipler ========== */
 
@@ -206,6 +207,7 @@ export default function PozGirisPage() {
   const navigate = useNavigate()
   const [saat, setSaat] = useState(new Date())
   const [connected, setConnected] = useState(false)
+  const [kumandaAktif, setKumandaAktif] = useState(false)
 
   // Batch seçimi
   const [batchler, setBatchler] = useState<BatchSatir[]>([])
@@ -230,6 +232,10 @@ export default function PozGirisPage() {
   const seciliBatchRef = useRef<BatchSatir | null>(null)
   const batchCamlariRef = useRef<BatchCam[]>([])
   const batchTemizlendiRef = useRef(false)
+  const sunucuBagliRef = useRef(false)
+  const kumandaAktifRef = useRef(false)
+
+  const girisAcik = connected && kumandaAktif
 
   // Saat
   useEffect(() => {
@@ -241,6 +247,12 @@ export default function PozGirisPage() {
   useEffect(() => {
     const ch = supabase
       .channel('uretim-istasyonlar')
+      .on('presence', { event: 'sync' }, () => {
+        const aktif = istasyonAktifMi(ch.presenceState(), 'kumanda')
+        kumandaAktifRef.current = aktif
+        setKumandaAktif(aktif)
+        if (!aktif) setInput('')
+      })
       .on('broadcast', { event: 'cam_tamire_gonderildi' }, ({ payload }) => {
         const p = payload as TamirOlayPayload
         if (!p.cam_kodu || (p.batch_no && p.batch_no !== seciliBatchRef.current?.batch_no)) return
@@ -254,9 +266,22 @@ export default function PozGirisPage() {
           durum: 'tamir' as const,
         }, ...prev].slice(0, 15))
       })
-    ch.subscribe((status) => setConnected(status === 'SUBSCRIBED'))
+    ch.subscribe((status) => {
+      const bagli = status === 'SUBSCRIBED'
+      sunucuBagliRef.current = bagli
+      setConnected(bagli)
+      if (!bagli) {
+        kumandaAktifRef.current = false
+        setKumandaAktif(false)
+        setInput('')
+      }
+    })
     channelRef.current = ch
-    return () => { supabase.removeChannel(ch) }
+    return () => {
+      sunucuBagliRef.current = false
+      kumandaAktifRef.current = false
+      supabase.removeChannel(ch)
+    }
   }, [])
 
   // Batch listesini getir
@@ -476,6 +501,10 @@ export default function PozGirisPage() {
   }, [])
 
   const handleBatchSec = async (batch: BatchSatir) => {
+    if (!sunucuBagliRef.current || !kumandaAktifRef.current) {
+      beep('error')
+      return
+    }
     batchTemizlendiRef.current = false
     setGecmis([])
     setDurum('bos')
@@ -532,11 +561,11 @@ export default function PozGirisPage() {
 
   // Input odak — tamir modalı açıkken arka plan input'u odağı çekmesin
   useEffect(() => {
-    if (!seciliBatch || tamirCam) return
+    if (!seciliBatch || tamirCam || !girisAcik) return
     inputRef.current?.focus()
     const t = setInterval(() => inputRef.current?.focus(), 800)
     return () => clearInterval(t)
-  }, [seciliBatch, tamirCam])
+  }, [seciliBatch, tamirCam, girisAcik])
 
   const sifirla = (ms = 4000) => {
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current)
@@ -608,6 +637,14 @@ export default function PozGirisPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!seciliBatch) return
+    if (!sunucuBagliRef.current || !kumandaAktifRef.current) {
+      setInput('')
+      beep('error')
+      setDurum('hata')
+      setHataMesaji('Kumanda Paneli açık değil. Giriş yapılamaz.')
+      sifirla(4000)
+      return
+    }
     const kod = input.trim()
     const siraNo = normalizeBatchSiraInput(kod)
     if (!kod) return
@@ -789,6 +826,15 @@ export default function PozGirisPage() {
                 <span>{connected ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'}</span>
               </div>
             </div>
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
+              girisAcik ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300' : 'bg-red-900/60 border border-red-700 text-red-300'
+            }`}>
+              {girisAcik ? <Wifi size={16} /> : <WifiOff size={16} />}
+              <div className="flex flex-col leading-tight">
+                <span className="text-[10px] text-gray-400">KUMANDA PANELİ</span>
+                <span>{girisAcik ? 'AÇIK' : 'KAPALI'}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -796,7 +842,19 @@ export default function PozGirisPage() {
         <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
           <Package size={48} className="text-gray-700 mb-4" />
           <h2 className="text-2xl font-bold mb-2">Batch Seçimi</h2>
-          <p className="text-gray-500 text-sm mb-8">İşlem yapılacak batch'i seçin</p>
+          <p className="text-gray-500 text-sm mb-3">İşlem yapılacak batch'i seçin</p>
+          {!girisAcik && (
+            <div className="mb-8 flex max-w-xl items-center gap-3 rounded-xl border border-red-700 bg-red-950/60 px-5 py-3 text-red-200">
+              <AlertTriangle size={22} className="shrink-0 text-red-400" />
+              <div>
+                <p className="font-bold">POZ girişi şu anda kilitli</p>
+                <p className="text-sm text-red-300/80">
+                  {connected ? 'Giriş yapabilmek için Kumanda Paneli’ni açın.' : 'Sunucu bağlantısı kurulmadan giriş yapılamaz.'}
+                </p>
+              </div>
+            </div>
+          )}
+          {girisAcik && <div className="mb-5" />}
 
           {batchYukleniyor ? (
             <Loader2 size={32} className="animate-spin text-gray-600" />
@@ -810,7 +868,9 @@ export default function PozGirisPage() {
                   <button
                     key={b.id}
                     onClick={() => handleBatchSec(b)}
-                    className="bg-gray-900 border border-gray-700 hover:border-blue-500 rounded-xl p-5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={!girisAcik}
+                    title={girisAcik ? `${b.batch_no} batch'ini seç` : 'Kumanda Paneli açılmadan batch başlatılamaz'}
+                    className="bg-gray-900 border border-gray-700 hover:border-blue-500 rounded-xl p-5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-700"
                   >
                     <div className="flex items-center justify-between mb-3">
                       <span className="font-mono font-bold text-lg text-white">{b.batch_no}</span>
@@ -883,6 +943,15 @@ export default function PozGirisPage() {
             <div className="flex flex-col leading-tight">
               <span className="text-[10px] text-gray-400">SUNUCU</span>
               <span>{connected ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'}</span>
+            </div>
+          </div>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${
+            girisAcik ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300' : 'bg-red-900/60 border border-red-700 text-red-300'
+          }`}>
+            {girisAcik ? <Wifi size={16} /> : <WifiOff size={16} />}
+            <div className="flex flex-col leading-tight">
+              <span className="text-[10px] text-gray-400">KUMANDA PANELİ</span>
+              <span>{girisAcik ? 'AÇIK' : 'KAPALI'}</span>
             </div>
           </div>
         </div>
@@ -990,24 +1059,35 @@ export default function PozGirisPage() {
           {/* Orta: durum kartı + input */}
           <div className="flex-1 flex flex-col items-center justify-center px-4 gap-3 overflow-y-auto py-3 kumanda-scroll">
             {/* Durum kartı */}
-            <div className={`w-full border-2 rounded-2xl p-6 text-center transition-colors ${durumRenk(durum)}`}>
-              {durum === 'bos' && !tamirGonderildi && (
+            <div className={`w-full border-2 rounded-2xl p-6 text-center transition-colors ${durumRenk(girisAcik ? durum : 'hata')}`}>
+              {!girisAcik && (
+                <>
+                  <WifiOff size={48} className="text-red-400 mx-auto mb-2" />
+                  <p className="text-red-200 font-black text-2xl">
+                    {connected ? 'Kumanda Paneli Kapalı' : 'Sunucu Bağlantısı Yok'}
+                  </p>
+                  <p className="text-red-300/70 text-sm mt-1">
+                    {connected ? 'Panel açılana kadar POZ girişi yapılamaz.' : 'Bağlantı kurulana kadar POZ girişi yapılamaz.'}
+                  </p>
+                </>
+              )}
+              {girisAcik && durum === 'bos' && !tamirGonderildi && (
                 <>
                   <p className="text-gray-300 text-xl font-semibold mb-1">Sıra numarasını girin</p>
                   <p className="text-gray-500 text-sm">Seçili batch içindeki kısa GLS numarası</p>
                 </>
               )}
-              {durum === 'bos' && tamirGonderildi && (
+              {girisAcik && durum === 'bos' && tamirGonderildi && (
                 <>
                   <Wrench size={44} className="text-orange-400 mx-auto mb-2" />
                   <p className="text-orange-200 font-bold text-xl">Tamire Gönderildi</p>
                   <p className="text-orange-400/70 text-sm mt-1">Kayıt oluşturuldu</p>
                 </>
               )}
-              {durum === 'yukleniyor' && (
+              {girisAcik && durum === 'yukleniyor' && (
                 <Loader2 size={40} className="animate-spin text-blue-400 mx-auto" />
               )}
-              {durum === 'basarili' && sonTarananCam && (
+              {girisAcik && durum === 'basarili' && sonTarananCam && (
                 <>
                   <CheckCircle2 size={44} className="text-green-400 mx-auto mb-2" />
                   <p className="font-mono text-3xl font-black text-green-300 mb-1">{sonTarananCam.cam_kodu}</p>
@@ -1028,19 +1108,19 @@ export default function PozGirisPage() {
                   </button>
                 </>
               )}
-              {durum === 'tekrar' && (
+              {girisAcik && durum === 'tekrar' && (
                 <>
                   <AlertTriangle size={44} className="text-yellow-400 mx-auto mb-2" />
                   <p className="text-yellow-200 font-bold text-xl">{hataMesaji}</p>
                 </>
               )}
-              {durum === 'yanlis_batch' && (
+              {girisAcik && (durum === 'hata' || durum === 'yanlis_batch') && (
                 <>
                   <XCircle size={44} className="text-red-400 mx-auto mb-2" />
                   <p className="text-red-200 font-bold text-xl">{hataMesaji}</p>
                 </>
               )}
-              {durum === 'tamamlandi' && (
+              {girisAcik && durum === 'tamamlandi' && (
                 <>
                   <CheckCircle2 size={52} className="text-emerald-400 mx-auto mb-2" />
                   <p className="text-emerald-200 font-black text-2xl">Batch Tamamlandı!</p>
@@ -1068,10 +1148,10 @@ export default function PozGirisPage() {
                     setTamirCam(sonTarananCam)
                   }
                 }}
-                placeholder="Sıra no girin..."
-                className="w-full text-center text-2xl font-mono bg-gray-900 border-2 border-gray-700 rounded-xl px-6 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                placeholder={girisAcik ? 'Sıra no girin...' : 'Kumanda Paneli açılmadan giriş yapılamaz'}
+                className="w-full text-center text-2xl font-mono bg-gray-900 border-2 border-gray-700 rounded-xl px-6 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:border-red-900 disabled:bg-red-950/30 disabled:text-red-300"
                 autoComplete="off"
-                disabled={durum === 'tamamlandi'}
+                disabled={durum === 'tamamlandi' || !girisAcik}
               />
             </form>
 

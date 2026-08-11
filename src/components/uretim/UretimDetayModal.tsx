@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useMemo } from 'react'
 import {
   X, Download, ChevronDown, ChevronRight,
-  Package, Layers, Square, Calendar, Droplets,
+  Package, Layers, Square, Calendar, Droplets, Printer,
 } from 'lucide-react'
 import type { UretimEmri, UretimEmriDetay, UretimEmriDurum } from '@/types/uretim'
 import type { Siparis } from '@/types/siparis'
@@ -30,6 +30,7 @@ import {
   tarananAdetHesapla,
   yikamaLogSayilariGetir,
 } from '@/lib/yikamaLoglari'
+import { batchTakipFormuYazdir, type BatchFormDetayi } from '@/lib/batchYazdir'
 
 interface Props {
   emir: UretimEmri
@@ -111,6 +112,7 @@ export default function UretimDetayModal({
   const [yukleniyor, setYukleniyor] = useState(true)
   const [yikamaLogHata, setYikamaLogHata] = useState(false)
   const [exportYapiliyor, setExportYapiliyor] = useState(false)
+  const [yazdirMenuAcik, setYazdirMenuAcik] = useState(false)
   const [kapaliGruplar, setKapaliGruplar] = useState<Set<string>>(new Set())
   const [secilenSiparis, setSecilenSiparis] = useState<Siparis | null>(null)
   const { stoklar } = useStok()
@@ -183,6 +185,14 @@ export default function UretimDetayModal({
       alert(err instanceof Error ? err.message : 'Export sırasında hata oluştu')
     } finally {
       setExportYapiliyor(false)
+    }
+  }
+
+  const handleYazdir = (formDetayi: BatchFormDetayi) => {
+    setYazdirMenuAcik(false)
+    const pencereAcildi = batchTakipFormuYazdir(emir, detaylar, formDetayi)
+    if (!pencereAcildi) {
+      alert('Yazdırma penceresi açılamadı. Tarayıcınızda bu site için açılır pencerelere izin verin.')
     }
   }
 
@@ -275,6 +285,50 @@ export default function UretimDetayModal({
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setYazdirMenuAcik((acik) => !acik)}
+                disabled={yukleniyor || detaylar.length === 0}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Batch takip formunu yazdır"
+                aria-expanded={yazdirMenuAcik}
+                aria-haspopup="menu"
+              >
+                <Printer size={16} />
+                <span>Yazdır</span>
+                <ChevronDown size={14} className={cn('transition-transform', yazdirMenuAcik && 'rotate-180')} />
+              </button>
+              {yazdirMenuAcik && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-20 mt-2 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleYazdir('ozet')}
+                    className="w-full rounded-lg px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="block text-sm font-semibold text-gray-800">Özet Form</span>
+                    <span className="mt-0.5 block text-xs leading-4 text-gray-500">
+                      Liste bilgileri, üretim takibi ve her listeye özel not alanı
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleYazdir('detayli')}
+                    className="w-full rounded-lg px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="block text-sm font-semibold text-gray-800">Detaylı Form</span>
+                    <span className="mt-0.5 block text-xs leading-4 text-gray-500">
+                      Özet forma ek olarak tüm cam, ölçü, çıta, poz ve işlem detayları
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               onClick={onKapat}
               className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"

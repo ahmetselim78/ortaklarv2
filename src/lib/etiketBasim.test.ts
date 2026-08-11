@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { etiketKopruSaglikKontrolu, etiketOtomatikYazdir } from './etiketBasim'
+import { etiketKopruSaglikKontrolu, etiketOtomatikYazdir, etiketleriTopluYazdir } from './etiketBasim'
 import { ORNEK_ETIKET_VERI } from './etiketOrnek'
 import { VARSAYILAN_ETIKET_AYARLARI } from '@/types/ayarlar'
 
@@ -90,6 +90,42 @@ describe('etiketKopruSaglikKontrolu', () => {
     await expect(etiketKopruSaglikKontrolu(ayarlar)).resolves.toEqual({
       bagli: false,
       mesaj: 'Köprü adresi ayarlı değil.',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('etiketleriTopluYazdir', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('manuel ayarda da etiketleri tek yazıcı işinde köprüye gönderir', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      basarili: true,
+      mesaj: 'Toplu iş yazıcıya gönderildi.',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const ayarlar = yaziciAyarli()
+    ayarlar.yazdirma_kosulu = 'manuel'
+
+    await expect(etiketleriTopluYazdir(ayarlar, [ORNEK_ETIKET_VERI, ORNEK_ETIKET_VERI])).resolves.toEqual({
+      durum: 'yaziciya_gonderildi',
+      mesaj: 'Toplu iş yazıcıya gönderildi.',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { dpl: string }
+    expect(body.dpl.split('\x02L\r')).toHaveLength(3)
+  })
+
+  it('boş toplu baskıda köprüye istek göndermez', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(etiketleriTopluYazdir(yaziciAyarli(), [])).resolves.toEqual({
+      durum: 'basarisiz',
+      mesaj: 'Basılacak etiket bulunamadı.',
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })

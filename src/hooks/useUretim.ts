@@ -335,7 +335,10 @@ export async function getBatchDetaylari(uretimEmriId: string): Promise<UretimEmr
             cam_kodu, genislik_mm, yukseklik_mm, adet, uretim_durumu, kenar_islemi, notlar, poz, cita_stok_id,
             stok!stok_id ( kod, ad, grup, kalinlik_mm, katman_yapisi, birim_fiyat ),
             cita_stok:stok!cita_stok_id ( ad, kalinlik_mm ),
-            siparisler ( id, siparis_no, harici_siparis_no, alt_musteri, cari ( ad ) )
+            siparisler (
+              id, siparis_no, harici_siparis_no, tarih, teslim_tarihi, teslimat_tipi, alt_musteri,
+              cari ( ad )
+            )
           )
         `, { count: 'exact' })
         .eq('uretim_emri_id', uretimEmriId)

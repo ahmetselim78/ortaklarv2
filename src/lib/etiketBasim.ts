@@ -151,3 +151,26 @@ export async function etiketOtomatikYazdir(
     }
   }
 }
+
+/**
+ * Kullanıcının açıkça başlattığı toplu baskıda her etiket için ayrı DPL formatı
+ * üretir ve tamamını tek yazıcı işinde köprüye gönderir.
+ */
+export async function etiketleriTopluYazdir(
+  ayarlar: EtiketAyarlari,
+  veriler: EtiketVeri[],
+): Promise<EtiketBasimSonucu> {
+  if (veriler.length === 0) {
+    return { durum: 'basarisiz', mesaj: 'Basılacak etiket bulunamadı.' }
+  }
+
+  try {
+    const dpl = veriler.map(veri => dplUret(ayarlar, veri)).join('')
+    return await etiketDplKopruyeGonder(ayarlar, dpl)
+  } catch (error) {
+    return {
+      durum: 'basarisiz',
+      mesaj: `Toplu etiket DPL verisi üretilemedi: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`,
+    }
+  }
+}

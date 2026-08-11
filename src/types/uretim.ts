@@ -48,6 +48,9 @@ export interface UretimEmriDetay {
       id: string
       siparis_no: string
       harici_siparis_no?: string | null
+      tarih?: string | null
+      teslim_tarihi?: string | null
+      teslimat_tipi?: string | null
       alt_musteri: string | null
       cari?: { ad: string } | null
     } | null
